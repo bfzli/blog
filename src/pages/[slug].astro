@@ -24,7 +24,7 @@ const next = posts?.[index - 1]
     title={`${post.data.title} | Benjamin Fazli`}
     description={post.data.description}
     keywords={`blog, post, ${tags.join(', ')}`}
-    image={`/images/${post.slug}.png`}
+    image={`/images/${post.slug}.webp`}
     type='article'
     date={post.data.date}
 >
@@ -32,22 +32,11 @@ const next = posts?.[index - 1]
         {post.data.title}
     </H1>
 
-    <p class=''>
+    <p class='opacity-75'>
         {post.data.description}
     </p>
 
-    <div class='mt-5 text-sm'>
-        <span class='opacity-70'>
-            Writen by
-        </span> 
-
-            <Link href='https://marianmolina.com'>
-                Benjamin Fazli
-            </Link>
-        <span class='mx-1'>
-            — 
-        </span>
-
+    <div class='mt-5 text-[13px]'>
         <span class='opacity-70'>
             {post.data.date}
         </span>
@@ -66,15 +55,11 @@ const next = posts?.[index - 1]
                     `https://twitter.com/intent/tweet` +
                     `?text=${post.data.title} — ${post.data.description}` +
                     `&url=${constants.site}/blog/${post.slug}` +
-                    `&via=oedotme` +
+                    `&via=bfzli` +
                     `&hashtags=${tags.join(',')}`
                 }
             >
-                Share on Twitter
-            </Link>
-
-            <Link href={`https://twitter.com/search?q=${constants.site}/blog/${post.slug}&src=typed_query`}>
-                Discuss on Twitter
+                Share on X
             </Link>
         </div>
 

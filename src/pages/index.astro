@@ -12,50 +12,52 @@ const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
     title='Benjamin Fazli | Software Engineer'
     description='A place where I share my thoughts and learnings 💭'
     keywords={`uses, tools, web, software, personal, website, blog development, environment, ${tags.join(', ')}`}
-    image='/images/cover.png'
+    image='/images/cover.webp'
     type='website'
 >
     <img 
-        src='/images/generals/avatar.png' 
+        src='/images/generals/avatar.webp' 
         alt='Benjamin' 
-        class='w-24 mb-4 h-24 rounded-full select-none' 
+        class='w-24 mb-6 h-24 rounded-full select-none' 
     />
 
-    <h1 class='my-4 text-4xl font-bold'>
+    <h1 class='mt-4 mb-2 text-4xl font-bold'>
         I'm Benjamin 👋
     </h1>
 
-    <section class='my-4 space-y-2'>
-        <h2 class='text-md font-normal leading-loose sm:leading-loose'>
-            I'm a software engineer who expresses thoughts by coding and creating applications for society. In this blog i takle about different topics more on the technical side of things.
+    <section class='mb-4 mt-2 space-y-2'>
+        <h2 class='text-md font-normal leading-loose sm:leading-loose opacity-75'>
+            A software engineer that expresses thoughts by coding. In this blog i takle about different topics more on the technical side of things and contribute to the society.
         </h2>
     </section>
 
-    <section class='mb-16'>
-        <h2 class='mt-14 text-2xl font-bold'>
-            Posts
+    <div class="h-[1px] bg-elevate w-full mt-8" />
+
+    <section>
+        <h2 class='mt-8 text-2xl font-bold'>
+            Recent Posts
         </h2>
 
         <List class='mt-4'>
             {
                 posts?.map((post) => (
-                    <ListItem class='mt-14 flex flex-col first:mt-4'>
-                        <Link href={`/${post.slug}`}>
-                            <span class='block text-sm font-medium opacity-60'>
+                    <ListItem class='mt-4 flex flex-col first:mt-4 bg-post hover:opacity-80 rounded-lg transition-all ease-in-out duration-500'>
+                        <Link href={`/${post.slug}`} class="px-6 py-4">
+                            <span class='block text-[13px] font-medium opacity-60'>
                                 {post.data.date}
                             </span>
                             
-                            <h3 class='mt-2 text-xl font-semibold'>
+                            <h3 class='mt-3 text-xl font-bold'>
                                 {post.data.title}
                             </h3>
                             
-                            <p class='mt-2'>
+                            <p class='mt-1 *:opacity-75'>
                                 {post.data.description}
                             </p>
     
-                            <ul class='mt-2 flex flex-wrap gap-x-3 gap-y-1 opacity-60'>
+                            <ul class='mt-3 flex flex-wrap gap-x-3 gap-y-1 opacity-60'>
                                 {post.data.tags.map((tag) => (
-                                    <li class='text-sm font-light'>
+                                    <li class='text-sm font-light italic'>
                                         #{tag}
                                     </li>
                                 ))}

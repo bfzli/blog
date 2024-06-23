@@ -14,15 +14,16 @@ export default {
                 elevate: 'var(--elevate)',
                 element: 'var(--element)',
                 comment: 'var(--comment)',
+                post: 'var(--post)'
             },
             fontFamily: {
-                sans: ['Space Grostek', ...fontFamily.sans],
+                sans: ['Space Grostek', ...fontFamily.mono],
             },
             minHeight: {
-                xs: '20rem',
-                sm: '40rem',
-                md: '48rem',
-                lg: '64rem',
+                xs: '18rem',
+                sm: '32rem',
+                md: '42rem',
+                lg: '54rem',
             },
         },
     },

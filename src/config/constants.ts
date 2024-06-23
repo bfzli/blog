@@ -2,30 +2,23 @@ const profile = {
   name: 'Benjamin Fazli',
   title: 'Benjamin Fazli | Software Engineer',
   description: 'Expresing my thoughts and ideas through code and writing.',
-  image: '/images/cover.png',
+  image: '/images/cover.webp',
   username: 'oedotme',
   links: {
     email: 'mailto:oedotme@gmail.com',
-    github: 'https://github.com/oedotme',
-    twitter: 'https://twitter.com/oedotme',
-    linkedin: 'https://linkedin.com/in/oedotme',
+    github: 'https://github.com/bfzli',
+    twitter: 'https://twitter.com/bfzli',
   }
 }
 
 export const constants = {
   profile,
-  site: import.meta.env.SITE,
-
+  site: 'https://bfzli.com/',
   links: {
-    internal: [
-      { name: 'Home', link: '/' },
-      { name: 'Blog', link: '/blog' }
-    ],
     external: [
       { name: 'Email', link: profile.links.email },
       { name: 'GitHub', link: profile.links.github },
-      { name: 'Twitter', link: profile.links.twitter },
-      { name: 'LinkedIn', link: profile.links.linkedin },
+      { name: 'X', link: profile.links.twitter }
     ]
   }
 }

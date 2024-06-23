@@ -58,8 +58,8 @@ const props = Astro.props as Props
             {props.title}
         </title>
 
-        <script type="text/partytown" async src="https://www.googletagmanager.com/gtag/js?id=G-96RJ6ZFW3Y"></script>
-        <script type="text/partytown">
+        <script type='text/partytown' async src='https://www.googletagmanager.com/gtag/js?id=G-96RJ6ZFW3Y'></script>
+        <script type='text/partytown'>
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
@@ -69,12 +69,23 @@ const props = Astro.props as Props
     </head>
 
     <body class='overflow-y-scroll bg-surface text-default selection:bg-default selection:text-surface'>
-        <section class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 py-10 lg:px-16'>
+        <section class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 pt-10 pb-2 lg:px-16'>
             <header>
                 <nav class='flex justify-between'>
-                    <a href='/' class='font-bold text-xl sm:text-2xl'>
-                        {profile.name}
-                    </a>
+                    {
+                        Astro.url.pathname !== '/' ?
+                        <a href='/' class='font-bold text-xl sm:text-2xl items-center gap-2 flex flex-row'>
+                            <img 
+                                src='/images/generals/avatar.webp' 
+                                alt='Benjamin' 
+                                class='w-7 h-7 rounded-full select-none' 
+                            />
+
+                            <h1 class='text-[17px] font-bold'>
+                                Benjamin
+                            </h1>
+                        </a> : <span />
+                    }
 
                     <button id='toggle-theme' aria-label='Toggle Theme' class='mx-1'>
                         <Theme />
@@ -87,13 +98,15 @@ const props = Astro.props as Props
             </main>
 
             <footer class='flex flex-col-reverse items-center justify-between gap-8 p-2 mt-32 text-sm md:flex-row md:gap-32'>
-                <span class='text-default opacity-70'>&copy; 2023 Benjamin Fazli</span>
+                <span class='text-default opacity-70'>
+                    {new Date().getFullYear()} &copy; All rights reserved.
+                </span>
 
-                <nav>
+                <nav class='flex items-center'>
                     <ul class='flex flex-wrap justify-center gap-4 sm:gap-8'>
                         {
                             constants.links.external.map(({ name, link }) => (
-                                <li>
+                                <li class='hover:opacity-80 transition-all duration-500 ease-in-out'>
                                     <a href={link}>{name}</a>
                                 </li>
                             ))
