@@ -7,7 +7,11 @@ import { constants } from '@/config'
 
 export const getStaticPaths = async () => {
     const posts = await getCollection('posts')
-    return posts.map((post) => ({ params: { slug: post.slug }, props: post }))
+    
+    return posts.map((post) => ({ 
+        params: { slug: post.slug }, 
+        props: post 
+    }))
 }
 
 const posts = (await getCollection('posts')).sort((a, z) => +new Date(z.data.date) - +new Date(a.data.date))

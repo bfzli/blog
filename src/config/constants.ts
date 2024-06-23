@@ -2,7 +2,7 @@ const profile = {
   name: 'Benjamin Fazli',
   title: 'Benjamin Fazli | Software Engineer',
   description: 'Expresing my thoughts and ideas through code and writing.',
-  image: '/images/cover.webp',
+  image: '/images/generals/cover.webp',
   username: 'bfzli',
   links: {
     email: 'mailto:bfzli@hotmail.com',
