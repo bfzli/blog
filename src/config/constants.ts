@@ -3,9 +3,9 @@ const profile = {
   title: 'Benjamin Fazli | Software Engineer',
   description: 'Expresing my thoughts and ideas through code and writing.',
   image: '/images/cover.webp',
-  username: 'oedotme',
+  username: 'bfzli',
   links: {
-    email: 'mailto:oedotme@gmail.com',
+    email: 'mailto:bfzli@hotmail.com',
     github: 'https://github.com/bfzli',
     twitter: 'https://twitter.com/bfzli',
   }
