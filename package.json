@@ -4,7 +4,9 @@
   "description": "A place where I share my thoughts and learnings 💭",
   "author": "Benjamin Fazli <bfzli@gmail.com> (https://bfzli.com)",
   "license": "MIT",
-  "repository": { "url": "https://github.com/bfzli/ghost" },
+  "repository": {
+    "url": "https://github.com/bfzli/ghost"
+  },
   "scripts": {
     "dev": "astro dev --port 3000",
     "build": "astro build",
@@ -38,5 +40,8 @@
     "solid-js": "^1.8.15",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.4.2"
+  },
+  "dependencies": {
+    "@astrojs/partytown": "^2.1.1"
   }
 }

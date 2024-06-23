@@ -16,7 +16,7 @@ export default {
                 comment: 'var(--comment)',
             },
             fontFamily: {
-                sans: ['IBM Plex Sans', ...fontFamily.sans],
+                sans: ['Space Grostek', ...fontFamily.sans],
             },
             minHeight: {
                 xs: '20rem',

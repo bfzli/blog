@@ -3,6 +3,7 @@ import sitemap from '@astrojs/sitemap'
 import solid from '@astrojs/solid-js'
 import tailwind from '@astrojs/tailwind'
 import prism from 'rehype-prism-plus'
+import partytown from '@astrojs/partytown'
 
 import { defineConfig } from 'astro/config'
 
@@ -18,6 +19,11 @@ export default defineConfig({
         mdx(), 
         sitemap(), 
         solid(), 
-        tailwind()
+        tailwind(),
+        partytown({
+			config: {
+			  forward: ["dataLayer.push"],
+			},
+		})
     ],
 })
