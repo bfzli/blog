@@ -1,0 +1,84 @@
+code {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+code::-webkit-scrollbar {
+  display: none;
+}
+
+:is(li, p) code {
+  @apply text-sm font-medium;
+}
+
+code .highlight-line {
+  @apply relative;
+  background: var(--syntax-highline);
+}
+
+code .highlight-line::before {
+  @apply absolute -top-0 left-0 -ml-5 h-full w-5 content-[""];
+  background: var(--syntax-highline);
+  border-left: 2.5px solid var(--syntax-modified);
+}
+
+code .highlight-line::after {
+  @apply absolute right-0 top-0 -mr-6 h-full w-6 content-[""];
+  background: var(--syntax-highline);
+}
+
+.token {
+  color: var(--default);
+  background: transparent;
+}
+
+.token.graphql .token.operator,
+.token.keyword,
+.token.rule {
+  color: var(--syntax-keywords);
+}
+
+.token.selector,
+.token.tag {
+  color: var(--syntax-selector);
+}
+
+.token.graphql .token.attr-name {
+  color: var(--syntax-warnings);
+}
+
+.token.attr-name,
+.token.boolean,
+.token.class,
+.token.constant,
+.token.doctype-tag,
+.token.function-variable,
+.token.graphql .token.class-name,
+.token.name,
+.token.nil,
+.token.number,
+.token.operator,
+.token.property,
+.token.property-access,
+.token.regex-delimiter,
+.token.scalar {
+  color: var(--syntax-property);
+}
+
+.token.builtin,
+.token.entry.string,
+.token.function,
+.token.template-string {
+  color: var(--syntax-function);
+}
+
+.token.attr-value,
+.token.regex-source,
+.token.string {
+  color: var(--syntax-surround);
+}
+
+.token.comment,
+.token.shebang {
+  color: var(--syntax-comments);
+}

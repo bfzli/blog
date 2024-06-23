@@ -1,0 +1,69 @@
+---
+import Page from '@/layouts/page.astro'
+
+import { getCollection } from 'astro:content'
+import { Link, List, ListItem, Text } from '@/components'
+
+const posts = (await getCollection('posts')).sort((a, z) => +new Date(z.data.date) - +new Date(a.data.date))
+const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
+
+---
+<Page
+    title='Benjamin Fazli | Software Engineer'
+    description='A place where I share my thoughts and learnings 💭'
+    keywords={`uses, tools, web, software, personal, website, blog development, environment, ${tags.join(', ')}`}
+    image='/images/cover.png'
+    type='website'
+>
+    <img 
+        src='/images/generals/avatar.png' 
+        alt='Benjamin' 
+        class='w-24 mb-4 h-24 rounded-full select-none' 
+    />
+
+    <h1 class='my-4 text-4xl font-bold'>
+        I'm Benjamin 👋
+    </h1>
+
+    <section class='my-4 space-y-2'>
+        <h2 class='text-md font-normal leading-loose sm:leading-loose'>
+            I'm a software engineer who expresses thoughts by coding and creating applications for society. In this blog i takle about different topics more on the technical side of things.
+        </h2>
+    </section>
+
+    <section class='mb-16'>
+        <h2 class='mt-14 text-2xl font-bold'>
+            Posts
+        </h2>
+
+        <List class='mt-4'>
+            {
+                posts?.map((post) => (
+                    <ListItem class='mt-14 flex flex-col first:mt-4'>
+                        <Link href={`/${post.slug}`}>
+                            <span class='block text-sm font-medium opacity-60'>
+                                {post.data.date}
+                            </span>
+                            
+                            <h3 class='mt-2 text-xl font-semibold'>
+                                {post.data.title}
+                            </h3>
+                            
+                            <p class='mt-2'>
+                                {post.data.description}
+                            </p>
+    
+                            <ul class='mt-2 flex flex-wrap gap-x-3 gap-y-1 opacity-60'>
+                                {post.data.tags.map((tag) => (
+                                    <li class='text-sm font-light'>
+                                        #{tag}
+                                    </li>
+                                ))}
+                            </ul>
+                        </Link>
+                    </ListItem>
+                ))
+            }
+        </List>
+    </section>
+</Page>

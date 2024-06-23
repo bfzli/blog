@@ -1,0 +1,123 @@
+* {
+  --light-default: #19253d;
+  --light-primary: #2a6cea;
+  --light-neutral: #fefeff;
+  --light-surface: #fcfcfc;
+  --light-element: #f5f6f7;
+  --light-elevate: #edf0f6;
+  --light-comment: #72809a;
+
+  --dark-default: #dee3ee;
+  --dark-primary: #81a7f1;
+  --dark-neutral: #070e1d;
+  --dark-surface: #091121;
+  --dark-element: #0f182c;
+  --dark-elevate: #1b263c;
+  --dark-comment: #72809a;
+
+  --light-syntax-keywords: #d73a49;
+  --light-syntax-selector: #22863a;
+  --light-syntax-warnings: #e36209;
+  --light-syntax-property: #005cc5;
+  --light-syntax-function: #6f42c1;
+  --light-syntax-surround: #032f62;
+  --light-syntax-comments: #6a737d;
+  --light-syntax-modified: #2a6cea;
+  --light-syntax-highline: #f8faff;
+
+  --dark-syntax-keywords: #ff7b72;
+  --dark-syntax-selector: #7ee787;
+  --dark-syntax-warnings: #ffa657;
+  --dark-syntax-property: #79c0ff;
+  --dark-syntax-function: #d2a8ff;
+  --dark-syntax-surround: #a5d6ff;
+  --dark-syntax-comments: #8b949e;
+  --dark-syntax-modified: #81a7f1;
+  --dark-syntax-highline: #0d1628;
+}
+
+:root {
+  color-scheme: light;
+  --default: var(--light-default);
+  --primary: var(--light-primary);
+  --neutral: var(--light-neutral);
+  --surface: var(--light-surface);
+  --element: var(--light-element);
+  --elevate: var(--light-elevate);
+  --comment: var(--light-comment);
+
+  --syntax-keywords: var(--light-syntax-keywords);
+  --syntax-selector: var(--light-syntax-selector);
+  --syntax-warnings: var(--light-syntax-warnings);
+  --syntax-property: var(--light-syntax-property);
+  --syntax-function: var(--light-syntax-function);
+  --syntax-surround: var(--light-syntax-surround);
+  --syntax-comments: var(--light-syntax-comments);
+  --syntax-modified: var(--light-syntax-modified);
+  --syntax-highline: var(--light-syntax-highline);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --default: var(--dark-default);
+    --primary: var(--dark-primary);
+    --neutral: var(--dark-neutral);
+    --surface: var(--dark-surface);
+    --element: var(--dark-element);
+    --elevate: var(--dark-elevate);
+    --comment: var(--dark-comment);
+
+    --syntax-keywords: var(--dark-syntax-keywords);
+    --syntax-selector: var(--dark-syntax-selector);
+    --syntax-warnings: var(--dark-syntax-warnings);
+    --syntax-property: var(--dark-syntax-property);
+    --syntax-function: var(--dark-syntax-function);
+    --syntax-surround: var(--dark-syntax-surround);
+    --syntax-comments: var(--dark-syntax-comments);
+    --syntax-modified: var(--dark-syntax-modified);
+    --syntax-highline: var(--dark-syntax-highline);
+  }
+}
+
+[color-scheme='light'] {
+  color-scheme: light;
+  --default: var(--light-default);
+  --primary: var(--light-primary);
+  --neutral: var(--light-neutral);
+  --surface: var(--light-surface);
+  --element: var(--light-element);
+  --elevate: var(--light-elevate);
+  --comment: var(--light-comment);
+
+  --syntax-keywords: var(--light-syntax-keywords);
+  --syntax-selector: var(--light-syntax-selector);
+  --syntax-warnings: var(--light-syntax-warnings);
+  --syntax-property: var(--light-syntax-property);
+  --syntax-function: var(--light-syntax-function);
+  --syntax-surround: var(--light-syntax-surround);
+  --syntax-comments: var(--light-syntax-comments);
+  --syntax-modified: var(--light-syntax-modified);
+  --syntax-highline: var(--light-syntax-highline);
+}
+
+[color-scheme='dark'] {
+  color-scheme: dark;
+  --default: var(--dark-default);
+  --primary: var(--dark-primary);
+  --neutral: var(--dark-neutral);
+  --surface: var(--dark-surface);
+  --element: var(--dark-element);
+  --elevate: var(--dark-elevate);
+  --comment: var(--dark-comment);
+
+  --syntax-keywords: var(--dark-syntax-keywords);
+  --syntax-selector: var(--dark-syntax-selector);
+  --syntax-warnings: var(--dark-syntax-warnings);
+  --syntax-property: var(--dark-syntax-property);
+  --syntax-function: var(--dark-syntax-function);
+  --syntax-surround: var(--dark-syntax-surround);
+  --syntax-comments: var(--dark-syntax-comments);
+  --syntax-modified: var(--dark-syntax-modified);
+  --syntax-highline: var(--dark-syntax-highline);
+}
