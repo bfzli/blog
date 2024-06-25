@@ -1,0 +1,51 @@
+---
+title: How I Accidentally Stepped on a Phishing Site and Then Helped Shut It Down
+description: From receiving a phishing email to the site being taken down, this is a story we can all learn from.
+tags: [scam, phishing, security, story]
+cowritten: false
+date: June 23, 2024
+---
+
+I was looking at my emails as I do every day when I saw something weird, an email from Facebook with a subject line saying that my page had been flagged. This was odd because I don't usually engage in activities with my Facebook pages, and when I do, I don't do anything that would be flagged. But I thought, Let's see what this is about.
+
+When I opened the email, I saw that the sender was `noreply@salesforce.com` contacting me on behalf of Facebook regarding my page. Interestingly, the email didn't mention my page's name, which was unusual because Facebook would definitely know that. 
+
+Also the email was from the offical domain of Salesforce which directly doesn't connect with Facebook, but at least is their offical doamin which it was weird on itself and even after everything what happened, I have no clue on how they did that, Anyway I continued.
+
+The email contained information stating that my page was flagged and that I could appeal it so Facebook would review the decision again. It also warned me that if I didn't respond with an appeal within a certain period of days, the page would be taken down. The design of the email didn't show to me because I use a broken mail client, but anyway, at this point I knew for sure this was a scam or phishing email. However, I couldn't resist, so I clicked the appeal button to see what would happen.
+
+It redirected me to a site using a subdomain of Netlify. This subdomain was the default one that Netlify provides, which was a very cheap mistake you don't want to make when trying to trick people into thinking you are Facebook. Anyways, I took a look at the page, and it was a clean clone of Facebook's Business Page Manager, showing that the person who made this knew what they were doing.
+
+Similar to the email, the page did not display my page name and explained that my page had been flagged, warning that if I didn't appeal, it would be taken down and bla bla, so I clicked the appeal button, and a form appeared asking for my page name, email and some similar informations besides the password.
+
+Okay, I filled out the form with dummy data because the validation wouldn't let me proceed, and then clicked continue. After that, another screen appeared asking for a password, as if I were not logged into my account, because the scammer needed this to access my account. I entered the fake password, clicked submit again, and this time the form was submitted. But before doing so, as any developer would do, I opened the network tab to record the requests and inspect where the data was being sent, typically to a microservice set up by the scammer.
+
+But in this case, the data was sent to a [third party tool](https://emailjs.com/) that provides form handling and management. This might have seemed easier, but it wasn't that clever because anyone could contact the service provider and report the scam to this service for takedown. 
+
+The data that was sent included the form fields, geolocation, browser information, and similar details, which was more than enough for the scammer to know the victim. After clicking submit and sending the data to their third party platform another screen appeared asking for a verification code that was sent to my phone. This is where I felt lost for a moment.
+
+But this was a clever move by the scammer. See, when a new device tries to log in to your Facebook account, Facebook sends a verification code to your phone. Even if the scammer has your password, they wouldn't be able to access your account without the code. This doesn't always apply, but Facebook has a good security system that handles these cases when necessary, especially for new devices and locations that try to login to the Account.
+
+So they designed this form to trick you into sending them the codes and to further reinforce the belief that Facebook is trying to protect you by requiring a code before logging into your account. The form would falsely prompt that the code is incorrect, preventing you from sending another code within 30 seconds. This delay gave them time to attempt to log in to your account using the codes you sent them, not because you requested them, but because they do it on your behalf while you think you are the one initiating the login.
+
+What happens if they are not around? Then they would attempt to log in normally, hoping you don't have any security setups or that Facebook doesn't require a code, and they would try to simulate your browser and location based on the information the victim sent through the form, hoping to pass verification. This requires a lot of effort to execute on the spot, but it's possible.
+
+What I missed was checking the network requests for the verification scenario, to see how they send the codes and to which service they read from there. So I'm not sure about how they do it but I stand by and believe that the explanation above is what makes sense the most.
+
+At this point, I knew I had to do something because this was not good. I had plenty of ways to help and a little time to do it. So I decided to take action.
+
+I opened my terminal, created a new project in my `codebases` directory, and installed the [`faker`](https://www.npmjs.com/package/@faker-js/faker) package using [Bun](https://bun.sh). If you are a dev, you probably know what comes next. So yes, I wrote a script to send multiple fake forms to their service in hoping to mess up their data. I also thought that most likely they are part of a plan with a capped number of emails sent, so this could potentially cause the service to go down because a upgrade would be required.
+
+After 10 minutes, I had a working script with Bun that was sending filled forms to their service with random data that looked very real, so the scammer would be confused and think they were genuine users, unable to recognize the real emails from the fake ones. The emails were being sent at intervals of 2-3 seconds due to the platform's rate limits, but that still amounted to a high number of emails per minute. I ran the script, and the emails were sending...
+
+Some minutes passed, and after 1,000 emails were sent to the form, I started seeing an error message on the terminal with the following message: `The account doesn't exist`. I thought, okay, this is weird, maybe the form hit the limit and stopped working, but that wouldn't explain the message. Maybe the scammer closed the account after seeing the flux of forms and got scared on what is going on. Either way, no more people would be hurt. The form was down and not working anymore.
+
+Great, but I still had more to do because the scammer could just register another account on [Emailjs](https://emailjs.com/), upgrade the plan, or do whatever was needed to make the form work again. As long as the emails had the link with the current site domain, people would continue visiting the same URL, allowing the scammer to persist in their actions. So I decided to take further action.
+
+What I did next was contact the Emailjs team on X and informed them about someone abusing their system. Because the form request contained data regarding the userId and templateId used by the scammer, I mentioned these details in the post to assist them in their investigation and prompt them to take necessary actions, such as closing the account. Instead of sharing the URL publicly, I offered to provide it through a private message to prevent others from accessing or falling victim to the site. They responded to the post, stating they would investigate the case, but I have not received any further updates from them. They did not ask for the site privately, suggesting they may already have it in their system. Anyway, here is the link to that [tweet](https://x.com/bfzli/status/1804772059064549704).
+
+Now, after that, I wanted to take care of the website itself, which was the last action I took. I reported the site to Netlify team, and within 24 hours, they took it down and confirmed this to me via an email. When visiting the site afterwards, it was blocked and no longer functional. A great ending I would say.
+
+However, I missed some important steps during this process, from which I also learned. Firstly, I didn't keep the emails or screenshots of those actions to share with others, as I initially didn't plan to write a blog about it until I realized others could benefit from it. Secondly, I couldn't inspect the verification code part to understand how they technically handled prompting for codes and their flow. Thirdly, I could investigate more on how the email was sent from the original Salesforce domain, so this remains a mystery until now.
+
+I learned a lot from this small experience and realized that developers should contribute more to this space. If everyone does a little is enough because everyone in this case is millions and so we can make a big difference. I encourage every developer to take action when they see something wrong because we understand how things work and where their vulnerabilities lie. Let's work together to make the internet a safer place for everyone.
