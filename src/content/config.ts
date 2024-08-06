@@ -6,7 +6,6 @@ export const collections = {
             title: z.string(),
             description: z.string(),
             tags: z.array(z.string()),
-            cowritten: z.boolean().optional(),
             date: z.string()
         })
     })
