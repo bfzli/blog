@@ -1,0 +1,28 @@
+---
+title: "MongoError: bad auth Authentication failed through URI string"
+description: "How to fix the MongoError: bad auth Authentication failed through URI string error, when it happens and some common reasons why it might be happening."
+tags: [mongodb, mongoose, database, mongo-atlas, mongo-error, authentication]
+date: Aug 6, 2024
+---
+
+We all gotta admit that MongoDB is a great database to work with, and it has found its way into every company and digital business. But with every technology, there are struggles and errors that we might face. One of the most common errors you might encounter when working with MongoDB is the MongoError: bad auth Authentication failed error, and in this article we are going to explore some cases when this error might occur and how to fix it.
+
+What we should keep in mind is that this error means the credentials (the URI string) we are using to connect to the Mongo Database is not correct. Below are some common reasons and mistakes that might cause this error to happen.
+
+## Envs Are Not Correct
+One of the most common reasons why this error might occur is because the environment variables are not correct. They might be undefined or you might have misspelled them and somehow are not loaded correctly. You should check the environment variables and make sure they are correct.
+
+## Encoded URI String
+If your password has special characters, you might need to escape them with URI encoding because they might not be interpreted correctly by the database or by the environment parser. A site like URL Encode can help you with that.
+
+## Using the MongoDB Account Password Instead of the Database Password
+New users might confuse the password they use to log in to the MongoDB Atlas account with the database password. Every database has its own password, and you should use that password to connect to the database, not the account password.
+
+## Not Replacing Opening and Closing Brackets in the URI String
+When you are using the URI string to connect to the database, you should replace the &lt;password&gt; brackets with the actual password. So when we say replace, we mean even the &gt; and &lt; brackets.
+
+<br />
+<hr />
+<br />
+
+Those are some common reasons why you might be getting the MongoError: bad auth Authentication failed error. If you have checked all of the above and you are still getting the error, you might want to check the MongoDB Atlas account and make sure the user has the correct permissions to access the database and you have allowed the IP address to access the database.

@@ -42,3 +42,7 @@
 * {
     font-family: "Space Grotesk", sans-serif !important;
 }
+
+hr {
+    opacity: .2;
+}

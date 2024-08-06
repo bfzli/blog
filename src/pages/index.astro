@@ -18,6 +18,7 @@ const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
     <img 
         src='/images/generals/avatar.webp' 
         alt='Benjamin' 
+        ondragstart="return false"
         class='w-24 mb-6 h-24 rounded-full select-none' 
     />
 
@@ -41,7 +42,7 @@ const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
         <List class='mt-4'>
             {
                 posts?.map((post) => (
-                    <ListItem class='mt-4 flex flex-col first:mt-4 bg-post hover:opacity-80 rounded-lg transition-all ease-in-out duration-500'>
+                    <ListItem class='mt-4 flex flex-col first:mt-4 bg-post hover:opacity-80 rounded-lg transition-opacity ease-in-out duration-500'>
                         <Link href={`/${post.slug}`} class="px-6 py-4">
                             <span class='block text-[13px] font-medium opacity-60'>
                                 {post.data.date}
@@ -51,12 +52,12 @@ const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
                                 {post.data.title}
                             </h3>
                             
-                            <p class='mt-1 *:opacity-75'>
+                            <p class='mt-1 opacity-80 *:opacity-50'>
                                 {post.data.description}
                             </p>
     
                             <ul class='mt-3 flex flex-wrap gap-x-3 gap-y-1 opacity-60'>
-                                {post.data.tags.map((tag) => (
+                                {post.data.tags.map((tag: string) => (
                                     <li class='text-sm font-light italic'>
                                         #{tag}
                                     </li>
