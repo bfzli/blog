@@ -1,5 +1,5 @@
 .astro
 dist
 node_modules
-.env
 scripts
+.env
