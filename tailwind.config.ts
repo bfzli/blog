@@ -17,7 +17,8 @@ export default {
                 post: 'var(--post)'
             },
             fontFamily: {
-                sans: ['Space Grostek', ...fontFamily.mono],
+                sans: ['DM Sans', ...fontFamily.sans],
+                mono: ['Inter', ...fontFamily.mono],
             },
             minHeight: {
                 xs: '18rem',

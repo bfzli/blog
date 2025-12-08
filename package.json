@@ -5,19 +5,19 @@
   "author": "Benjamin Fazli <bfzli@hotmail.com> (https://bfzli.com)",
   "license": "MIT",
   "repository": {
-    "url": "https://github.com/bfzli/bfzli"
+    "url": "https://github.com/bfzli/blog"
   },
   "scripts": {
-    "dev": "astro dev --port 3000",
+    "dev": "astro dev --port 9999",
     "build": "astro build",
-    "preview": "astro build; astro preview --port 5000",
+    "preview": "astro build; astro preview --port 8888",
     "check": "astro check && tsc",
     "format": "prettier -w 'src/**/*.{astro,css,html,json,md,mdx,js,jsx,ts,tsx}'",
     "lint": "eslint --fix 'src/**/*.{astro,js,jsx,ts,tsx}'",
     "generate-thumbnails": "node scripts/generate-thumbnails.js",
-    "www:dev": "astro dev --port 3000",
+    "www:dev": "astro dev --port 9999",
     "www:build": "astro build",
-    "www:preview": "astro build; astro preview --port 5000",
+    "www:preview": "astro build; astro preview --port 8888",
     "www:check": "astro check && tsc",
     "www:format": "prettier -w 'src/**/*.{astro,css,html,json,md,mdx,js,jsx,ts,tsx}'",
     "www:lint": "eslint --fix 'src/**/*.{astro,js,jsx,ts,tsx}'",
@@ -52,6 +52,8 @@
     "typescript": "^5.4.2"
   },
   "dependencies": {
-    "@astrojs/partytown": "^2.1.1"
+    "@astrojs/partytown": "^2.1.1",
+    "@astrojs/vercel": "^7.8.2",
+    "openai": "^6.10.0"
   }
 }

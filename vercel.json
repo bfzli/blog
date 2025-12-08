@@ -1,7 +1,21 @@
 {
     "cleanUrls": true,
-    "github": { 
-        "autoJobCancelation": true, 
-        "silent": true 
-    }
+    "github": {
+        "autoJobCancelation": true,
+        "silent": true
+    },
+    "crons": [
+        {
+            "path": "/api/generate-article",
+            "schedule": "0 8 * * *"
+        },
+        {
+            "path": "/api/generate-article",
+            "schedule": "0 14 * * *"
+        },
+        {
+            "path": "/api/generate-article",
+            "schedule": "0 20 * * *"
+        }
+    ]
 }
