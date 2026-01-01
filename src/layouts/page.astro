@@ -65,12 +65,17 @@ const props = Astro.props as Props
 
     <body class='overflow-y-scroll bg-surface text-default selection:bg-default selection:text-surface'>
         <section class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 pt-6 pb-2 lg:px-16'>
-            {
-                (Astro.url.pathname.startsWith('/products/') || 
-                 (Astro.url.pathname !== '/' && 
-                  Astro.url.pathname !== '/products' && 
-                  Astro.url.pathname !== '/resume' && 
-                  Astro.url.pathname !== '/404')) && (
+            {(() => {
+                const pathname = Astro.url.pathname.replace(/\/$/, '') || '/'
+                const isProductSinglePage = pathname.startsWith('/products/') && pathname !== '/products'
+                const isPostPage = pathname !== '/' && 
+                                  pathname !== '/products' && 
+                                  pathname !== '/resume' && 
+                                  pathname !== '/404' &&
+                                  !pathname.startsWith('/api/') &&
+                                  !pathname.startsWith('/products/')
+                
+                return (isProductSinglePage || isPostPage) && (
                     <header>
                         <nav class='flex justify-between'>
                             <a href='/' class='font-bold text-xl sm:text-2xl items-center gap-2 flex flex-row'>
@@ -91,7 +96,7 @@ const props = Astro.props as Props
                         </nav> 
                     </header>
                 )
-            }
+            })()}
 
             <main class='min-h-xs flex-1 px-2 py-14 pt-10 sm:py-20 sm:pt-12'>
                 <slot />
