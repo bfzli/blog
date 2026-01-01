@@ -1,39 +1,20 @@
 ---
-import Page from '@/layouts/page.astro'
+import Home from '@/layouts/home.astro'
 
 import { getCollection } from 'astro:content'
-import { Link, List, ListItem, Text } from '@/components'
+import { Link, List, ListItem } from '@/components'
 
 const posts = (await getCollection('posts')).sort((a, z) => +new Date(z.data.date) - +new Date(a.data.date))
 const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
 
 ---
-<Page
-    title='Benjamin Fazli | Software Engineer'
+<Home
+    title='Software Engineer - Benjamin Fazli'
     description='A place where I share my thoughts and learnings 💭'
     keywords={`uses, tools, web, software, personal, website, blog development, environment, ${tags.join(', ')}`}
     image='/images/generals/cover.webp'
     type='website'
 >
-    <img 
-        src='/images/generals/avatar.webp' 
-        alt='Benjamin' 
-        ondragstart="return false"
-        class='w-24 mb-6 h-24 rounded-full select-none' 
-    />
-
-    <h1 class='mt-4 mb-2 text-4xl font-bold'>
-        I'm Benjamin 👋
-    </h1>
-
-    <section class='mb-4 mt-2 space-y-2'>
-        <h2 class='text-md font-normal leading-loose sm:leading-loose'>
-            A software engineer that expresses thoughts by coding. In this blog i takle about different topics more on the technical side of things and contribute to the society.
-        </h2>
-    </section>
-
-    <div class="h-[1px] bg-elevate w-full mt-8" />
-
     <section>
         <h2 class='mt-8 text-2xl font-bold'>
             Recent Posts
@@ -42,31 +23,23 @@ const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
         <List class='mt-4'>
             {
                 posts?.map((post) => (
-                    <ListItem class='mt-4 flex flex-col first:mt-4 bg-post hover:opacity-80 rounded-lg transition-opacity ease-in-out duration-500'>
-                        <Link href={`/${post.slug}`} class="px-6 py-4">
-                            <span class='block text-[13px] font-medium opacity-60'>
+                    <ListItem class='mt-4 flex flex-col first:mt-4 bg-transparent hover:bg-post rounded-lg transition-all duration-200'>
+                        <Link href={`/${post.slug}`} class="px-3 py-1.5">
+                            <span class='block text-[13px] font-medium opacity-60 hover:opacity-100 transition-all duration-200'>
                                 {post.data.date}
                             </span>
                             
-                            <h3 class='mt-3 text-xl font-bold'>
+                            <h3 class='mt-3 text-xl font-bold opacity-80'>
                                 {post.data.title}
                             </h3>
                             
-                            <p class='mt-1 opacity-80 *:opacity-50'>
+                            <p class='mt-1 opacity-60 hover:opacity-100 *:opacity-50 transition-all duration-200'>
                                 {post.data.description}
                             </p>
-    
-                            <ul class='mt-3 flex flex-wrap gap-x-3 gap-y-1 opacity-60'>
-                                {post.data.tags.map((tag: string) => (
-                                    <li class='text-sm font-light italic'>
-                                        #{tag}
-                                    </li>
-                                ))}
-                            </ul>
                         </Link>
                     </ListItem>
                 ))
             }
         </List>
     </section>
-</Page>
+</Home>

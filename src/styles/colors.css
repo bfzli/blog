@@ -1,5 +1,5 @@
 * {
-    --light-default: #19253d;
+    --light-default: #111;
     --light-primary: #2a6cea;
     --light-neutral: #fefeff;
     --light-surface: #fcfcfc;
@@ -8,7 +8,7 @@
     --light-comment: #72809a;
     --light-post-bg: #f7f8fa;
 
-    --dark-default: #dee3ee;
+    --dark-default: #fff;
     --dark-primary: #81a7f1;
     --dark-neutral: #070e1d;
     --dark-surface: #0a0a0b;

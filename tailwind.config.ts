@@ -18,7 +18,7 @@ export default {
             },
             fontFamily: {
                 sans: ['DM Sans', ...fontFamily.sans],
-                mono: ['Inter', ...fontFamily.mono],
+                mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
             },
             minHeight: {
                 xs: '18rem',

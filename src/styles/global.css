@@ -1,11 +1,28 @@
-h1, h2, h3, h4, h5, h6 {
+h1, 
+h2, 
+h3, 
+h4, 
+h5, 
+h6, 
+p, 
+li, 
+blockquote,
+ul,
+ol,
+table,
+pre,
+code,
+kbd,
+samp,
+hr,
+hr {
     font-family: "DM Sans", sans-serif !important;
 }
 
-body {
-    font-family: "Inter", sans-serif !important;
-}
-
-hr {
-    opacity: .2;
+img,
+a {
+    -webkit-user-drag: none;
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
 }

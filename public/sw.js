@@ -16,25 +16,7 @@ const fonts = [
     '/fonts/dm-sans/DMSans-ExtraBold.ttf',
     '/fonts/dm-sans/DMSans-ExtraBoldItalic.ttf',
     '/fonts/dm-sans/DMSans-Black.ttf',
-    '/fonts/dm-sans/DMSans-BlackItalic.ttf',
-    '/fonts/inter/Inter_18pt-Thin.ttf',
-    '/fonts/inter/Inter_18pt-ThinItalic.ttf',
-    '/fonts/inter/Inter_18pt-ExtraLight.ttf',
-    '/fonts/inter/Inter_18pt-ExtraLightItalic.ttf',
-    '/fonts/inter/Inter_18pt-Light.ttf',
-    '/fonts/inter/Inter_18pt-LightItalic.ttf',
-    '/fonts/inter/Inter_18pt-Regular.ttf',
-    '/fonts/inter/Inter_18pt-Italic.ttf',
-    '/fonts/inter/Inter_18pt-Medium.ttf',
-    '/fonts/inter/Inter_18pt-MediumItalic.ttf',
-    '/fonts/inter/Inter_18pt-SemiBold.ttf',
-    '/fonts/inter/Inter_18pt-SemiBoldItalic.ttf',
-    '/fonts/inter/Inter_18pt-Bold.ttf',
-    '/fonts/inter/Inter_18pt-BoldItalic.ttf',
-    '/fonts/inter/Inter_18pt-ExtraBold.ttf',
-    '/fonts/inter/Inter_18pt-ExtraBoldItalic.ttf',
-    '/fonts/inter/Inter_18pt-Black.ttf',
-    '/fonts/inter/Inter_18pt-BlackItalic.ttf',
+    '/fonts/dm-sans/DMSans-BlackItalic.ttf'
 ]
 
 self.addEventListener('install', async (event) => {
