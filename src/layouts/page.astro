@@ -64,7 +64,7 @@ const props = Astro.props as Props
     </head>
 
     <body class='overflow-y-scroll bg-surface text-default selection:bg-default selection:text-surface'>
-        <section class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 pt-10 pb-2 lg:px-16'>
+        <section class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 pt-6 pb-2 lg:px-16'>
             {
                 (Astro.url.pathname.startsWith('/products/') || 
                  (Astro.url.pathname !== '/' && 
@@ -93,7 +93,7 @@ const props = Astro.props as Props
                 )
             }
 
-            <main class='min-h-xs flex-1 px-2 py-14 sm:py-20'>
+            <main class='min-h-xs flex-1 px-2 py-14 pt-10 sm:py-20 sm:pt-12'>
                 <slot />
             </main>
 

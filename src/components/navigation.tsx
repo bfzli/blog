@@ -40,8 +40,8 @@ export const Navigation = (props: NavigationProps) => {
                         rel='prefetch'
                         classList={{
                             'px-3 py-1 rounded-md text-sm transition-all ease-in-out duration-200': true,
-                            'bg-surface text-default font-medium': isActive(tab.href),
-                            'text-comment hover:text-default': !isActive(tab.href),
+                            'bg-surface text-default font-medium cursor-default': isActive(tab.href),
+                            'text-comment hover:bg-white/40': !isActive(tab.href),
                         }}
                     >
                         {tab.name}
