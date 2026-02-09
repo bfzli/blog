@@ -7,6 +7,12 @@ export const ventures: Venture[] = [
         icon: '/projects/ip2geo.webp',
         url: 'https://ip2geo.dev',
     },
+    {
+        name: 'ClawHost',
+        description: 'One-click cloud hosting for OpenClaw AI agents.',
+        icon: '/projects/clawhost.webp',
+        url: 'https://clawhost.cloud',
+    },
 ]
 
 export const vibeCoding: VibeCoding[] = [
