@@ -1,11 +1,62 @@
-h1, h2, h3, h4, h5, h6 {
+h1, 
+h2, 
+h3, 
+h4, 
+h5, 
+h6, 
+p, 
+li, 
+blockquote,
+ul,
+ol,
+table,
+pre,
+code,
+kbd,
+samp,
+hr,
+hr {
     font-family: "DM Sans", sans-serif !important;
 }
 
-body {
-    font-family: "Inter", sans-serif !important;
+img,
+a {
+    -webkit-user-drag: none;
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
 }
 
-hr {
-    opacity: .2;
+::-webkit-scrollbar {
+    width: 4px;
+    height: 0px;
+}
+
+::-webkit-scrollbar:horizontal {
+    height: 0px;
+    width: 0px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #87878790;
+    border-radius: 0px
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #878787;
+    cursor: pointer;
+}
+
+::-webkit-scrollbar-track {
+    width: 3px;
+    background: #87878750;
+}
+
+.scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+    display: none;
 }

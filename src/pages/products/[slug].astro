@@ -1,0 +1,105 @@
+---
+import Page from '@/layouts/page.astro'
+import { H1, Link } from '@/components'
+import { vibeCoding } from '@/data/products'
+import { constants } from '@/config'
+import type { VibeCoding } from '@/types'
+
+export const getStaticPaths = async () => {
+    return vibeCoding.map((product) => ({ 
+        params: { slug: product.slug }, 
+        props: product 
+    }))
+}
+
+const product = Astro.props as VibeCoding
+const tags = [...new Set(product.tags)].sort()
+---
+
+<Page
+    title={`${product.name} - Benjamin Fazli`}
+    description={product.description}
+    keywords={`product, ${product.name.toLowerCase()}, ${tags.join(', ')}`}
+    image='/images/generals/cover.webp'
+    type='website'
+    tags={tags}
+>
+    <div class='mb-6'>
+        <Link href='/products' class='flex rounded-sm text-sm font-medium'>
+            <span class='mr-2'>←</span>
+            <span>Go back</span>
+        </Link>
+    </div>
+
+    <div class='flex items-center justify-between gap-4 mb-6'>
+        <div class='flex items-center gap-4'>
+            <div class='w-12 h-12 rounded-2xl bg-elevate flex items-center justify-center'>
+                <img 
+                    src={product.icon} 
+                    alt={product.name} 
+                    class='w-full h-full rounded-2xl object-contain'
+                />
+            </div>
+            <div class='flex flex-col'>
+                <H1 class='!mt-0 !mb-0 text-xl font-extrabold'>
+                    {product.name}
+                </H1>
+                <p class='text-sm opacity-75 leading-relaxed -mt-0.5'>
+                    {product.description}
+                </p>
+            </div>
+        </div>
+
+        <div class='flex-shrink-0 flex items-center'>
+            <Link 
+                href={product.url}
+                class='inline-flex items-center gap-2 px-3 py-1.5 bg-post hover:opacity-80 rounded-lg text-sm font-medium transition-all duration-200'
+            >
+                {
+                    product.actionIcon ? (
+                        <img 
+                            src={product.actionIcon} 
+                            alt='' 
+                            class='w-3.5 h-3.5'
+                        />
+                    ) : (
+                        <svg class='w-3.5 h-3.5' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
+                            <path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' />
+                            <polyline points='15 3 21 3 21 9' />
+                            <line x1='10' y1='14' x2='21' y2='3' />
+                        </svg>
+                    )
+                }
+                {product.actionText || 'Visit Site'}
+            </Link>
+        </div>
+    </div>
+
+    <p class='opacity-75 leading-relaxed'>
+        {product.longDescription}
+    </p>
+
+    <section id='privacy-policy' class='mt-12'>
+        <h2 class='text-xl font-bold mb-4'>Privacy Policy</h2>
+        <p class='opacity-75 leading-relaxed'>
+            {product.privacyPolicy}
+        </p>
+    </section>
+
+    <section id='support' class='mt-12'>
+        <h2 class='text-xl font-bold mb-4'>Support</h2>
+        <p class='opacity-75 leading-relaxed mb-4'>
+            If you have any questions, issues, or feedback about {product.name}, please don't hesitate to reach out to us. We're here to help and would love to hear from you.
+        </p>
+        <p class='opacity-75 leading-relaxed'>
+            You can contact us at{' '}
+            <Link 
+                href={constants.profile.links.email}
+                class='underline hover:opacity-80 transition-all duration-200'
+            >
+                {constants.profile.links.email.replace('mailto:', '')}
+            </Link>
+        </p>
+    </section>
+</Page>
+

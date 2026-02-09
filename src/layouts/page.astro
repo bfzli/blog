@@ -64,31 +64,41 @@ const props = Astro.props as Props
     </head>
 
     <body class='overflow-y-scroll bg-surface text-default selection:bg-default selection:text-surface'>
-        <section class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 pt-10 pb-2 lg:px-16'>
-            <header>
-                <nav class='flex justify-between'>
-                    {
-                        Astro.url.pathname !== '/' ?
-                        <a href='/' class='font-bold text-xl sm:text-2xl items-center gap-2 flex flex-row'>
-                            <img 
-                                src='/images/generals/avatar.webp' 
-                                alt='Benjamin' 
-                                class='w-7 h-7 rounded-full select-none' 
-                            />
+        <section class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 pt-6 pb-2 lg:px-16'>
+            {(() => {
+                const pathname = Astro.url.pathname.replace(/\/$/, '') || '/'
+                const isProductSinglePage = pathname.startsWith('/products/') && pathname !== '/products'
+                const isPostPage = pathname !== '/' && 
+                                  pathname !== '/products' && 
+                                  pathname !== '/resume' && 
+                                  pathname !== '/404' &&
+                                  !pathname.startsWith('/api/') &&
+                                  !pathname.startsWith('/products/')
+                
+                return (isProductSinglePage || isPostPage) && (
+                    <header>
+                        <nav class='flex justify-between'>
+                            <a href='/' class='font-bold text-xl sm:text-2xl items-center gap-2 flex flex-row'>
+                                <img 
+                                    src='/images/generals/avatar.webp' 
+                                    alt='Benjamin' 
+                                    class='w-7 h-7 rounded-full select-none' 
+                                />
 
-                            <h1 class='text-[17px] font-bold'>
-                                Benjamin
-                            </h1>
-                        </a> : <span />
-                    }
+                                <h1 class='text-[17px] font-bold'>
+                                    Benjamin
+                                </h1>
+                            </a>
 
-                    <button id='toggle-theme' aria-label='Toggle Theme' class='mx-1'>
-                        <Theme />
-                    </button>
-                </nav> 
-            </header>
+                            <button id='toggle-theme' aria-label='Toggle Theme' class='mx-1'>
+                                <Theme />
+                            </button>
+                        </nav> 
+                    </header>
+                )
+            })()}
 
-            <main class='min-h-xs flex-1 px-2 py-14 sm:py-20'>
+            <main class='min-h-xs flex-1 px-2 py-14 pt-10 sm:py-20 sm:pt-12'>
                 <slot />
             </main>
 
@@ -101,7 +111,7 @@ const props = Astro.props as Props
                     <ul class='flex flex-wrap justify-center gap-4 sm:gap-8'>
                         {
                             constants.links.external.map(({ name, link }) => (
-                                <li class='hover:opacity-80 transition-all duration-500 ease-in-out'>
+                                <li class='hover:opacity-80 transition-all duration-200'>
                                     <a href={link}>{name}</a>
                                 </li>
                             ))

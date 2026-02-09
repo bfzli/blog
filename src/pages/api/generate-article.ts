@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro'
 import OpenAI from 'openai'
+import type { QueueItem, GithubFileResponse } from '@/types'
 
 export const prerender = false
 
@@ -8,16 +9,6 @@ const GITHUB_REPO = 'bfzli'
 const GITHUB_BRANCH = 'Production'
 const QUEUE_PATH = 'src/data/article-queue.json'
 const POSTS_PATH = 'src/content/posts'
-
-interface QueueItem {
-    topic: string
-    done: boolean
-}
-
-interface GithubFileResponse {
-    sha: string
-    content: string
-}
 
 async function getFileFromGithub(path: string, token: string): Promise<GithubFileResponse | null> {
     const response = await fetch(

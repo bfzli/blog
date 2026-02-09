@@ -1,4 +1,6 @@
 export * from '@/components/code'
+export * from '@/components/dynamic-age'
 export * from '@/components/link'
 export * from '@/components/mdx'
+export * from '@/components/navigation'
 export * from '@/components/typography'

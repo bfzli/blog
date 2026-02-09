@@ -2,19 +2,12 @@
   "name": "bfzli",
   "version": "1.0.0",
   "description": "A place where I share my thoughts and learnings 💭",
-  "author": "Benjamin Fazli <bfzli@hotmail.com> (https://bfzli.com)",
+  "author": "Benjamin Fazli <me@bfzli.com> (https://bfzli.com)",
   "license": "MIT",
   "repository": {
     "url": "https://github.com/bfzli/blog"
   },
   "scripts": {
-    "dev": "astro dev --port 9999",
-    "build": "astro build",
-    "preview": "astro build; astro preview --port 8888",
-    "check": "astro check && tsc",
-    "format": "prettier -w 'src/**/*.{astro,css,html,json,md,mdx,js,jsx,ts,tsx}'",
-    "lint": "eslint --fix 'src/**/*.{astro,js,jsx,ts,tsx}'",
-    "generate-thumbnails": "node scripts/generate-thumbnails.js",
     "www:dev": "astro dev --port 9999",
     "www:build": "astro build",
     "www:preview": "astro build; astro preview --port 8888",
@@ -54,6 +47,8 @@
   "dependencies": {
     "@astrojs/partytown": "^2.1.1",
     "@astrojs/vercel": "^7.8.2",
+    "@types/canvas-confetti": "^1.9.0",
+    "canvas-confetti": "^1.9.4",
     "openai": "^6.10.0"
   }
 }
