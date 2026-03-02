@@ -2,6 +2,12 @@ import type { Venture, VibeCoding } from '@/types'
 
 export const ventures: Venture[] = [
     {
+        name: 'Envless',
+        description: 'Environment variables, without the mess.',
+        icon: '/projects/envless.webp',
+        url: 'https://envless.cloud',
+    },
+    {
         name: 'Ip2Geo',
         description: 'Programmatically convert IP\'s into GEO location data.',
         icon: '/projects/ip2geo.webp',
