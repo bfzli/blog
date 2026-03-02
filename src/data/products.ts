@@ -25,7 +25,7 @@ export const vibeCoding: VibeCoding[] = [
     {
         slug: 'focux',
         name: 'Focux',
-        description: 'Focus On What Matters Most',
+        description: 'Focus On What Matters Most.',
         longDescription: 'Focux is a Chrome extension designed to help you stay focused and productive while browsing the web. It blocks distracting websites, tracks your browsing habits, and provides insights into how you spend your time online. Whether you are working on a project, studying, or just trying to be more mindful of your screen time, Focux helps you take control of your browsing experience.',
         icon: '/projects/focux.webp',
         url: 'https://chromewebstore.google.com/detail/focux-focus-on-what-matte/galdchdmjdpoacaombhheafeikflcfad',
@@ -37,7 +37,7 @@ export const vibeCoding: VibeCoding[] = [
     {
         slug: 'muslim-tab',
         name: 'Muslim Tab',
-        description: 'Each Tab, a Reflection',
+        description: 'Each Tab, a Reflection.',
         longDescription: 'Muslim Tab transforms your new tab page into a peaceful space for Islamic inspiration. Every time you open a new tab, you are greeted with beautiful backgrounds, daily Quran verses, Hadith reminders, and accurate prayer times based on your location. It is designed to help you stay connected to your faith throughout the day while browsing the web.',
         icon: '/projects/muslim-tab.webp',
         url: 'https://chromewebstore.google.com/detail/muslim-tab-each-tab-a-ref/jjnohnifpemmdnbidcgcojdjfabfocgm',
