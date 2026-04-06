@@ -21,7 +21,7 @@ export const ventures: Venture[] = [
     },
     {
         name: 'Pikëgjaku',
-        description: 'Dhuro gjak — sot për dikë, nesër për ty..',
+        description: 'Dhuro gjak — sot për dikë, nesër për ty.',
         icon: '/projects/pikegjaku.webp',
         url: 'https://pikegjaku.com',
     }
