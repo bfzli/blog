@@ -35,13 +35,3 @@ export interface VibeCoding {
 export interface NavigationProps {
     currentPath: string
 }
-
-export interface QueueItem {
-    topic: string
-    done: boolean
-}
-
-export interface GithubFileResponse {
-    sha: string
-    content: string
-}
