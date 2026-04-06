@@ -15,7 +15,7 @@ const profile = {
 
 export const constants = {
     profile,
-    site: 'https://bfzli.com/',
+    site: 'https://bfzli.com',
     links: {
         external: [
             { name: 'Email', link: profile.links.email },

@@ -14,6 +14,7 @@ export default defineConfig({
     devToolbar: { enabled: false },
     site: SITE_URL,
     trailingSlash: 'never',
+    build: { format: 'file' },
     adapter: cloudflare({ imageService: 'compile' }),
     vite: { resolve: { alias: { '@': '/src' } } },
     prefetch: { defaultStrategy: 'hover' },
