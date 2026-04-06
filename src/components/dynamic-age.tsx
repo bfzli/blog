@@ -1,15 +1,14 @@
-import { createSignal, onMount, onCleanup } from 'solid-js'
-import { calculateAge, formatAge } from '@/utils/age'
+import type { DynamicAgeProps } from '@/types/Types'
+
 import confetti from 'canvas-confetti'
 
-interface DynamicAgeProps {
-    birthDate: string | Date
-}
+import { createSignal, onMount, onCleanup } from 'solid-js'
+import { calculateAge, formatAge } from '@/utils/age'
 
 export const DynamicAge = (props: DynamicAgeProps) => {
     const birthDate = typeof props.birthDate === 'string' ? new Date(props.birthDate) : props.birthDate
+    
     const [age, setAge] = createSignal(calculateAge(birthDate))
-    const STORAGE_KEY = 'bfzli-25th-birthday-confetti'
 
     const triggerConfetti = () => {
         const duration = 5000
@@ -42,48 +41,33 @@ export const DynamicAge = (props: DynamicAgeProps) => {
     }
 
     onMount(() => {
-        const updateAge = () => {
-            const currentAge = calculateAge(birthDate)
-            setAge(currentAge)
+        let frameId: number
 
-            const now = new Date()
-            const currentMonth = now.getMonth()
-            const currentDay = now.getDate()
-            const birthMonth = birthDate.getMonth()
-            const birthDay = birthDate.getDate()
-
-            const isBirthday = currentMonth === birthMonth && currentDay === birthDay
-            const is25thBirthday = currentAge >= 25.0 && currentAge < 26.0
-
-            if (isBirthday && is25thBirthday) {
-                const lastTriggered = localStorage.getItem(STORAGE_KEY)
-                const today = now.toDateString()
-                const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-                if (lastTriggered !== today && !prefersReducedMotion) {
-                    localStorage.setItem(STORAGE_KEY, today)
-                    triggerConfetti()
-                }
-            } else {
-                const lastTriggered = localStorage.getItem(STORAGE_KEY)
-                if (lastTriggered) {
-                    const birthday2026 = new Date(2026, birthMonth, birthDay + 1)
-
-                    if (now > birthday2026) {
-                        localStorage.removeItem(STORAGE_KEY)
-                    }
-                }
-            }
+        const tick = () => {
+            setAge(calculateAge(birthDate))
+            frameId = requestAnimationFrame(tick)
         }
 
-        updateAge()
-        const intervalId = setInterval(updateAge, 1000)
+        frameId = requestAnimationFrame(tick)
+
+        const checkBirthday = () => {
+            const now = new Date()
+            const isBirthday = now.getMonth() === birthDate.getMonth() && now.getDate() === birthDate.getDate()
+            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+            if (isBirthday && !prefersReducedMotion) triggerConfetti()
+        }
+
+        checkBirthday()
+        const birthdayInterval = setInterval(checkBirthday, 60000)
 
         onCleanup(() => {
-            clearInterval(intervalId)
+            cancelAnimationFrame(frameId)
+            clearInterval(birthdayInterval)
         })
     })
 
-    return <span class="font-mono text-[0.875rem]">{formatAge(age())}</span>
+    return <span class="font-mono text-[0.875rem]">
+        {formatAge(age())}
+    </span>
 }
-

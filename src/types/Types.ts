@@ -35,3 +35,12 @@ export interface VibeCoding {
 export interface NavigationProps {
     currentPath: string
 }
+
+export interface DynamicAgeProps {
+    birthDate: string | Date
+}
+
+export interface OgImageProps {
+    title: string
+    description: string
+}

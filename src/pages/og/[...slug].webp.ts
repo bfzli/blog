@@ -1,4 +1,5 @@
 import type { APIRoute, GetStaticPaths } from 'astro'
+import type { OgImageProps } from '@/types/Types'
 
 import { getCollection } from 'astro:content'
 import { vibeCoding } from '@/data/products'
@@ -44,7 +45,7 @@ export const getStaticPaths: GetStaticPaths = async () => {
 }
 
 export const GET: APIRoute = async ({ props }) => {
-    const { title, description } = props as { title: string; description: string }
+    const { title, description } = props as OgImageProps
     const image = await generateOgImage(title, description)
 
     return new Response(image, {
