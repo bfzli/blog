@@ -104,14 +104,10 @@ const props = Astro.props as Props
     <body class='overflow-y-scroll bg-surface text-default selection:bg-default selection:text-surface'>
         <section class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 pt-6 pb-2 lg:px-16'>
             {(() => {
-                const pathname = Astro.url.pathname.replace(/\/$/, '') || '/'
+                const pathname = Astro.url.pathname.replace(/\/$/, '').replace(/\.html$/, '') || '/'
+                const isHomePage = pathname === '/' || pathname === '/products' || pathname === '/resume' || pathname === '/404'
                 const isProductSinglePage = pathname.startsWith('/products/') && pathname !== '/products'
-                const isPostPage = pathname !== '/' && 
-                                  pathname !== '/products' && 
-                                  pathname !== '/resume' && 
-                                  pathname !== '/404' &&
-                                  !pathname.startsWith('/api/') &&
-                                  !pathname.startsWith('/products/')
+                const isPostPage = !isHomePage && !pathname.startsWith('/api/') && !pathname.startsWith('/products/')
                 
                 return (isProductSinglePage || isPostPage) && (
                     <header>
