@@ -3,5 +3,5 @@ dist
 node_modules
 scripts
 .env
-.vercel
+.wrangler
 **/*.DS_Store
