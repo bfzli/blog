@@ -1,28 +1,29 @@
 ---
-import Page from '@/layouts/page.astro'
+import type { Props } from '@/types'
 
+import { Image } from 'astro:assets'
+import Page from '@/layouts/page.astro'
+import ThemeToggle from '@/components/theme-toggle.astro'
 import { Navigation, DynamicAge } from '@/components'
 import { constants } from '@/config'
-import { Theme } from '@/icons'
-
-import type { Props } from '@/types'
+import avatar from '@/assets/generals/avatar.webp'
 
 const props = Astro.props as Props
 ---
 
 <Page {...props}>
     <header class='flex justify-end -mt-12 sm:-mt-18 mb-6'>
-        <button id='toggle-theme' aria-label='Toggle Theme' class='mx-1'>
-            <Theme />
-        </button>
+        <ThemeToggle />
     </header>
 
     <div transition:persist="home-header">
-        <img 
-            src='/images/generals/avatar.webp' 
-            alt='Benjamin' 
-            ondragstart="return false"
-            class='w-24 mb-6 h-24 rounded-full select-none' 
+        <Image
+            src={avatar}
+            alt='Benjamin'
+            width={96}
+            height={96}
+            class='w-24 mb-6 h-24 rounded-full select-none'
+            draggable={false}
         />
 
         <h1 class='mt-4 mb-2 text-4xl font-bold'>

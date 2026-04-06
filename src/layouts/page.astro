@@ -1,24 +1,38 @@
 ---
+import type { Props } from '@/types'
+
 import '@/styles/fonts.css'
 import '@/styles/colors.css'
 import '@/styles/global.css'
 import '@/styles/syntax.css'
 import '@/styles/layers.css'
 
-import type { Props } from '@/types'
-
+import { Image } from 'astro:assets'
+import { ClientRouter } from 'astro:transitions'
+import ThemeToggle from '@/components/theme-toggle.astro'
 import { constants } from '@/config'
-import { Theme } from '@/icons'
+import avatar from '@/assets/generals/avatar.webp'
 
 const { profile } = constants
 const props = Astro.props as Props
 ---
 
-<html lang='en' color-scheme='auto' dir='ltr'>
+<html lang='en' dir='ltr'>
     <head>
+        <script is:inline>
+            (function() {
+                var theme = localStorage.getItem('theme') || 'light'
+                document.documentElement.setAttribute('color-scheme', theme)
+                var meta = document.querySelector('meta[name="theme-color"]')
+                if (meta) meta.setAttribute('content', theme === 'dark' ? '#0a0a0b' : '#fcfcfc')
+            })()
+        </script>
         <meta charset='utf-8' />
         <meta name='theme-color' content='#fcfcfc' />
         <meta name='color-scheme' content='light dark' />
+
+        <link rel='preload' href='/fonts/dm-sans/DMSans-Regular.woff2' as='font' type='font/woff2' crossorigin />
+        <link rel='preload' href='/fonts/dm-sans/DMSans-Bold.woff2' as='font' type='font/woff2' crossorigin />
         <meta name='viewport' content='width=device-width, initial-scale=1.0' />
         <meta name='robots' content='index,follow' />
         <meta name='googlebot' content='index,follow' />
@@ -53,6 +67,30 @@ const props = Astro.props as Props
             {props.title}
         </title>
 
+        <script type='application/ld+json' set:html={JSON.stringify({
+            '@context': 'https://schema.org',
+            '@graph': [
+                {
+                    '@type': 'WebSite',
+                    name: profile.name,
+                    url: constants.site,
+                },
+                {
+                    '@type': 'Person',
+                    name: profile.name,
+                    url: constants.site,
+                    jobTitle: 'Software Engineer',
+                    sameAs: [
+                        profile.links.github,
+                        profile.links.linkedIn,
+                        profile.links.twitter,
+                    ],
+                },
+            ],
+        })} />
+
+        <ClientRouter />
+
         <script type='text/partytown' async src='https://www.googletagmanager.com/gtag/js?id=G-96RJ6ZFW3Y'></script>
         <script type='text/partytown'>
             window.dataLayer = window.dataLayer || [];
@@ -79,10 +117,12 @@ const props = Astro.props as Props
                     <header>
                         <nav class='flex justify-between'>
                             <a href='/' class='font-bold text-xl sm:text-2xl items-center gap-2 flex flex-row'>
-                                <img 
-                                    src='/images/generals/avatar.webp' 
-                                    alt='Benjamin' 
-                                    class='w-7 h-7 rounded-full select-none' 
+                                <Image
+                                    src={avatar}
+                                    alt='Benjamin'
+                                    width={28}
+                                    height={28}
+                                    class='w-7 h-7 rounded-full select-none'
                                 />
 
                                 <h1 class='text-[17px] font-bold'>
@@ -90,9 +130,7 @@ const props = Astro.props as Props
                                 </h1>
                             </a>
 
-                            <button id='toggle-theme' aria-label='Toggle Theme' class='mx-1'>
-                                <Theme />
-                            </button>
+                            <ThemeToggle />
                         </nav> 
                     </header>
                 )
@@ -124,23 +162,22 @@ const props = Astro.props as Props
         <script is:inline>
             if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js')
 
-            const theme = {
-                initial: () => {
-                    if (localStorage.getItem('theme')) return localStorage.getItem('theme')
-                    if (matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'
-                    return 'light'
-                },
-                current: () => document.documentElement.getAttribute('color-scheme'),
-                    set: (theme) => {
-                    document.documentElement.setAttribute('color-scheme', theme)
-                    localStorage.setItem('theme', theme)
-                },
+            function setTheme(t) {
+                document.documentElement.setAttribute('color-scheme', t)
+                localStorage.setItem('theme', t)
+                var meta = document.querySelector('meta[name="theme-color"]')
+                if (meta) meta.setAttribute('content', t === 'dark' ? '#0a0a0b' : '#fcfcfc')
             }
 
-            theme.set(theme.initial())
-            const toggle = () => theme.set(theme.current() === 'light' ? 'dark' : 'light')
+            function currentTheme() {
+                return document.documentElement.getAttribute('color-scheme')
+            }
 
-            document.querySelector('#toggle-theme')?.addEventListener('click', toggle)
+            document.addEventListener('astro:page-load', function() {
+                document.querySelector('#toggle-theme')?.addEventListener('click', function() {
+                    setTheme(currentTheme() === 'light' ? 'dark' : 'light')
+                })
+            })
         </script>
     </body>
 </html>

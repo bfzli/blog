@@ -11,10 +11,12 @@ import { defineConfig } from 'astro/config'
 const SITE_URL = 'https://bfzli.com'
 
 export default defineConfig({
+    devToolbar: { enabled: false },
     site: SITE_URL,
-    adapter: cloudflare(),
+    trailingSlash: 'never',
+    adapter: cloudflare({ imageService: 'compile' }),
     vite: { resolve: { alias: { '@': '/src' } } },
-    prefetch: { prefetchAll: true },
+    prefetch: { defaultStrategy: 'hover' },
     markdown: { 
         syntaxHighlight: false, 
         rehypePlugins: [prism] 

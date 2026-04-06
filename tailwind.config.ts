@@ -3,7 +3,6 @@ import { fontFamily } from 'tailwindcss/defaultTheme'
 
 export default {
     content: ['src/**/*.{astro,md,mdx,js,ts,jsx,tsx}'],
-    darkMode: 'media',
     theme: {
         extend: {
             colors: {

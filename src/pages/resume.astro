@@ -1,13 +1,15 @@
 ---
+import { Image } from 'astro:assets'
 import Home from '@/layouts/home.astro'
 import { experience, technical } from '@/data/resume'
+import { getExperienceImage } from '@/utils/images'
 ---
 
 <Home
     title='Resume - Benjamin Fazli'
     description='Resume of Benjamin Fazli - Software Engineer'
     keywords='resume, cv, curriculum vitae, benjamin fazli, software engineer'
-    image='/images/generals/cover.webp'
+    image='/og/resume.webp'
     type='website'
 >
     <div class="mt-8 grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-12">
@@ -18,9 +20,11 @@ import { experience, technical } from '@/data/resume'
                 {experience.map((job) => (
                     <div class="flex gap-4">
                         <div class="flex-shrink-0 w-10 h-10 rounded-xl bg-elevate flex items-center justify-center overflow-hidden">
-                            <img 
-                                src={`/experiences/${job.company.toLowerCase()}.webp`}
+                            <Image
+                                src={getExperienceImage(job.company)}
                                 alt={job.company}
+                                width={40}
+                                height={40}
                                 class="w-full h-full object-cover"
                             />
                         </div>
@@ -53,9 +57,13 @@ import { experience, technical } from '@/data/resume'
                         <ul class="space-y-2">
                             {technical.languages.map((skill) => (
                                 <li class="flex items-center gap-2 text-sm text-default opacity-80">
-                                    <img 
-                                        src={`https://cdn.simpleicons.org/${skill.icon}`} 
+                                    <img
+                                        src={`https://cdn.simpleicons.org/${skill.icon}`}
                                         alt={skill.name}
+                                        width={16}
+                                        height={16}
+                                        loading="lazy"
+                                        decoding="async"
                                         class="w-4 h-4 rounded-xl"
                                     />
                                     {skill.name}
@@ -69,9 +77,13 @@ import { experience, technical } from '@/data/resume'
                         <ul class="space-y-2">
                             {technical.tools.map((skill) => (
                                 <li class="flex items-center gap-2 text-sm text-default opacity-80">
-                                    <img 
-                                        src={`https://cdn.simpleicons.org/${skill.icon}`} 
+                                    <img
+                                        src={`https://cdn.simpleicons.org/${skill.icon}`}
                                         alt={skill.name}
+                                        width={16}
+                                        height={16}
+                                        loading="lazy"
+                                        decoding="async"
                                         class="w-4 h-4 rounded-xl"
                                     />
                                     {skill.name}
@@ -85,9 +97,13 @@ import { experience, technical } from '@/data/resume'
                         <ul class="space-y-2">
                             {technical.devops.map((skill) => (
                                 <li class="flex items-center gap-2 text-sm text-default opacity-80">
-                                    <img 
-                                        src={`https://cdn.simpleicons.org/${skill.icon}`} 
+                                    <img
+                                        src={`https://cdn.simpleicons.org/${skill.icon}`}
                                         alt={skill.name}
+                                        width={16}
+                                        height={16}
+                                        loading="lazy"
+                                        decoding="async"
                                         class="w-4 h-4 rounded-xl"
                                     />
                                     {skill.name}
@@ -101,9 +117,13 @@ import { experience, technical } from '@/data/resume'
                         <ul class="space-y-2">
                             {technical.others.map((skill) => (
                                 <li class="flex items-center gap-2 text-sm text-default opacity-80">
-                                    <img 
-                                        src={`https://cdn.simpleicons.org/${skill.icon}`} 
+                                    <img
+                                        src={`https://cdn.simpleicons.org/${skill.icon}`}
                                         alt={skill.name}
+                                        width={16}
+                                        height={16}
+                                        loading="lazy"
+                                        decoding="async"
                                         class="w-4 h-4 rounded-xl"
                                     />
                                     {skill.name}

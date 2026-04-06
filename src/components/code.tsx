@@ -12,7 +12,7 @@ export const Code = (props: ComponentProps<'code'>) => {
         >
 
             <div class='group relative'>
-                <button class='copy-code absolute right-2 top-2 z-10 hidden rounded-sm bg-elevate px-2 py-1 text-xs font-medium group-hover:block'>
+                <button type='button' aria-label='Copy code' class='copy-code absolute right-2 top-2 z-10 rounded-sm bg-elevate px-2 py-1 text-xs font-medium opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity'>
                     Copy
                 </button>
 

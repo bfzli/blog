@@ -42,8 +42,6 @@ export const DynamicAge = (props: DynamicAgeProps) => {
     }
 
     onMount(() => {
-        let animationFrameId: number
-
         const updateAge = () => {
             const currentAge = calculateAge(birthDate)
             setAge(currentAge)
@@ -60,8 +58,9 @@ export const DynamicAge = (props: DynamicAgeProps) => {
             if (isBirthday && is25thBirthday) {
                 const lastTriggered = localStorage.getItem(STORAGE_KEY)
                 const today = now.toDateString()
+                const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-                if (lastTriggered !== today) {
+                if (lastTriggered !== today && !prefersReducedMotion) {
                     localStorage.setItem(STORAGE_KEY, today)
                     triggerConfetti()
                 }
@@ -69,20 +68,19 @@ export const DynamicAge = (props: DynamicAgeProps) => {
                 const lastTriggered = localStorage.getItem(STORAGE_KEY)
                 if (lastTriggered) {
                     const birthday2026 = new Date(2026, birthMonth, birthDay + 1)
-                    
+
                     if (now > birthday2026) {
                         localStorage.removeItem(STORAGE_KEY)
                     }
                 }
             }
-
-            animationFrameId = requestAnimationFrame(updateAge)
         }
 
-        animationFrameId = requestAnimationFrame(updateAge)
+        updateAge()
+        const intervalId = setInterval(updateAge, 1000)
 
         onCleanup(() => {
-            cancelAnimationFrame(animationFrameId)
+            clearInterval(intervalId)
         })
     })
 

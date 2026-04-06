@@ -60,29 +60,6 @@
     --syntax-highline: var(--light-syntax-highline);
 }
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        color-scheme: dark;
-        --default: var(--dark-default);
-        --primary: var(--dark-primary);
-        --neutral: var(--dark-neutral);
-        --surface: var(--dark-surface);
-        --element: var(--dark-element);
-        --elevate: var(--dark-elevate);
-        --comment: var(--dark-comment);
-        --post: var(--dark-post-bg);
-
-        --syntax-keywords: var(--dark-syntax-keywords);
-        --syntax-selector: var(--dark-syntax-selector);
-        --syntax-warnings: var(--dark-syntax-warnings);
-        --syntax-property: var(--dark-syntax-property);
-        --syntax-function: var(--dark-syntax-function);
-        --syntax-surround: var(--dark-syntax-surround);
-        --syntax-comments: var(--dark-syntax-comments);
-        --syntax-modified: var(--dark-syntax-modified);
-        --syntax-highline: var(--dark-syntax-highline);
-    }
-}
 
 [color-scheme='light'] {
     color-scheme: light;

@@ -2,7 +2,7 @@ const profile = {
     name: 'Benjamin Fazli',
     title: 'Benjamin Fazli - Software Engineer',
     description: 'Expresing my thoughts and ideas through code and writing.',
-    image: '/images/generals/cover.webp',
+    image: '/og/index.webp',
     username: 'bfzli',
     birthDate: new Date('2001-01-17'),
     links: {

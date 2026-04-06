@@ -2,7 +2,7 @@ import type { ComponentProps } from 'solid-js'
 import type { HeadingProps } from "@/types"
 
 const styles = {
-    blockquote: 'border-l-4 border-elevate pl-4 italic font-medium my-2',
+    blockquote: 'border-l-4 border-elevate pl-4 font-medium my-2',
     h1: 'font-bold mt-0 mb-4 text-4xl leading-tight',
     h2: 'font-bold mt-10 text-2xl bg-surface leading-none sticky top-0 py-5 z-20',
     h3: 'font-bold mt-10 mb-4 text-xl',

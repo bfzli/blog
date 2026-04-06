@@ -1,9 +1,12 @@
 ---
+import type { VibeCoding } from '@/types'
+
+import { Image } from 'astro:assets'
 import Page from '@/layouts/page.astro'
 import { H1, Link } from '@/components'
 import { vibeCoding } from '@/data/products'
 import { constants } from '@/config'
-import type { VibeCoding } from '@/types'
+import { getProjectImage } from '@/utils/images'
 
 export const getStaticPaths = async () => {
     return vibeCoding.map((product) => ({ 
@@ -20,7 +23,7 @@ const tags = [...new Set(product.tags)].sort()
     title={`${product.name} - Benjamin Fazli`}
     description={product.description}
     keywords={`product, ${product.name.toLowerCase()}, ${tags.join(', ')}`}
-    image='/images/generals/cover.webp'
+    image={`/og/products/${product.slug}.webp`}
     type='website'
     tags={tags}
 >
@@ -34,9 +37,11 @@ const tags = [...new Set(product.tags)].sort()
     <div class='flex items-center justify-between gap-4 mb-6'>
         <div class='flex items-center gap-4'>
             <div class='w-12 h-12 rounded-2xl bg-elevate flex items-center justify-center'>
-                <img 
-                    src={product.icon} 
-                    alt={product.name} 
+                <Image
+                    src={getProjectImage(product.icon)}
+                    alt={product.name}
+                    width={48}
+                    height={48}
                     class='w-full h-full rounded-2xl object-contain'
                 />
             </div>
@@ -57,9 +62,13 @@ const tags = [...new Set(product.tags)].sort()
             >
                 {
                     product.actionIcon ? (
-                        <img 
-                            src={product.actionIcon} 
-                            alt='' 
+                        <img
+                            src={product.actionIcon}
+                            alt=''
+                            width={14}
+                            height={14}
+                            loading="lazy"
+                            decoding="async"
                             class='w-3.5 h-3.5'
                         />
                     ) : (
