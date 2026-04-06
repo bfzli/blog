@@ -1,5 +1,27 @@
-<body>
-    <script is:inline>
-        window.location.pathname = '/'
-    </script>
-</body>
+---
+import Home from '@/layouts/home.astro'
+---
+
+<Home
+    title='Page Not Found - Benjamin Fazli'
+    description='The page you are looking for does not exist.'
+    keywords='404, not found'
+    image='/images/generals/cover.webp'
+    type='website'
+>
+    <section class='mt-8'>
+        <h2 class='text-2xl font-bold'>Page Not Found</h2>
+
+        <p class='mt-4 opacity-70 leading-relaxed'>
+            The page you're looking for doesn't exist or has been moved.
+        </p>
+
+        <a
+            href='/'
+            class='mt-6 inline-flex items-center gap-2 text-sm font-medium text-primary hover:opacity-80 transition-opacity'
+        >
+            <span>←</span>
+            <span>Back to Home</span>
+        </a>
+    </section>
+</Home>

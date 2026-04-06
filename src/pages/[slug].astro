@@ -1,8 +1,10 @@
 ---
-import Page from '@/layouts/page.astro'
+import type { CollectionEntry } from 'astro:content'
 
-import { CollectionEntry, getCollection } from 'astro:content'
+import { getCollection } from 'astro:content'
+import Page from '@/layouts/page.astro'
 import { H1, Link, MDXComponents } from '@/components'
+import { constants } from '@/config'
 
 export const getStaticPaths = async () => {
     const posts = await getCollection('posts')
@@ -14,6 +16,7 @@ export const getStaticPaths = async () => {
 }
 
 const post = Astro.props as CollectionEntry<'posts'>
+
 const tags = [...new Set(post.data.tags)].sort()
 const { Content } = await post.render()
 
@@ -34,6 +37,29 @@ const { Content } = await post.render()
         </Link>
     </div>
 
+    <script type='application/ld+json' set:html={JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline: post.data.title,
+        description: post.data.description,
+        image: constants.site + `/images/posts/${post.slug}.webp`,
+        datePublished: new Date(post.data.date).toISOString(),
+        author: {
+            '@type': 'Person',
+            name: constants.profile.name,
+            url: constants.site,
+        },
+        publisher: {
+            '@type': 'Person',
+            name: constants.profile.name,
+        },
+        mainEntityOfPage: {
+            '@type': 'WebPage',
+            '@id': constants.site + `/${post.slug}`,
+        },
+        keywords: tags.join(', '),
+    })} />
+
     <H1>
         {post.data.title}
     </H1>
@@ -43,9 +69,9 @@ const { Content } = await post.render()
     </p>
 
     <div class='mt-5 text-[13px]'>
-        <span class='opacity-70'>
+        <time datetime={post.data.date} class='opacity-70'>
             {post.data.date}
-        </span>
+        </time>
     </div>
 
     <hr class='h-8 border-0' />
@@ -71,15 +97,17 @@ const { Content } = await post.render()
     }
 
     <script is:inline>
-        document.querySelectorAll('.copy-code').forEach((button) => {
-            button.addEventListener('click', (event) => {
-                navigator.clipboard
-                .writeText(String(event.target.nextSibling?.textContent))
-                .then(() => (event.target.textContent = 'Copied!'))
-                .catch(() => (event.target.textContent = 'Not supported'))
-            })
+        document.addEventListener('astro:page-load', function() {
+            document.querySelectorAll('.copy-code').forEach(function(button) {
+                button.addEventListener('click', function(event) {
+                    navigator.clipboard
+                    .writeText(String(event.target.nextSibling?.textContent))
+                    .then(function() { event.target.textContent = 'Copied!' })
+                    .catch(function() { event.target.textContent = 'Not supported' })
+                })
 
-            button.addEventListener('blur', (event) => (event.target.textContent = 'Copy'))
+                button.addEventListener('blur', function(event) { event.target.textContent = 'Copy' })
+            })
         })
     </script>
 </Page>

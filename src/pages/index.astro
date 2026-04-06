@@ -1,12 +1,10 @@
 ---
-import Home from '@/layouts/home.astro'
-
 import { getCollection } from 'astro:content'
+import Home from '@/layouts/home.astro'
 import { Link, List, ListItem } from '@/components'
 
 const posts = (await getCollection('posts')).sort((a, z) => +new Date(z.data.date) - +new Date(a.data.date))
 const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
-
 ---
 <Home
     title='Software Engineer - Benjamin Fazli'
@@ -25,9 +23,9 @@ const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
                 posts?.map((post) => (
                     <ListItem class='mt-4 flex flex-col first:mt-4 bg-transparent hover:bg-post rounded-lg transition-all duration-200'>
                         <Link href={`/${post.slug}`} class="p-3">
-                            <span class='block text-[13px] font-medium opacity-60 hover:opacity-100 transition-all duration-200'>
+                            <time datetime={post.data.date} class='block text-[13px] font-medium opacity-60 hover:opacity-100 transition-all duration-200'>
                                 {post.data.date}
-                            </span>
+                            </time>
                             
                             <h3 class='mt-3 text-xl font-bold opacity-80'>
                                 {post.data.title}

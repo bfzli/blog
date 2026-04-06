@@ -12,9 +12,10 @@ const SITE_URL = 'https://bfzli.com'
 
 export default defineConfig({
     site: SITE_URL,
+    trailingSlash: 'never',
     adapter: cloudflare(),
     vite: { resolve: { alias: { '@': '/src' } } },
-    prefetch: { prefetchAll: true },
+    prefetch: { defaultStrategy: 'hover' },
     markdown: { 
         syntaxHighlight: false, 
         rehypePlugins: [prism] 

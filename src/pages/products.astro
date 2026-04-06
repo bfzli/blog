@@ -1,7 +1,10 @@
 ---
+import type { Venture, VibeCoding } from '@/types'
+
+import { Image } from 'astro:assets'
 import Home from '@/layouts/home.astro'
 import { ventures, vibeCoding } from '@/data/products'
-import type { Venture, VibeCoding } from '@/types'
+import { getProjectImage } from '@/utils/images'
 ---
 
 <Home
@@ -25,9 +28,11 @@ import type { Venture, VibeCoding } from '@/types'
                     >
                         <div class='flex items-start gap-4'>
                             <div class='w-12 h-12 rounded-2xl bg-elevate flex items-center justify-center'>
-                                <img 
-                                    src={product.icon} 
-                                    alt={product.name} 
+                                <Image
+                                    src={getProjectImage(product.icon)}
+                                    alt={product.name}
+                                    width={48}
+                                    height={48}
                                     class='w-full h-full rounded-2xl object-contain'
                                 />
                             </div>
@@ -48,15 +53,17 @@ import type { Venture, VibeCoding } from '@/types'
         <ul class='mt-4 space-y-4'>
             {vibeCoding.map((product: VibeCoding) => (
                 <li>
-                    <a 
+                    <a
                         href={`/products/${product.slug}`}
                         class='block bg-transparent hover:bg-post rounded-lg p-1.5 transition-all duration-200'
                     >
                         <div class='flex items-start gap-4'>
                             <div class='w-12 h-12 rounded-2xl bg-elevate flex items-center justify-center'>
-                                <img 
-                                    src={product.icon} 
-                                    alt={product.name} 
+                                <Image
+                                    src={getProjectImage(product.icon)}
+                                    alt={product.name}
+                                    width={48}
+                                    height={48}
                                     class='w-full h-full rounded-2xl object-contain'
                                 />
                             </div>
