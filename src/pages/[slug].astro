@@ -25,7 +25,7 @@ const { Content } = await post.render()
     title={`${post.data.title} - Benjamin Fazli`}
     description={post.data.description}
     keywords={`blog, post, ${tags.join(', ')}`}
-    image={`/images/posts/${post.slug}.webp`}
+    image={`/og/${post.slug}.webp`}
     type='article'
     date={post.data.date}
     tags={tags}
@@ -42,7 +42,7 @@ const { Content } = await post.render()
         '@type': 'Article',
         headline: post.data.title,
         description: post.data.description,
-        image: constants.site + `/images/posts/${post.slug}.webp`,
+        image: constants.site + `/og/${post.slug}.webp`,
         datePublished: new Date(post.data.date).toISOString(),
         author: {
             '@type': 'Person',

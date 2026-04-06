@@ -23,7 +23,7 @@ const tags = [...new Set(product.tags)].sort()
     title={`${product.name} - Benjamin Fazli`}
     description={product.description}
     keywords={`product, ${product.name.toLowerCase()}, ${tags.join(', ')}`}
-    image='/images/generals/cover.webp'
+    image={`/og/products/${product.slug}.webp`}
     type='website'
     tags={tags}
 >

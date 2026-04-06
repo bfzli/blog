@@ -40,8 +40,8 @@ export const Navigation = (props: NavigationProps) => {
                         rel='prefetch'
                         aria-current={isActive(tab.href) ? 'page' : undefined}
                         classList={{
-                            'px-3 py-1 rounded-md text-sm transition-all ease-in-out duration-200': true,
-                            'bg-surface text-default font-medium cursor-default': isActive(tab.href),
+                            'px-3 py-1 rounded-md text-sm font-medium transition-all ease-in-out duration-200': true,
+                            'bg-surface text-default cursor-default': isActive(tab.href),
                             'text-comment hover:bg-white/40': !isActive(tab.href),
                         }}
                     >

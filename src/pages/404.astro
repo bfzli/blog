@@ -1,27 +1,28 @@
 ---
-import Home from '@/layouts/home.astro'
+import Page from '@/layouts/page.astro'
 ---
 
-<Home
+<Page
     title='Page Not Found - Benjamin Fazli'
     description='The page you are looking for does not exist.'
     keywords='404, not found'
-    image='/images/generals/cover.webp'
+    image='/og/index.webp'
     type='website'
 >
-    <section class='mt-8'>
-        <h2 class='text-2xl font-bold'>Page Not Found</h2>
+    <div class='absolute inset-0 flex flex-col items-center justify-center text-center'>
+        <h1 class='text-3xl font-bold'>Page Not Found</h1>
 
-        <p class='mt-4 opacity-70 leading-relaxed'>
-            The page you're looking for doesn't exist or has been moved.
+        <p class='mt-3 opacity-60 leading-relaxed'>
+            The page you're looking for doesn't exist<br />
+            or has been moved.
         </p>
 
         <a
             href='/'
-            class='mt-6 inline-flex items-center gap-2 text-sm font-medium text-primary hover:opacity-80 transition-opacity'
+            class='mt-8 inline-flex items-center gap-2 text-sm font-medium text-primary hover:opacity-80 transition-opacity'
         >
             <span>←</span>
             <span>Back to Home</span>
         </a>
-    </section>
-</Home>
+    </div>
+</Page>
