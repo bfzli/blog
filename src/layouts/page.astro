@@ -7,15 +7,22 @@ import '@/styles/layers.css'
 
 import type { Props } from '@/types'
 
+import { ClientRouter } from 'astro:transitions'
 import { constants } from '@/config'
-import { Theme } from '@/icons'
+import ThemeToggle from '@/components/theme-toggle.astro'
 
 const { profile } = constants
 const props = Astro.props as Props
 ---
 
-<html lang='en' color-scheme='auto' dir='ltr'>
+<html lang='en' dir='ltr'>
     <head>
+        <script is:inline>
+            (function() {
+                var theme = localStorage.getItem('theme') || 'light'
+                document.documentElement.setAttribute('color-scheme', theme)
+            })()
+        </script>
         <meta charset='utf-8' />
         <meta name='theme-color' content='#fcfcfc' />
         <meta name='color-scheme' content='light dark' />
@@ -52,6 +59,8 @@ const props = Astro.props as Props
         <title>
             {props.title}
         </title>
+
+        <ClientRouter />
 
         <script type='text/partytown' async src='https://www.googletagmanager.com/gtag/js?id=G-96RJ6ZFW3Y'></script>
         <script type='text/partytown'>
@@ -90,9 +99,7 @@ const props = Astro.props as Props
                                 </h1>
                             </a>
 
-                            <button id='toggle-theme' aria-label='Toggle Theme' class='mx-1'>
-                                <Theme />
-                            </button>
+                            <ThemeToggle />
                         </nav> 
                     </header>
                 )
@@ -124,23 +131,20 @@ const props = Astro.props as Props
         <script is:inline>
             if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js')
 
-            const theme = {
-                initial: () => {
-                    if (localStorage.getItem('theme')) return localStorage.getItem('theme')
-                    if (matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'
-                    return 'light'
-                },
-                current: () => document.documentElement.getAttribute('color-scheme'),
-                    set: (theme) => {
-                    document.documentElement.setAttribute('color-scheme', theme)
-                    localStorage.setItem('theme', theme)
-                },
+            function setTheme(t) {
+                document.documentElement.setAttribute('color-scheme', t)
+                localStorage.setItem('theme', t)
             }
 
-            theme.set(theme.initial())
-            const toggle = () => theme.set(theme.current() === 'light' ? 'dark' : 'light')
+            function currentTheme() {
+                return document.documentElement.getAttribute('color-scheme')
+            }
 
-            document.querySelector('#toggle-theme')?.addEventListener('click', toggle)
+            document.addEventListener('astro:page-load', function() {
+                document.querySelector('#toggle-theme')?.addEventListener('click', function() {
+                    setTheme(currentTheme() === 'light' ? 'dark' : 'light')
+                })
+            })
         </script>
     </body>
 </html>

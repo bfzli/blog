@@ -3,7 +3,7 @@ import Page from '@/layouts/page.astro'
 
 import { Navigation, DynamicAge } from '@/components'
 import { constants } from '@/config'
-import { Theme } from '@/icons'
+import ThemeToggle from '@/components/theme-toggle.astro'
 
 import type { Props } from '@/types'
 
@@ -12,9 +12,7 @@ const props = Astro.props as Props
 
 <Page {...props}>
     <header class='flex justify-end -mt-12 sm:-mt-18 mb-6'>
-        <button id='toggle-theme' aria-label='Toggle Theme' class='mx-1'>
-            <Theme />
-        </button>
+        <ThemeToggle />
     </header>
 
     <div transition:persist="home-header">
