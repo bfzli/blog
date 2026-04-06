@@ -13,7 +13,7 @@ const SITE_URL = 'https://bfzli.com'
 export default defineConfig({
     devToolbar: { enabled: false },
     site: SITE_URL,
-    trailingSlash: 'always',
+    trailingSlash: 'never',
     adapter: cloudflare({ imageService: 'compile' }),
     vite: { resolve: { alias: { '@': '/src' } } },
     prefetch: { defaultStrategy: 'hover' },

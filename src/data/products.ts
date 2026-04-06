@@ -19,6 +19,12 @@ export const ventures: Venture[] = [
         icon: '/projects/clawhost.webp',
         url: 'https://clawhost.cloud',
     },
+    {
+        name: 'Pikëgjaku',
+        description: 'Dhuro gjak — sot për dikë, nesër për ty..',
+        icon: '/projects/pikegjaku.webp',
+        url: 'https://pikegjaku.com',
+    }
 ]
 
 export const vibeCoding: VibeCoding[] = [
@@ -45,5 +51,5 @@ export const vibeCoding: VibeCoding[] = [
         actionIcon: 'https://cdn.simpleicons.org/google',
         tags: ['chrome-extension', 'islamic', 'prayer-times', 'new-tab', 'browser-extension'],
         privacyPolicy: 'Muslim Tab is committed to protecting your privacy. We do not collect, store, or share any personal data whatsoever. Location data, if used, is processed exclusively on your device to calculate prayer times and is never sent to any server or third-party service. We do not use any analytics, tracking tools, or data collection mechanisms. All preferences, settings, and data are stored locally in your browser and never leave your device. Your privacy is completely protected, and you can use Muslim Tab with complete confidence that your data remains yours alone.',
-    },
+    }
 ]
