@@ -2,16 +2,17 @@ import mdx from '@astrojs/mdx'
 import sitemap from '@astrojs/sitemap'
 import solid from '@astrojs/solid-js'
 import tailwind from '@astrojs/tailwind'
-import vercel from '@astrojs/vercel'
+import cloudflare from '@astrojs/cloudflare'
 import prism from 'rehype-prism-plus'
 import partytown from '@astrojs/partytown'
 
 import { defineConfig } from 'astro/config'
 
+const SITE_URL = 'https://bfzli.com'
+
 export default defineConfig({
-    site: 'https://bfzli.com',
-    output: 'static',
-    adapter: vercel(),
+    site: SITE_URL,
+    adapter: cloudflare(),
     vite: { resolve: { alias: { '@': '/src' } } },
     prefetch: { prefetchAll: true },
     markdown: { 
