@@ -1,0 +1,6 @@
+name = "bfzli-www"
+compatibility_date = "2026-04-06"
+pages_build_output_dir = "./dist"
+
+[assets]
+html_handling = "drop-trailing-slash"
