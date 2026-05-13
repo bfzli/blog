@@ -15,7 +15,7 @@ export type Props = {
 export interface Venture {
     name: string
     description: string
-    icon: string
+    icon: ImageMetadata
     url: string
 }
 
@@ -24,7 +24,7 @@ export interface VibeCoding {
     name: string
     description: string
     longDescription: string
-    icon: string
+    icon: ImageMetadata
     url: string
     privacyPolicy: string
     tags: string[]
@@ -32,12 +32,29 @@ export interface VibeCoding {
     actionIcon?: string
 }
 
-export interface NavigationProps {
-    currentPath: string
+export interface Experience {
+    company: string
+    title: string
+    date: string
+    logo?: ImageMetadata
+    bullets: string[]
 }
 
-export interface DynamicAgeProps {
-    birthDate: string | Date
+export interface Skill {
+    name: string
+    icon: string
+}
+
+export interface Product {
+    name: string
+    description: string
+    icon: ImageMetadata
+    href: string
+    external?: boolean
+}
+
+export interface NavigationProps {
+    currentPath: string
 }
 
 export interface OgImageProps {

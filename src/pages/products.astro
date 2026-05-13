@@ -1,80 +1,21 @@
 ---
-import type { Venture, VibeCoding } from '@/types'
-
-import { Image } from 'astro:assets'
-import Home from '@/layouts/home.astro'
+import { Home } from '@/layouts'
+import { ProductList } from '@/components'
 import { ventures, vibeCoding } from '@/data/products'
-import { getProjectImage } from '@/utils/images'
+import { staticPages } from '@/data/pages'
+
+const ventureItems = ventures.map((v) => ({ ...v, href: v.url, external: true }))
+const vibeItems = vibeCoding.map((v) => ({ ...v, href: `/products/${v.slug}`, external: false }))
+const meta = staticPages.products
 ---
 
 <Home
-    title='Products - Benjamin Fazli'
-    description='Products and projects by Benjamin Fazli'
-    keywords='products, projects, software, development'
-    image='/og/products.webp'
+    title={meta.title}
+    description={meta.description}
+    keywords={meta.keywords}
+    image={`/og/${meta.slug}.webp`}
     type='website'
 >
-    <section class="mt-8">
-        <h2 class='text-2xl font-bold'>Missions</h2>
-
-        <ul class='mt-4 space-y-4'>
-            {ventures.map((product: Venture) => (
-                <li>
-                    <a 
-                        href={product.url}
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        class='block bg-transparent hover:bg-post rounded-lg p-1.5 transition-all duration-200'
-                    >
-                        <div class='flex items-start gap-4'>
-                            <div class='w-12 h-12 rounded-2xl bg-elevate flex items-center justify-center'>
-                                <Image
-                                    src={getProjectImage(product.icon)}
-                                    alt={product.name}
-                                    width={48}
-                                    height={48}
-                                    class='w-full h-full rounded-2xl object-contain'
-                                />
-                            </div>
-                            <div class='flex-1 min-w-0'>
-                                <h3 class='text-lg font-semibold opacity-80 hover:opacity-100 transition-all duration-200'>{product.name}</h3>
-                                <p class='-mt-1 text-sm opacity-60 hover:opacity-100 leading-relaxed transition-all duration-200'>{product.description}</p>
-                            </div>
-                        </div>
-                    </a>
-                </li>
-            ))}
-        </ul>
-    </section>
-
-    <section class="mt-12">
-        <h2 class='text-2xl font-bold'>Vibe Coding</h2>
-
-        <ul class='mt-4 space-y-4'>
-            {vibeCoding.map((product: VibeCoding) => (
-                <li>
-                    <a
-                        href={`/products/${product.slug}`}
-                        class='block bg-transparent hover:bg-post rounded-lg p-1.5 transition-all duration-200'
-                    >
-                        <div class='flex items-start gap-4'>
-                            <div class='w-12 h-12 rounded-2xl bg-elevate flex items-center justify-center'>
-                                <Image
-                                    src={getProjectImage(product.icon)}
-                                    alt={product.name}
-                                    width={48}
-                                    height={48}
-                                    class='w-full h-full rounded-2xl object-contain'
-                                />
-                            </div>
-                            <div class='flex-1 min-w-0'>
-                                <h3 class='text-lg font-semibold opacity-80 hover:opacity-100 transition-all duration-200'>{product.name}</h3>
-                                <p class='-mt-1 text-sm opacity-60 hover:opacity-100 leading-relaxed transition-all duration-200'>{product.description}</p>
-                            </div>
-                        </div>
-                    </a>
-                </li>
-            ))}
-        </ul>
-    </section>
+    <ProductList title='Missions' items={ventureItems} />
+    <ProductList title='Vibe Coding' items={vibeItems} class='mt-12' />
 </Home>

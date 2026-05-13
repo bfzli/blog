@@ -13,10 +13,15 @@ export default {
                 elevate: 'var(--elevate)',
                 element: 'var(--element)',
                 comment: 'var(--comment)',
-                post: 'var(--post)'
+                post: 'var(--post)',
+                muted: 'var(--muted)',
+                soft: 'var(--soft)',
+                subtle: 'var(--subtle)',
+                'primary-hover': 'var(--primary-hover)',
+                'post-hover': 'var(--post-hover)'
             },
             fontFamily: {
-                sans: ['DM Sans', ...fontFamily.sans],
+                sans: ['Hanken Grotesk', ...fontFamily.sans],
                 mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
             },
             minHeight: {

@@ -1,43 +1,20 @@
 ---
 import { getCollection } from 'astro:content'
-import Home from '@/layouts/home.astro'
-import { Link, List, ListItem } from '@/components'
+import { Home } from '@/layouts'
+import { PostList } from '@/components'
+import { staticPages } from '@/data/pages'
 
 const posts = (await getCollection('posts')).sort((a, z) => +new Date(z.data.date) - +new Date(a.data.date))
 const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
+const meta = staticPages.index
 ---
+
 <Home
-    title='Software Engineer - Benjamin Fazli'
-    description='A place where I share my thoughts and learnings 💭'
-    keywords={`uses, tools, web, software, personal, website, blog development, environment, ${tags.join(', ')}`}
-    image='/og/index.webp'
+    title={meta.title}
+    description={meta.description}
+    keywords={`${meta.keywords}, ${tags.join(', ')}`}
+    image={`/og/${meta.slug}.webp`}
     type='website'
 >
-    <section>
-        <h2 class='mt-8 text-2xl font-bold'>
-            Recent Posts
-        </h2>
-
-        <List class='mt-4'>
-            {
-                posts?.map((post) => (
-                    <ListItem class='mt-4 flex flex-col first:mt-4 bg-transparent hover:bg-post rounded-lg transition-all duration-200'>
-                        <Link href={`/${post.slug}`} class="p-3">
-                            <time datetime={post.data.date} class='block text-[13px] font-medium opacity-60 hover:opacity-100 transition-all duration-200'>
-                                {post.data.date}
-                            </time>
-                            
-                            <h3 class='mt-3 text-xl font-bold opacity-80'>
-                                {post.data.title}
-                            </h3>
-                            
-                            <p class='mt-1 opacity-60 hover:opacity-100 *:opacity-50 transition-all duration-200'>
-                                {post.data.description}
-                            </p>
-                        </Link>
-                    </ListItem>
-                ))
-            }
-        </List>
-    </section>
+    <PostList title='Recent Posts' items={posts} />
 </Home>

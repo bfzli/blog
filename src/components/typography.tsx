@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'solid-js'
-import type { HeadingProps } from "@/types"
+import type { HeadingProps } from '@/types'
 
 const styles = {
     blockquote: 'border-l-4 border-elevate pl-4 font-medium my-2',
@@ -13,7 +13,7 @@ const styles = {
     list: 'mb-6 ml-8 list-disc list-outside',
     listItem: 'mb-4 leading-relaxed text-base marker:text-default',
     strong: 'font-semibold',
-    text: 'mb-5 text-base leading-loose opacity-75',
+    text: 'mb-5 text-base leading-loose text-muted',
 }
 
 

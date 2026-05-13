@@ -46,9 +46,8 @@
   "dependencies": {
     "@astrojs/cloudflare": "^12.5.0",
     "@astrojs/partytown": "^2.1.4",
-    "@types/canvas-confetti": "^1.9.0",
-    "canvas-confetti": "^1.9.4",
     "satori": "^0.26.0",
-    "satori-html": "^0.3.2"
+    "satori-html": "^0.3.2",
+    "solid-heroicons": "^3.2.4"
   }
 }

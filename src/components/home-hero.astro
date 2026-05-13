@@ -1,0 +1,32 @@
+---
+import { Image } from 'astro:assets'
+import { Navigation, InlineLink } from '@/components'
+import { avatar } from '@/assets'
+---
+
+<div>
+    <Image
+        src={avatar}
+        alt='Benjamin'
+        width={96}
+        height={96}
+        class='w-24 mb-6 h-24 rounded-full select-none'
+        draggable={false}
+    />
+
+    <h1 class='mt-4 mb-2 text-4xl font-bold'>
+        Hello 👋, I'm Benjamin
+    </h1>
+
+    <section class='mb-4 mt-2 space-y-2'>
+        <h2 class='text-md font-normal leading-loose sm:leading-loose'>
+            A curious software engineer based in <InlineLink href='https://www.google.com/search?q=Skopje,+North+Macedonia'>Skopje, North Macedonia</InlineLink>, building products that solve real problems. Currently working on: <InlineLink href='https://envless.cloud'>@envless</InlineLink>, <InlineLink href='https://clawhost.cloud'>@clawhost</InlineLink>, <InlineLink href='https://pikegjaku.com'>@pikegjaku</InlineLink>, <InlineLink href='https://launchdock.sh'>@launchdock</InlineLink>, and <InlineLink href='https://ip2geo.dev'>@ip2geo</InlineLink>.
+        </h2>
+    </section>
+
+    <div class='h-[1px] bg-elevate w-full mt-8' />
+
+    <div class='mt-6'>
+        <Navigation currentPath={Astro.url.pathname} client:load />
+    </div>
+</div>

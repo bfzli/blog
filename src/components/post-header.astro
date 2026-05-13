@@ -1,0 +1,27 @@
+---
+import { H1 } from '@/components'
+
+interface Props {
+    title: string
+    description: string
+    date: string
+}
+
+const { title, description, date } = Astro.props
+---
+
+<H1>
+    {title}
+</H1>
+
+<p class='text-muted'>
+    {description}
+</p>
+
+<div class='mt-5 text-[13px]'>
+    <time datetime={date} class='text-soft'>
+        {date}
+    </time>
+</div>
+
+<hr class='h-8 border-0' />

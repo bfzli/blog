@@ -1,0 +1,36 @@
+---
+import { constants } from '@/config'
+
+interface Props {
+    slug: string
+    title: string
+    description: string
+    date: string
+    tags: string[]
+}
+
+const { slug, title, description, date, tags } = Astro.props
+---
+
+<script type='application/ld+json' set:html={JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: title,
+    description,
+    image: `${constants.site}/og/${slug}.webp`,
+    datePublished: new Date(date).toISOString(),
+    author: {
+        '@type': 'Person',
+        name: constants.profile.name,
+        url: constants.site,
+    },
+    publisher: {
+        '@type': 'Person',
+        name: constants.profile.name,
+    },
+    mainEntityOfPage: {
+        '@type': 'WebPage',
+        '@id': `${constants.site}/${slug}`,
+    },
+    keywords: tags.join(', '),
+})} />

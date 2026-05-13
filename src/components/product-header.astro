@@ -1,0 +1,28 @@
+---
+import type { VibeCoding } from '@/types'
+import { H1, ActionLink, IconTile } from '@/components'
+
+const product = Astro.props as VibeCoding
+---
+
+<div class='flex items-center justify-between gap-4 mb-6'>
+    <div class='flex items-center gap-4'>
+        <IconTile src={product.icon} alt={product.name} />
+        <div class='flex flex-col'>
+            <H1 class='!mt-0 !mb-0 text-xl font-extrabold'>
+                {product.name}
+            </H1>
+            <p class='text-sm text-muted leading-relaxed -mt-0.5'>
+                {product.description}
+            </p>
+        </div>
+    </div>
+
+    <div class='flex-shrink-0 flex items-center'>
+        <ActionLink
+            href={product.url}
+            label={product.actionText || 'Visit Site'}
+            icon={product.actionIcon}
+        />
+    </div>
+</div>

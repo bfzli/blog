@@ -1,0 +1,17 @@
+---
+---
+
+<script is:inline>
+    document.addEventListener('astro:page-load', function() {
+        document.querySelectorAll('.copy-code').forEach(function(button) {
+            button.addEventListener('click', function(event) {
+                navigator.clipboard
+                    .writeText(String(event.target.nextSibling?.textContent))
+                    .then(function() { event.target.textContent = 'Copied!' })
+                    .catch(function() { event.target.textContent = 'Not supported' })
+            })
+
+            button.addEventListener('blur', function(event) { event.target.textContent = 'Copy' })
+        })
+    })
+</script>

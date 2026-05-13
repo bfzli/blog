@@ -2,16 +2,15 @@
 import type { CollectionEntry } from 'astro:content'
 
 import { getCollection } from 'astro:content'
-import Page from '@/layouts/page.astro'
-import { H1, Link, MDXComponents } from '@/components'
-import { constants } from '@/config'
+import { Page } from '@/layouts'
+import { MDXComponents, BackLink, PostHeader, ActionLink, ArticleSchema, CopyCodeScript } from '@/components'
 
 export const getStaticPaths = async () => {
     const posts = await getCollection('posts')
-    
-    return posts.map((post) => ({ 
-        params: { slug: post.slug }, 
-        props: post 
+
+    return posts.map((post) => ({
+        params: { slug: post.slug },
+        props: post,
     }))
 }
 
@@ -19,8 +18,8 @@ const post = Astro.props as CollectionEntry<'posts'>
 
 const tags = [...new Set(post.data.tags)].sort()
 const { Content } = await post.render()
-
 ---
+
 <Page
     title={`${post.data.title} - Benjamin Fazli`}
     description={post.data.description}
@@ -30,84 +29,33 @@ const { Content } = await post.render()
     date={post.data.date}
     tags={tags}
 >
-    <div class='mb-6'>
-        <Link href='/' class='flex rounded-sm text-sm font-medium'>
-            <span class='mr-2'>←</span>
-            <span>Go back</span>
-        </Link>
-    </div>
+    <BackLink href='/' />
 
-    <script type='application/ld+json' set:html={JSON.stringify({
-        '@context': 'https://schema.org',
-        '@type': 'Article',
-        headline: post.data.title,
-        description: post.data.description,
-        image: constants.site + `/og/${post.slug}.webp`,
-        datePublished: new Date(post.data.date).toISOString(),
-        author: {
-            '@type': 'Person',
-            name: constants.profile.name,
-            url: constants.site,
-        },
-        publisher: {
-            '@type': 'Person',
-            name: constants.profile.name,
-        },
-        mainEntityOfPage: {
-            '@type': 'WebPage',
-            '@id': constants.site + `/${post.slug}`,
-        },
-        keywords: tags.join(', '),
-    })} />
+    <ArticleSchema
+        slug={post.slug}
+        title={post.data.title}
+        description={post.data.description}
+        date={post.data.date}
+        tags={tags}
+    />
 
-    <H1>
-        {post.data.title}
-    </H1>
-
-    <p class='opacity-75'>
-        {post.data.description}
-    </p>
-
-    <div class='mt-5 text-[13px]'>
-        <time datetime={post.data.date} class='opacity-70'>
-            {post.data.date}
-        </time>
-    </div>
-
-    <hr class='h-8 border-0' />
+    <PostHeader
+        title={post.data.title}
+        description={post.data.description}
+        date={post.data.date}
+    />
 
     <Content components={MDXComponents} />
 
-    {
-        post.data.actionUrl && post.data.actionText && (
-            <div class='mt-8'>
-                <Link 
-                    href={post.data.actionUrl}
-                    class='inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg font-medium hover:opacity-90 transition-all duration-200'
-                >
-                    <svg class='w-4 h-4' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
-                        <path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' />
-                        <polyline points='15 3 21 3 21 9' />
-                        <line x1='10' y1='14' x2='21' y2='3' />
-                    </svg>
-                    {post.data.actionText}
-                </Link>
-            </div>
-        )
-    }
+    {post.data.actionUrl && post.data.actionText && (
+        <div class='mt-8'>
+            <ActionLink
+                href={post.data.actionUrl}
+                label={post.data.actionText}
+                class='inline-flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium transition-colors duration-200'
+            />
+        </div>
+    )}
 
-    <script is:inline>
-        document.addEventListener('astro:page-load', function() {
-            document.querySelectorAll('.copy-code').forEach(function(button) {
-                button.addEventListener('click', function(event) {
-                    navigator.clipboard
-                    .writeText(String(event.target.nextSibling?.textContent))
-                    .then(function() { event.target.textContent = 'Copied!' })
-                    .catch(function() { event.target.textContent = 'Not supported' })
-                })
-
-                button.addEventListener('blur', function(event) { event.target.textContent = 'Copy' })
-            })
-        })
-    </script>
+    <CopyCodeScript />
 </Page>

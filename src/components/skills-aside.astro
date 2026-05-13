@@ -1,0 +1,22 @@
+---
+import type { Skill } from '@/types'
+import { SkillGroup } from '@/components'
+
+interface Props {
+    languages: Skill[]
+    tools: Skill[]
+    devops: Skill[]
+    others: Skill[]
+}
+
+const { languages, tools, devops, others } = Astro.props
+---
+
+<aside class='space-y-8'>
+    <div class='space-y-6'>
+        <SkillGroup title='Languages' items={languages} />
+        <SkillGroup title='Tools & Databases' items={tools} />
+        <SkillGroup title='DevOps & Cloud' items={devops} />
+        <SkillGroup title='AI & Others' items={others} />
+    </div>
+</aside>

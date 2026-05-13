@@ -1,0 +1,18 @@
+---
+import type { Skill } from '@/types'
+import { SkillItem } from '@/components'
+
+interface Props {
+    title: string
+    items: Skill[]
+}
+
+const { title, items } = Astro.props
+---
+
+<div>
+    <h3 class='font-bold text-default mb-3'>{title}</h3>
+    <ul class='space-y-2'>
+        {items.map((skill) => <SkillItem {...skill} />)}
+    </ul>
+</div>

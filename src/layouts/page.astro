@@ -7,173 +7,29 @@ import '@/styles/global.css'
 import '@/styles/syntax.css'
 import '@/styles/layers.css'
 
-import { Image } from 'astro:assets'
-import { ClientRouter } from 'astro:transitions'
-import ThemeToggle from '@/components/theme-toggle.astro'
-import { constants } from '@/config'
-import avatar from '@/assets/generals/avatar.webp'
+import { SiteHead, SiteHeader, SiteFooter, ThemeScript, Analytics } from '@/components'
 
-const { profile } = constants
 const props = Astro.props as Props
 ---
 
 <html lang='en' dir='ltr'>
     <head>
-        <script is:inline>
-            (function() {
-                var theme = localStorage.getItem('theme') || 'light'
-                document.documentElement.setAttribute('color-scheme', theme)
-                var meta = document.querySelector('meta[name="theme-color"]')
-                if (meta) meta.setAttribute('content', theme === 'dark' ? '#0a0a0b' : '#fcfcfc')
-            })()
-        </script>
-        <meta charset='utf-8' />
-        <meta name='theme-color' content='#fcfcfc' />
-        <meta name='color-scheme' content='light dark' />
-
-        <link rel='preload' href='/fonts/dm-sans/DMSans-Regular.woff2' as='font' type='font/woff2' crossorigin />
-        <link rel='preload' href='/fonts/dm-sans/DMSans-Bold.woff2' as='font' type='font/woff2' crossorigin />
-        <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-        <meta name='robots' content='index,follow' />
-        <meta name='googlebot' content='index,follow' />
-        <meta name='title' content={props.title} />
-        <meta name='description' content={props.description} />
-        <meta name='author' content={profile.name} />
-        <meta name='keywords' content={props.keywords} />
-        <meta property='og:locale' content='en' />
-        <meta property='og:site_name' content={profile.name} />
-        <meta property='og:title' content={props.title} />
-        <meta property='og:description' content={props.description} />
-        <meta property='og:image' content={constants.site + props.image} />
-        <meta property='og:image:alt' content={props.title} />
-        <meta property='og:type' content={props.type} />
-        <meta property='og:url' content={constants.site + Astro.url.pathname} />
-        <meta name='twitter:card' content='summary_large_image' />
-        <meta name='twitter:creator' content={`@${profile.username}`} />
-        <meta name='twitter:site' content={`@${profile.username}`} />
-        <meta name='twitter:title' content={props.title} />
-        <meta name='twitter:description' content={props.description} />
-        <meta name='twitter:url' content={constants.site + Astro.url.pathname} />
-        <meta name='twitter:image' content={constants.site + props.image} />
-        <meta name='twitter:image:alt' content={props.title} />
-
-        {props.date ? <meta property='article:published_time' content={new Date(props.date).toISOString()} /> : null}
-
-        <link rel='shortcut icon' type='image/ico' href='/favicon.ico' />
-        <link rel='sitemap' href='/sitemap-index.xml' />
-        <link rel='canonical' href={constants.site + Astro.url.pathname} />
-
-        <title>
-            {props.title}
-        </title>
-
-        <script type='application/ld+json' set:html={JSON.stringify({
-            '@context': 'https://schema.org',
-            '@graph': [
-                {
-                    '@type': 'WebSite',
-                    name: profile.name,
-                    url: constants.site,
-                },
-                {
-                    '@type': 'Person',
-                    name: profile.name,
-                    url: constants.site,
-                    jobTitle: 'Software Engineer',
-                    sameAs: [
-                        profile.links.github,
-                        profile.links.linkedIn,
-                        profile.links.twitter,
-                    ],
-                },
-            ],
-        })} />
-
-        <ClientRouter />
-
-        <script type='text/partytown' async src='https://www.googletagmanager.com/gtag/js?id=G-96RJ6ZFW3Y'></script>
-        <script type='text/partytown'>
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-
-            gtag('config', 'G-96RJ6ZFW3Y');
-        </script>
+        <ThemeScript placement='head' />
+        <SiteHead {...props} />
+        <Analytics />
     </head>
 
     <body class='overflow-y-scroll bg-surface text-default selection:bg-default selection:text-surface'>
         <section class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 pt-6 pb-2 lg:px-16'>
-            {(() => {
-                const pathname = Astro.url.pathname.replace(/\/$/, '').replace(/\.html$/, '') || '/'
-                const isHomePage = pathname === '/' || pathname === '/products' || pathname === '/resume' || pathname === '/404'
-                const isProductSinglePage = pathname.startsWith('/products/') && pathname !== '/products'
-                const isPostPage = !isHomePage && !pathname.startsWith('/api/') && !pathname.startsWith('/products/')
-                
-                return (isProductSinglePage || isPostPage) && (
-                    <header>
-                        <nav class='flex justify-between'>
-                            <a href='/' class='font-bold text-xl sm:text-2xl items-center gap-2 flex flex-row'>
-                                <Image
-                                    src={avatar}
-                                    alt='Benjamin'
-                                    width={28}
-                                    height={28}
-                                    class='w-7 h-7 rounded-full select-none'
-                                />
-
-                                <h1 class='text-[17px] font-bold'>
-                                    Benjamin
-                                </h1>
-                            </a>
-
-                            <ThemeToggle />
-                        </nav> 
-                    </header>
-                )
-            })()}
+            <SiteHeader />
 
             <main class='min-h-xs flex-1 px-2 py-14 pt-10 sm:py-20 sm:pt-12'>
                 <slot />
             </main>
 
-            <footer class='flex flex-col-reverse items-center justify-between gap-8 p-2 mt-32 text-sm md:flex-row md:gap-32'>
-                <span class='text-default opacity-70'>
-                    {new Date().getFullYear()} &copy; All rights reserved.
-                </span>
-
-                <nav class='flex items-center'>
-                    <ul class='flex flex-wrap justify-center gap-4 sm:gap-8'>
-                        {
-                            constants.links.external.map(({ name, link }) => (
-                                <li class='hover:opacity-80 transition-all duration-200'>
-                                    <a href={link}>{name}</a>
-                                </li>
-                            ))
-                        }
-                    </ul>
-                </nav>
-            </footer>
+            <SiteFooter />
         </section>
 
-        <script is:inline>
-            if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js')
-
-            function setTheme(t) {
-                document.documentElement.setAttribute('color-scheme', t)
-                localStorage.setItem('theme', t)
-                var meta = document.querySelector('meta[name="theme-color"]')
-                if (meta) meta.setAttribute('content', t === 'dark' ? '#0a0a0b' : '#fcfcfc')
-            }
-
-            function currentTheme() {
-                return document.documentElement.getAttribute('color-scheme')
-            }
-
-            document.addEventListener('astro:page-load', function() {
-                document.querySelector('#toggle-theme')?.addEventListener('click', function() {
-                    setTheme(currentTheme() === 'light' ? 'dark' : 'light')
-                })
-            })
-        </script>
+        <ThemeScript placement='body' />
     </body>
 </html>

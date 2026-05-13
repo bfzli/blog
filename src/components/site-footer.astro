@@ -1,0 +1,19 @@
+---
+import { constants } from '@/config'
+---
+
+<footer class='flex flex-col-reverse items-center justify-between gap-8 p-2 mt-32 text-sm md:flex-row md:gap-32'>
+    <span class='text-soft'>
+        {new Date().getFullYear()} &copy; All rights reserved.
+    </span>
+
+    <nav class='flex items-center'>
+        <ul class='flex flex-wrap justify-center gap-4 sm:gap-8'>
+            {constants.links.external.map(({ name, link }) => (
+                <li class='text-muted hover:text-default transition-colors duration-200'>
+                    <a href={link}>{name}</a>
+                </li>
+            ))}
+        </ul>
+    </nav>
+</footer>

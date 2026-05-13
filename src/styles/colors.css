@@ -6,7 +6,12 @@
     --light-element: #f5f6f7;
     --light-elevate: #edf0f6;
     --light-comment: #72809a;
-    --light-post-bg: #f7f8fa;
+    --light-post-bg: #f4f5f8;
+    --light-muted: #3a3a3d;
+    --light-soft: #5e5e63;
+    --light-subtle: #8a8a90;
+    --light-primary-hover: #2056c4;
+    --light-post-hover: #eaecf1;
 
     --dark-default: #fff;
     --dark-primary: #81a7f1;
@@ -15,7 +20,12 @@
     --dark-element: #0f182c;
     --dark-elevate: #1b263c;
     --dark-comment: #72809a;
-    --dark-post-bg: #30394c75;
+    --dark-post-bg: #141d30;
+    --dark-muted: #d3d3d6;
+    --dark-soft: #a8a8ad;
+    --dark-subtle: #828289;
+    --dark-primary-hover: #a3c0f5;
+    --dark-post-hover: #3a4458;
 
     --light-syntax-keywords: #d73a49;
     --light-syntax-selector: #22863a;
@@ -48,6 +58,11 @@
     --elevate: var(--light-elevate);
     --comment: var(--light-comment);
     --post: var(--light-post-bg);
+    --muted: var(--light-muted);
+    --soft: var(--light-soft);
+    --subtle: var(--light-subtle);
+    --primary-hover: var(--light-primary-hover);
+    --post-hover: var(--light-post-hover);
 
     --syntax-keywords: var(--light-syntax-keywords);
     --syntax-selector: var(--light-syntax-selector);
@@ -71,6 +86,11 @@
     --elevate: var(--light-elevate);
     --comment: var(--light-comment);
     --post: var(--light-post-bg);
+    --muted: var(--light-muted);
+    --soft: var(--light-soft);
+    --subtle: var(--light-subtle);
+    --primary-hover: var(--light-primary-hover);
+    --post-hover: var(--light-post-hover);
 
     --syntax-keywords: var(--light-syntax-keywords);
     --syntax-selector: var(--light-syntax-selector);
@@ -93,6 +113,11 @@
     --elevate: var(--dark-elevate);
     --comment: var(--dark-comment);
     --post: var(--dark-post-bg);
+    --muted: var(--dark-muted);
+    --soft: var(--dark-soft);
+    --subtle: var(--dark-subtle);
+    --primary-hover: var(--dark-primary-hover);
+    --post-hover: var(--dark-post-hover);
 
     --syntax-keywords: var(--dark-syntax-keywords);
     --syntax-selector: var(--dark-syntax-selector);

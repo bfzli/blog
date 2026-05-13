@@ -1,29 +1,36 @@
 import type { Venture, VibeCoding } from '@/types'
+import { envless, ip2geo, clawhost, pikegjaku, launchdock, focux, muslimTab } from '@/assets'
 
 export const ventures: Venture[] = [
     {
         name: 'Envless',
         description: 'Environment variables, without the mess.',
-        icon: '/projects/envless.webp',
+        icon: envless,
         url: 'https://envless.cloud',
     },
     {
         name: 'Ip2Geo',
         description: 'Programmatically convert IP\'s into GEO location data.',
-        icon: '/projects/ip2geo.webp',
+        icon: ip2geo,
         url: 'https://ip2geo.dev',
     },
     {
         name: 'ClawHost',
         description: 'One-click cloud hosting for OpenClaw AI agents.',
-        icon: '/projects/clawhost.webp',
+        icon: clawhost,
         url: 'https://clawhost.cloud',
     },
     {
         name: 'Pikëgjaku',
         description: 'Dhuro gjak — sot për dikë, nesër për ty.',
-        icon: '/projects/pikegjaku.webp',
+        icon: pikegjaku,
         url: 'https://pikegjaku.com',
+    },
+    {
+        name: 'Launchdock',
+        description: 'Where self-hosting takes off without limits.',
+        icon: launchdock,
+        url: 'https://launchdock.sh',
     }
 ]
 
@@ -33,7 +40,7 @@ export const vibeCoding: VibeCoding[] = [
         name: 'Focux',
         description: 'Focus On What Matters Most.',
         longDescription: 'Focux is a Chrome extension designed to help you stay focused and productive while browsing the web. It blocks distracting websites, tracks your browsing habits, and provides insights into how you spend your time online. Whether you are working on a project, studying, or just trying to be more mindful of your screen time, Focux helps you take control of your browsing experience.',
-        icon: '/projects/focux.webp',
+        icon: focux,
         url: 'https://chromewebstore.google.com/detail/focux-focus-on-what-matte/galdchdmjdpoacaombhheafeikflcfad',
         actionText: 'Install Extension',
         actionIcon: 'https://cdn.simpleicons.org/google',
@@ -45,7 +52,7 @@ export const vibeCoding: VibeCoding[] = [
         name: 'Muslim Tab',
         description: 'Each Tab, a Reflection.',
         longDescription: 'Muslim Tab transforms your new tab page into a peaceful space for Islamic inspiration. Every time you open a new tab, you are greeted with beautiful backgrounds, daily Quran verses, Hadith reminders, and accurate prayer times based on your location. It is designed to help you stay connected to your faith throughout the day while browsing the web.',
-        icon: '/projects/muslim-tab.webp',
+        icon: muslimTab,
         url: 'https://chromewebstore.google.com/detail/muslim-tab-each-tab-a-ref/jjnohnifpemmdnbidcgcojdjfabfocgm',
         actionText: 'Install Extension',
         actionIcon: 'https://cdn.simpleicons.org/google',

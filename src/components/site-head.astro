@@ -1,0 +1,77 @@
+---
+import type { Props as PageProps } from '@/types'
+import { ClientRouter } from 'astro:transitions'
+import { constants } from '@/config'
+
+const { profile } = constants
+const props = Astro.props as PageProps
+---
+
+<meta charset='utf-8' />
+<meta name='theme-color' content='#fcfcfc' />
+<meta name='color-scheme' content='light dark' />
+
+<link rel='preconnect' href='https://fonts.googleapis.com' />
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin />
+<link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&display=swap' />
+
+<meta name='viewport' content='width=device-width, initial-scale=1.0' />
+<meta name='robots' content='index,follow' />
+<meta name='googlebot' content='index,follow' />
+<meta name='title' content={props.title} />
+<meta name='description' content={props.description} />
+<meta name='author' content={profile.name} />
+<meta name='keywords' content={props.keywords} />
+<meta property='og:locale' content='en' />
+<meta property='og:site_name' content={profile.name} />
+<meta property='og:title' content={props.title} />
+<meta property='og:description' content={props.description} />
+<meta property='og:image' content={constants.site + props.image} />
+<meta property='og:image:alt' content={props.title} />
+<meta property='og:image:type' content='image/webp' />
+<meta property='og:image:width' content='1200' />
+<meta property='og:image:height' content='630' />
+<meta property='og:type' content={props.type} />
+<meta property='og:url' content={constants.site + Astro.url.pathname} />
+<meta name='twitter:card' content='summary_large_image' />
+<meta name='twitter:creator' content={`@${profile.username}`} />
+<meta name='twitter:site' content={`@${profile.username}`} />
+<meta name='twitter:title' content={props.title} />
+<meta name='twitter:description' content={props.description} />
+<meta name='twitter:url' content={constants.site + Astro.url.pathname} />
+<meta name='twitter:image' content={constants.site + props.image} />
+<meta name='twitter:image:alt' content={props.title} />
+
+{props.date ? <meta property='article:published_time' content={new Date(props.date).toISOString()} /> : null}
+
+<link rel='shortcut icon' type='image/ico' href='/favicon.ico' />
+<link rel='sitemap' href='/sitemap-index.xml' />
+<link rel='canonical' href={constants.site + Astro.url.pathname} />
+
+<title>
+    {props.title}
+</title>
+
+<script type='application/ld+json' set:html={JSON.stringify({
+    '@context': 'https://schema.org',
+    '@graph': [
+        {
+            '@type': 'WebSite',
+            name: profile.name,
+            url: constants.site,
+        },
+        {
+            '@type': 'Person',
+            name: profile.name,
+            url: constants.site,
+            jobTitle: 'Software Engineer',
+            sameAs: [
+                profile.links.github,
+                profile.links.linkedIn,
+                profile.links.twitter,
+            ],
+        },
+    ],
+})} />
+
+<ClientRouter />

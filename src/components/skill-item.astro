@@ -1,0 +1,18 @@
+---
+import type { Skill } from '@/types'
+
+const { name, icon } = Astro.props as Skill
+---
+
+<li class='flex items-center gap-2 text-sm text-muted'>
+    <img
+        src={icon}
+        alt={name}
+        width={16}
+        height={16}
+        loading='lazy'
+        decoding='async'
+        class='w-4 h-4 object-contain'
+    />
+    {name}
+</li>

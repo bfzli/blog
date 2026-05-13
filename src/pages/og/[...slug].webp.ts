@@ -1,27 +1,10 @@
 import type { APIRoute, GetStaticPaths } from 'astro'
-import type { OgImageProps } from '@/types/Types'
+import type { OgImageProps } from '@/types'
 
 import { getCollection } from 'astro:content'
 import { vibeCoding } from '@/data/products'
+import { staticPages } from '@/data/pages'
 import { generateOgImage } from '@/utils/og'
-
-const staticPages = [
-    {
-        slug: 'index',
-        title: 'Software Engineer - Benjamin Fazli',
-        description: 'A place where I share my thoughts and learnings.',
-    },
-    {
-        slug: 'products',
-        title: 'Products - Benjamin Fazli',
-        description: 'Products and projects by Benjamin Fazli.',
-    },
-    {
-        slug: 'resume',
-        title: 'Resume - Benjamin Fazli',
-        description: 'Resume of Benjamin Fazli - Software Engineer.',
-    },
-]
 
 export const getStaticPaths: GetStaticPaths = async () => {
     const posts = await getCollection('posts')
@@ -36,7 +19,7 @@ export const getStaticPaths: GetStaticPaths = async () => {
         props: { title: `${product.name} - Benjamin Fazli`, description: product.description },
     }))
 
-    const staticPaths = staticPages.map((page) => ({
+    const staticPaths = Object.values(staticPages).map((page) => ({
         params: { slug: page.slug },
         props: { title: page.title, description: page.description },
     }))
@@ -48,7 +31,7 @@ export const GET: APIRoute = async ({ props }) => {
     const { title, description } = props as OgImageProps
     const image = await generateOgImage(title, description)
 
-    return new Response(image, {
+    return new Response(new Uint8Array(image), {
         headers: {
             'Content-Type': 'image/webp',
             'Cache-Control': 'public, max-age=31536000, immutable',
