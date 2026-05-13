@@ -17,6 +17,7 @@ import SiteHead from '@/components/site-head.astro'
 import SiteHeader from '@/components/site-header.astro'
 import SiteFooter from '@/components/site-footer.astro'
 import ThemeScript from '@/components/theme-script.astro'
+import ServiceWorker from '@/components/service-worker.astro'
 import Analytics from '@/components/analytics.astro'
 import ArticleSchema from '@/components/article-schema.astro'
 import CopyCodeScript from '@/components/copy-code-script.astro'
@@ -49,6 +50,7 @@ export {
     SiteHeader,
     SiteFooter,
     ThemeScript,
+    ServiceWorker,
     Analytics,
     ArticleSchema,
     CopyCodeScript,

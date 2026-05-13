@@ -74,13 +74,14 @@ export const Navigation = (props: NavigationProps) => {
                 {(tab) => (
                     <a
                         ref={(el) => (tabRefs[tab.href] = el)}
-                        href={tab.href}
+                        href={isActive(tab.href) ? undefined : tab.href}
                         rel='prefetch'
                         aria-current={isActive(tab.href) ? 'page' : undefined}
+                        aria-disabled={isActive(tab.href) ? 'true' : undefined}
                         classList={{
                             'relative z-10 px-3 py-1 rounded-full text-sm font-medium transition-colors duration-200': true,
-                            'text-default cursor-pointer': isActive(tab.href),
-                            'text-comment hover:text-default cursor-pointer': !isActive(tab.href),
+                            'text-default pointer-events-none': isActive(tab.href),
+                            'text-comment hover:bg-post cursor-pointer': !isActive(tab.href),
                         }}
                     >
                         {tab.name}

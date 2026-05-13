@@ -1,5 +1,7 @@
 ---
 import { H1 } from '@/components'
+import { Icon } from 'solid-heroicons'
+import { calendar } from 'solid-heroicons/outline'
 
 interface Props {
     title: string
@@ -18,8 +20,9 @@ const { title, description, date } = Astro.props
     {description}
 </p>
 
-<div class='mt-5 text-[13px]'>
-    <time datetime={date} class='text-soft'>
+<div class='mt-5'>
+    <time datetime={date} class='inline-flex items-center gap-1.5 text-[12px] font-medium text-soft'>
+        <Icon path={calendar} class='w-3.5 h-3.5' aria-hidden='true' />
         {date}
     </time>
 </div>
