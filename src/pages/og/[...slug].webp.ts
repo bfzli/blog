@@ -6,6 +6,8 @@ import { vibeCoding } from '@/data/products'
 import { staticPages } from '@/data/pages'
 import { generateOgImage } from '@/utils/og'
 
+export const prerender = true
+
 export const getStaticPaths: GetStaticPaths = async () => {
     const posts = await getCollection('posts')
 
