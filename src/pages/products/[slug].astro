@@ -1,0 +1,60 @@
+---
+import type { VibeCoding } from '@/types'
+
+import { Page } from '@/layouts'
+import { Link, BackLink, ProductHeader } from '@/components'
+import { vibeCoding } from '@/data/products'
+import { constants } from '@/config'
+
+export const getStaticPaths = async () => {
+    return vibeCoding.map((product) => ({
+        params: { slug: product.slug },
+        props: product
+    }))
+}
+
+const product = Astro.props as VibeCoding
+const tags = [...new Set(product.tags)].sort()
+---
+
+<Page
+    title={`${product.name} - Benjamin Fazli`}
+    description={product.description}
+    keywords={`product, ${product.name.toLowerCase()}, ${tags.join(', ')}`}
+    image={`/og/products/${product.slug}.webp`}
+    type='website'
+    tags={tags}
+>
+    <BackLink href='/products' />
+
+    <ProductHeader {...product} />
+
+    <p class='leading-relaxed text-muted'>
+        {product.longDescription}
+    </p>
+
+    <section id='privacy-policy' class='mt-12'>
+        <h2 class='mb-4 text-xl font-bold'>Privacy Policy</h2>
+        <p class='leading-relaxed text-muted'>
+            {product.privacyPolicy}
+        </p>
+    </section>
+
+    <section id='support' class='mt-12'>
+        <h2 class='mb-4 text-xl font-bold'>Support</h2>
+        <p class='mb-4 leading-relaxed text-muted'>
+            If you have any questions, issues, or feedback about {product.name},
+            please don't hesitate to reach out to us. We're here to help and
+            would love to hear from you.
+        </p>
+        <p class='leading-relaxed text-muted'>
+            You can contact us at{' '}
+            <Link
+                href={constants.profile.links.email}
+                class='text-default underline transition-hover hover:text-muted'
+            >
+                {constants.profile.links.email.replace('mailto:', '')}
+            </Link>
+        </p>
+    </section>
+</Page>

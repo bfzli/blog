@@ -1,0 +1,21 @@
+---
+import { Home } from '@/layouts'
+import { ExperienceList, SkillsAside } from '@/components'
+import { experience, technical } from '@/data/resume'
+import { staticPages } from '@/data/pages'
+
+const meta = staticPages.resume
+---
+
+<Home
+    title={meta.title}
+    description={meta.description}
+    keywords={meta.keywords}
+    image={`/og/${meta.slug}.webp`}
+    type='website'
+>
+    <div class='mt-8 grid grid-cols-1 gap-12 lg:grid-cols-[2fr_1fr]'>
+        <ExperienceList items={experience} />
+        <SkillsAside {...technical} />
+    </div>
+</Home>

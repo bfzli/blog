@@ -1,0 +1,29 @@
+---
+import type { Product } from '@/types'
+import { IconTile } from '@/components'
+
+const {
+    name,
+    description,
+    icon,
+    href,
+    external = false
+} = Astro.props as Product
+---
+
+<li class='flex'>
+    <a
+        href={href}
+        target={external ? '_blank' : undefined}
+        rel={external ? 'noopener noreferrer' : undefined}
+        class='group flex w-full items-start gap-4 rounded-xl bg-post p-4 transition-hover hover:bg-post-hover'
+    >
+        <IconTile src={icon} alt={name} />
+        <div class='min-w-0 flex-1'>
+            <h3 class='text-lg font-semibold text-default'>{name}</h3>
+            <p class='-mt-1 text-sm leading-relaxed text-soft'>
+                {description}
+            </p>
+        </div>
+    </a>
+</li>

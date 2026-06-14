@@ -1,0 +1,18 @@
+---
+import type { Experience } from '@/types'
+import { ExperienceItem } from '@/components'
+
+interface Props {
+    items: Experience[]
+}
+
+const { items } = Astro.props
+---
+
+<section>
+    <h3 class='mb-3 font-bold text-default'>Experience</h3>
+
+    <div class='space-y-8'>
+        {items.map((job) => <ExperienceItem {...job} />)}
+    </div>
+</section>

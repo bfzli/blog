@@ -1,0 +1,66 @@
+body {
+    font-family:
+        'DM Sans',
+        -apple-system,
+        BlinkMacSystemFont,
+        'Segoe UI',
+        Roboto,
+        system-ui,
+        sans-serif;
+}
+
+code,
+pre,
+kbd,
+samp {
+    font-family:
+        'Space Grotesk', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        monospace;
+}
+
+img,
+a {
+    -webkit-user-drag: none;
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+}
+
+::-webkit-scrollbar {
+    width: 4px;
+    height: 0px;
+}
+
+::-webkit-scrollbar:horizontal {
+    height: 0px;
+    width: 0px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #87878790;
+    border-radius: 0px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #878787;
+    cursor: pointer;
+}
+
+::-webkit-scrollbar-track {
+    width: 3px;
+    background: #87878750;
+}
+
+.scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+}
+
+html[color-scheme='light'] .theme-icon-dark,
+html[color-scheme='dark'] .theme-icon-light {
+    display: none !important;
+}

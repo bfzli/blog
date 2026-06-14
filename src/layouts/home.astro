@@ -1,0 +1,17 @@
+---
+import type { Props } from '@/types'
+import { Page } from '@/layouts'
+import { HomeHero, ThemeToggle } from '@/components'
+
+const props = Astro.props as Props
+---
+
+<Page {...props}>
+    <header class='sm:-mt-18 -mt-12 mb-6 flex justify-end'>
+        <ThemeToggle />
+    </header>
+
+    <HomeHero />
+
+    <slot />
+</Page>

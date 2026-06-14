@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+    .transition-hover {
+        transition: all 400ms ease-in-out;
+    }
+}

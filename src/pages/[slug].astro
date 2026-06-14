@@ -1,0 +1,70 @@
+---
+import type { CollectionEntry } from 'astro:content'
+
+import { getCollection } from 'astro:content'
+import { Page } from '@/layouts'
+import {
+    MDXComponents,
+    BackLink,
+    PostHeader,
+    ActionLink,
+    ArticleSchema,
+    CopyCodeScript
+} from '@/components'
+
+export const getStaticPaths = async () => {
+    const posts = await getCollection('posts')
+
+    return posts.map((post) => ({
+        params: { slug: post.slug },
+        props: post
+    }))
+}
+
+const post = Astro.props as CollectionEntry<'posts'>
+
+const tags = [...new Set(post.data.tags)].sort()
+const { Content } = await post.render()
+---
+
+<Page
+    title={`${post.data.title} - Benjamin Fazli`}
+    description={post.data.description}
+    keywords={`blog, post, ${tags.join(', ')}`}
+    image={`/og/${post.slug}.webp`}
+    type='article'
+    date={post.data.date}
+    tags={tags}
+>
+    <BackLink href='/' />
+
+    <ArticleSchema
+        slug={post.slug}
+        title={post.data.title}
+        description={post.data.description}
+        date={post.data.date}
+        tags={tags}
+    />
+
+    <PostHeader
+        title={post.data.title}
+        description={post.data.description}
+        date={post.data.date}
+    />
+
+    <Content components={MDXComponents} />
+
+    {
+        post.data.actionUrl && post.data.actionText && (
+            <div class='mt-8'>
+                <ActionLink
+                    href={post.data.actionUrl}
+                    label={post.data.actionText}
+                    class='inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-hover hover:bg-primary-hover'
+                />
+            </div>
+        )
+    }
+
+    <CopyCodeScript />
+</Page>

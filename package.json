@@ -1,0 +1,50 @@
+{
+  "name": "bfzli",
+  "version": "1.0.0",
+  "description": "A place where I share my thoughts and learnings.",
+  "author": "Benjamin Fazli <me@bfzli.com> (https://bfzli.com)",
+  "license": "MIT",
+  "repository": {
+    "url": "https://github.com/bfzli/blog"
+  },
+  "scripts": {
+    "www:dev": "astro dev --port 9999",
+    "www:build": "npm run www:check && npm run www:lint && astro build",
+    "www:preview": "astro build; astro preview --port 8888",
+    "www:check": "astro check",
+    "www:format": "prettier -w 'src/**/*.{astro,css,html,json,md,mdx,js,jsx,ts,tsx}'",
+    "www:lint": "eslint --fix 'src/**/*.{astro,js,jsx,ts,tsx}'",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.6",
+    "@astrojs/mdx": "^4.3.13",
+    "@astrojs/sitemap": "^3.7.0",
+    "@astrojs/solid-js": "^5.1.3",
+    "@astrojs/tailwind": "^6.0.2",
+    "@typescript-eslint/eslint-plugin": "^7.1.1",
+    "@typescript-eslint/parser": "^7.1.1",
+    "astro": "^5.18.0",
+    "astro-eslint-parser": "^1.4.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-astro": "^0.31.4",
+    "eslint-plugin-jsx-a11y": "^6.8.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "eslint-plugin-solid": "^0.13.1",
+    "husky": "^9.1.7",
+    "prettier": "^3.2.5",
+    "prettier-plugin-astro": "^0.13.0",
+    "prettier-plugin-tailwindcss": "^0.5.12",
+    "rehype-prism-plus": "^2.0.0",
+    "sharp": "^0.33.4",
+    "solid-js": "^1.8.15",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.4.2"
+  },
+  "dependencies": {
+    "@astrojs/partytown": "^2.1.4",
+    "satori": "^0.26.0",
+    "solid-heroicons": "^3.2.4"
+  }
+}

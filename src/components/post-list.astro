@@ -1,0 +1,28 @@
+---
+import type { CollectionEntry } from 'astro:content'
+import { List, PostItem } from '@/components'
+
+interface Props {
+    title: string
+    items: CollectionEntry<'posts'>[]
+}
+
+const { title, items } = Astro.props
+---
+
+<section>
+    <h2 class='mt-8 text-2xl font-bold'>{title}</h2>
+
+    <List class='mt-4'>
+        {
+            items.map((post) => (
+                <PostItem
+                    slug={post.slug}
+                    date={post.data.date}
+                    title={post.data.title}
+                    description={post.data.description}
+                />
+            ))
+        }
+    </List>
+</section>

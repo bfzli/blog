@@ -1,0 +1,29 @@
+---
+import { Home } from '@/layouts'
+import { ProductList } from '@/components'
+import { ventures, vibeCoding } from '@/data/products'
+import { staticPages } from '@/data/pages'
+
+const ventureItems = ventures.map((v) => ({
+    ...v,
+    href: v.url,
+    external: true
+}))
+const vibeItems = vibeCoding.map((v) => ({
+    ...v,
+    href: `/products/${v.slug}`,
+    external: false
+}))
+const meta = staticPages.products
+---
+
+<Home
+    title={meta.title}
+    description={meta.description}
+    keywords={meta.keywords}
+    image={`/og/${meta.slug}.webp`}
+    type='website'
+>
+    <ProductList title='Missions' items={ventureItems} />
+    <ProductList title='Vibe Coding' items={vibeItems} class='mt-12' />
+</Home>

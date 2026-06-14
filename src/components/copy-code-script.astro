@@ -1,0 +1,26 @@
+<script is:inline>
+    document.addEventListener('astro:page-load', function () {
+        document.querySelectorAll('.copy-code').forEach(function (button) {
+            if (button.dataset.bound) return
+            button.dataset.bound = '1'
+
+            button.addEventListener('click', function () {
+                var code = button.parentElement?.querySelector('code')
+                if (!code) return
+
+                navigator.clipboard
+                    .writeText(code.textContent || '')
+                    .then(function () {
+                        button.textContent = 'Copied'
+                        clearTimeout(button._t)
+                        button._t = setTimeout(function () {
+                            button.textContent = 'Copy'
+                        }, 1500)
+                    })
+                    .catch(function () {
+                        button.textContent = 'Failed'
+                    })
+            })
+        })
+    })
+</script>

@@ -1,0 +1,45 @@
+---
+import { Image } from 'astro:assets'
+import { ThemeToggle } from '@/components'
+import { avatar } from '@/assets'
+
+const pathname =
+    Astro.url.pathname.replace(/\/$/, '').replace(/\.html$/, '') || '/'
+const isHomePage =
+    pathname === '/' ||
+    pathname === '/products' ||
+    pathname === '/resume' ||
+    pathname === '/404'
+const isProductSinglePage =
+    pathname.startsWith('/products/') && pathname !== '/products'
+const isPostPage =
+    !isHomePage &&
+    !pathname.startsWith('/api/') &&
+    !pathname.startsWith('/products/')
+const showHeader = isProductSinglePage || isPostPage
+---
+
+{
+    showHeader && (
+        <header>
+            <nav class='flex justify-between'>
+                <a
+                    href='/'
+                    class='flex flex-row items-center gap-2 text-xl sm:text-2xl'
+                >
+                    <Image
+                        src={avatar}
+                        alt='Benjamin'
+                        width={28}
+                        height={28}
+                        class='h-7 w-7 select-none rounded-full'
+                    />
+
+                    <h1 class='text-[17px] font-semibold'>Benjamin</h1>
+                </a>
+
+                <ThemeToggle />
+            </nav>
+        </header>
+    )
+}

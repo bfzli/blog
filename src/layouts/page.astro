@@ -1,0 +1,46 @@
+---
+import type { Props } from '@/types'
+
+import '@/styles/layers.css'
+import '@/styles/fonts.css'
+import '@/styles/colors.css'
+import '@/styles/global.css'
+import '@/styles/syntax.css'
+
+import {
+    SiteHead,
+    SiteHeader,
+    SiteFooter,
+    ThemeScript,
+    ServiceWorker,
+    Analytics
+} from '@/components'
+
+const props = Astro.props as Props
+---
+
+<html lang='en' dir='ltr'>
+    <head>
+        <ThemeScript />
+        <SiteHead {...props} />
+        <Analytics />
+    </head>
+
+    <body
+        class='overflow-y-scroll bg-surface text-default selection:bg-default selection:text-surface'
+    >
+        <section
+            class='container mx-auto flex min-h-screen max-w-4xl flex-col px-3 pb-2 pt-6 lg:px-16'
+        >
+            <SiteHeader />
+
+            <main class='min-h-xs flex-1 px-2 py-14 pt-10 sm:py-20 sm:pt-12'>
+                <slot />
+            </main>
+
+            <SiteFooter />
+        </section>
+
+        <ServiceWorker />
+    </body>
+</html>

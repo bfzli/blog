@@ -1,0 +1,110 @@
+---
+title: Programmatically Access Lummi AI Images with Lummi SDK
+description: A walkthrough on how to use the Lummi SDK to access images programmatically.
+tags: [lummi-ai, sdk, unofficial-sdk, lummi ai sdk, lummi api]
+date: Apr 29, 2025
+---
+
+I was given a task to implement the Lummi REST API on one of our projects. While exploring it, I realized I needed to simplify the process of interacting with it, so I started building an unofficial package that everyone can use to access it easily.
+
+The idea behind this package is to eliminate the need for others to go through the same steps I did when interacting with the API. Instead of dealing with endpoints directly, users can simply import functions and use them. I've built the package and published it on the NPM Registry. The package supports all JavaScript runtimes, is lightweight so it doesn't add installation overhead, and simply wraps the requests without adding delays - giving the same performance as direct API calls.
+
+Additionally, the package is type-safe, so you know exactly what you're sending and what to expect in return. It also manages rate limiting for you, which is typically a pain to implement. The package is designed for server environments only, so it will notify you if you're running it incorrectly. And most importantly, it's free hyhy!
+
+## How to Use It
+
+Use npm or any package manager to install the package in your project:
+
+```bash
+npm install lummi
+```
+
+Now you have many functions available to use. I'll demonstrate the `SearchImages function that allows you to search for images on Lummi AI with filters.
+
+```javascript
+import { SearchImages } from 'lummi'
+import { imageId } from '@/data'
+
+const { data, success, message } = await SearchImages({
+    query: 'clouds',
+    page: 1,
+    perPage: 1
+})
+```
+
+This is the output of our method call with the filters we have provided:
+
+```json
+[
+  {
+    dominantColorGroup: "cyan800",
+    dominantColorWeight: 0.8089192708333333,
+    approved: false,
+    aspectRatio: 0.7552083333333334,
+    blurhash: "e99ujNx^0hskxY8_tRxDIoV@Ips.=_%1EM9asm%2I?NG^hkDEQwus+",
+    description: "Cherry blossoms in full bloom against a clear blue sky with a crescent moon, creating a serene and harmonious spring scene.",
+    detailedDescription: "A delicate branch of cherry blossoms extends across a clear blue sky. The blossoms are in full bloom, showcasing their pristine white petals and intricate yellow stamens. The branch is dotted with a few unopened buds, hinting at more blooms to come. In the background, a crescent moon hangs in the sky, adding a serene and ethereal quality to the scene. The contrast between the bright white flowers and the deep blue sky creates a striking visual effect. The overall composition is peaceful and harmonious, capturing the essence of spring.",
+    vibeDescription: "The image exudes a serene and poetic atmosphere, with a harmonious blend of soft, natural tones and a tranquil composition. The clear, vibrant blue background contrasts beautifully with the delicate, luminous elements, creating a sense of calm and wonder. The lighting is gentle and diffused, enhancing the ethereal quality of the scene. The overall mood is peaceful and contemplative, evoking a sense of quiet beauty and connection to nature.",
+    downloadCount: 20,
+    focalHeight: 0.5279605263157895,
+    focalPositionX: 0.5043572984749455,
+    focalPositionY: 0.4761513157894737,
+    focalWidth: 0.6993464052287581,
+    height: 6144,
+    width: 4640,
+    luminance: 0.398793,
+    name: "Cherry Blossoms Against Blue Sky",
+    orientation: "vertical",
+    pro: false,
+    randomFieldScore: 126175,
+    removed: false,
+    searchAppearances: 106,
+    transparent: false,
+    viewCount: 39,
+    visionPromptVersion: 1,
+    discoverable: true,
+    becameDiscoverableAt: null,
+    unsafe: false,
+    reference: false,
+    createdAt: "2025-01-03T09:29:20.405Z",
+    updatedAt: "2025-04-29T00:00:58.137Z",
+    id: "eaa674fe-d8f6-43e4-b18f-3764d3c9f0cc",
+    slug: "cherry-blossoms-against-blue-sky-ad6vt",
+    size: 18917915,
+    path: "assets/QmSXLcLoCqsNpUFpLSaMZmXRT8BTCr6TpcjgdDHyxyosX3",
+    outpaintAssetPath: null,
+    imageType: "photo",
+    collections: 1,
+    attributionUrl: "https://www.lummi.ai/photo/cherry-blossoms-against-blue-sky-ad6vt?utm_source=api&utm_campaign=api&utm_medium=referral",
+    focalZone: "center",
+    author: [Object ...],
+    shootId: null,
+    contentType: "image/jpeg",
+    colorPalette: [Object ...],
+    colorGroups: [ "cyan800", "neutral400", "neutral500", "neutral700" ],
+    numberOfPeople: 0,
+    trendScore: 0,
+    featuredAt: null,
+    featuredScore: 0,
+    featuredScoreUpdatedAt: null,
+    free: true,
+    flags: [ "outpaint_problematic" ],
+    videoUpdatedAt: null,
+    variants: [Object ...],
+    outpaintAssetUrl: null,
+    url: "https://assets.lummi.ai/assets/QmSXLcLoCqsNpUFpLSaMZmXRT8BTCr6TpcjgdDHyxyosX3?auto=format&w=1500&h=1500",
+    tags: [
+      [Object ...], [Object ...], [Object ...], [Object ...], [Object ...]
+    ],
+    categories: [
+      [Object ...], [Object ...]
+    ],
+  }
+]
+```
+
+You can find comprehensive documentation for the package at https://lummi.minilibs.com. It's also highly recommended to explore the Lummi REST API SDK to understand how the SDK works in the background. You can access the Lummi REST documentation at https://www.lummi.ai/developers/api-reference.
+
+For additional guidance, check out this short video demonstration: https://youtu.be/gYnUw0MYDwc
+
+That's how you can easily handle extracting geolocation data from IP addresses using this solution.

@@ -1,0 +1,46 @@
+---
+import { Icon } from 'solid-heroicons'
+import { moon, sun } from 'solid-heroicons/outline'
+---
+
+<button type='button' id='toggle-theme' aria-label='Toggle Theme' class='mx-1'>
+    <span class='theme-icon-light inline-flex'>
+        <Icon path={moon} class='h-5 w-5' aria-hidden='true' />
+    </span>
+    <span class='theme-icon-dark inline-flex'>
+        <Icon path={sun} class='h-5 w-5' aria-hidden='true' />
+    </span>
+</button>
+
+<script is:inline>
+    document.addEventListener('astro:page-load', function () {
+        var btn = document.querySelector('#toggle-theme')
+        if (!btn || btn.dataset.bound) return
+        btn.dataset.bound = '1'
+
+        btn.addEventListener('click', function () {
+            var current = document.documentElement.getAttribute('color-scheme')
+            var next = current === 'light' ? 'dark' : 'light'
+
+            var style = document.createElement('style')
+            style.textContent =
+                '*,*::before,*::after{transition:none !important;animation:none !important}'
+            document.head.appendChild(style)
+
+            document.documentElement.setAttribute('color-scheme', next)
+            localStorage.setItem('theme', next)
+            var meta = document.querySelector('meta[name="theme-color"]')
+            if (meta)
+                meta.setAttribute(
+                    'content',
+                    next === 'dark' ? '#0a0a0b' : '#fcfcfc'
+                )
+
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                    style.remove()
+                })
+            })
+        })
+    })
+</script>

@@ -1,0 +1,42 @@
+---
+import { Link } from '@/components'
+import { Icon } from 'solid-heroicons'
+import { arrowTopRightOnSquare } from 'solid-heroicons/outline'
+
+interface Props {
+    href: string
+    label?: string
+    icon?: string
+    class?: string
+}
+
+const {
+    href,
+    label = 'Visit Site',
+    icon,
+    class: className = 'inline-flex items-center gap-2 px-3 py-1.5 bg-post hover:bg-post-hover rounded-lg text-sm font-medium transition-hover'
+} = Astro.props
+---
+
+<Link href={href} class={className}>
+    {
+        icon ? (
+            <img
+                src={icon}
+                alt=''
+                width={14}
+                height={14}
+                loading='lazy'
+                decoding='async'
+                class='h-3.5 w-3.5'
+            />
+        ) : (
+            <Icon
+                path={arrowTopRightOnSquare}
+                class='h-3.5 w-3.5'
+                aria-hidden='true'
+            />
+        )
+    }
+    {label}
+</Link>

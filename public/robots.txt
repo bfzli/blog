@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://bfzli.com/sitemap-index.xml

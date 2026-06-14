@@ -1,0 +1,22 @@
+---
+import { getCollection } from 'astro:content'
+import { Home } from '@/layouts'
+import { PostList } from '@/components'
+import { staticPages } from '@/data/pages'
+
+const posts = (await getCollection('posts')).sort(
+    (a, z) => +new Date(z.data.date) - +new Date(a.data.date)
+)
+const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
+const meta = staticPages.index
+---
+
+<Home
+    title={meta.title}
+    description={meta.description}
+    keywords={`${meta.keywords}, ${tags.join(', ')}`}
+    image={`/og/${meta.slug}.webp`}
+    type='website'
+>
+    <PostList title='Recent Posts' items={posts} />
+</Home>

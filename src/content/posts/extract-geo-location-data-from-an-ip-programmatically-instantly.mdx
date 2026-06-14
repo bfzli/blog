@@ -1,0 +1,82 @@
+---
+title: Extract Geolocation Data From an IP Programmatically and Instantly
+description: Easily extract geolocation data from an IP address using a simple npm package.
+tags: [geo-location, ip, ip-address, geo-location-data]
+date: Apr 15, 2025
+---
+
+Even today, with modern tools and ecosystems, extracting geolocation data from IP addresses can still be a pain. There are online services that require payment and have limitations, as well as some self-hosted options that are often difficult to set up and demand significant resources and processing power.
+
+However, there is a solution: a fast, type-safe, and perhaps most importantly, free option. This solution uses a package that can convert millions of addresses at no charge to extract geolocation data. The package is called [`Ip2Geo`](https://www.npmjs.com/package/@minilibs/ip2geo), and it's a simple npm package you can easily install and use in your project.
+
+It supports both client and server environments, making it safe for various use cases. You can use it in Node, Bun, and similar environments.
+
+### How To Use It
+
+Use npm or any package manager to install the package in your project:
+
+```bash
+npm install @minilibs/ip2geo@latest
+```
+
+Then, import the function needed to get the geolocation data:
+
+```javascript
+import { getGeoFromIP } from '@minilibs/ip2geo'
+
+// or
+
+import getGeoFromIP from '@minilibs/ip2geo'
+```
+
+Next, use the function with an IP address:
+
+```javascript
+const geo = await getGeoFromIP('8.8.8.8')
+```
+
+And it will output the geolocation data for the IP address:
+
+```json
+{
+    "ip": "8.8.8.8",
+    "type": "IPv4",
+    "continent": "North America",
+    "continentCode": "NA",
+    "country": "United States",
+    "countryCode": "US",
+    "region": "California",
+    "regionCode": "CA",
+    "city": "Mountain View",
+    "latitude": 37.3860517,
+    "longitude": -122.0838511,
+    "isEu": false,
+    "postal": "94039",
+    "callingCode": "1",
+    "capital": "Washington D.C.",
+    "borders": "CA,MX",
+    "flag": {
+        "img": "https://cdn.ipwhois.io/flags/us.svg",
+        "emoji": "🇺🇸",
+        "emojiUnicode": "U+1F1FA U+1F1F8"
+    },
+    "connection": {
+        "asn": 15169,
+        "org": "Google LLC",
+        "isp": "Google LLC",
+        "domain": "google.com"
+    },
+    "timezone": {
+        "id": "America/Los_Angeles",
+        "abbr": "PDT",
+        "isDst": true,
+        "offset": -25200,
+        "utc": "-07:00",
+        "currentTime": "2025-04-15T11:21:14-07:00"
+    }
+}
+```
+
+Also here is a short video demonstration to help you understand more: https://youtu.be/n3lA2fd8IIQ
+
+And that's how you can handle extracting geolocation data from IP addresses with ease.
