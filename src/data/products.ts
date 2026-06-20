@@ -3,7 +3,7 @@ import type { Venture, VibeCoding } from '@/types'
 import {
     envless,
     ip2geo,
-    // cloudagents,
+    cloudagents,
     pikegjaku,
     launchdock,
     focux,
@@ -23,12 +23,12 @@ export const ventures: Venture[] = [
         icon: ip2geo,
         url: 'https://ip2geo.dev'
     },
-    // {
-    //     name: 'Cloudagents',
-    //     description: 'One-click cloud hosting for OpenClaw AI agents.',
-    //     icon: cloudagents,
-    //     url: 'https://cloudagents.run'
-    // },
+    {
+        name: 'Cloudagents',
+        description: 'One-click cloud hosting for OpenClaw AI agents.',
+        icon: cloudagents,
+        url: 'https://cloudagents.run'
+    },
     {
         name: 'Pikëgjaku',
         description: 'Dhuro gjak — sot për dikë, nesër për ty.',
