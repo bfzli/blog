@@ -3,17 +3,12 @@ import type { MarkdownMeta, MarkdownPage, Post } from '@/types'
 import { constants, pageTitle } from '@/config'
 import { markdownCopy } from '@/data/markdown'
 import { privacyPermissions } from '@/data/privacy'
+import { isoDate } from '@/utils/date'
 import { staticPages } from '@/data/pages'
 import { ventures, vibeCoding } from '@/data/products'
 import { experience, skillGroups, technical } from '@/data/resume'
 
 const { site, profile } = constants
-
-const isoDate = (date: Date) => {
-    const pad = (value: number) => String(value).padStart(2, '0')
-
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
 
 const buildDate = isoDate(new Date())
 

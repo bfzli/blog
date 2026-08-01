@@ -8,7 +8,7 @@ const profile = {
     description: 'Expresing my thoughts and ideas through code and writing.',
     bio: `A curious software engineer based in ${location}, solving engineering problems, building products people use, and sharing what I learn along the way.`,
     location,
-    image: '/og/index.webp',
+    image: '/og/index.png',
     username: 'bfzli',
     birthDate: new Date('2001-01-17'),
     links: {

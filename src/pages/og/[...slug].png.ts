@@ -37,7 +37,7 @@ export const GET: APIRoute = async ({ props }) => {
 
     return new Response(new Uint8Array(image), {
         headers: {
-            'Content-Type': 'image/webp',
+            'Content-Type': 'image/png',
             'Cache-Control': 'public, max-age=31536000, immutable'
         }
     })

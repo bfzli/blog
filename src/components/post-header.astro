@@ -1,5 +1,6 @@
 ---
 import { H1, Icon } from '@/components'
+import { isoDate } from '@/utils/date'
 interface Props {
     title: string
     description: string
@@ -19,7 +20,7 @@ const { title, description, date } = Astro.props
 
 <div class='mt-5'>
     <time
-        datetime={date}
+        datetime={isoDate(date)}
         class='inline-flex items-center gap-1.5 text-[12px] font-medium text-soft'
     >
         <Icon name='calendarBlank' class='h-3.5 w-3.5' />

@@ -11,6 +11,7 @@ export type Props = {
     keywords: string
     image: string
     type: string
+    noindex?: boolean
     date?: string
     tags?: string[]
 }

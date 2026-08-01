@@ -11,9 +11,9 @@ const { title, items } = Astro.props
 ---
 
 <section data-reveal>
-    <h2 class='mt-8 text-2xl font-bold'>{title}</h2>
+    <h2 class='mt-12 text-2xl font-bold'>{title}</h2>
 
-    <List class='mt-4' data-reveal-group>
+    <List class='mt-1' data-reveal-group>
         {
             items.map((post) => (
                 <PostItem

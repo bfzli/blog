@@ -11,9 +11,9 @@ const { slug, title, description } = Astro.props
 ---
 
 <ListItem
-    class='transition-hover group mt-2 flex flex-col rounded-xl bg-post first:mt-4 hover:bg-post-hover'
+    class='transition-hover group -mx-3 mt-2 flex flex-col rounded-xl first:mt-0 hover:bg-post-hover'
 >
-    <Link href={`/${slug}`} class='p-4'>
+    <Link href={`/${slug}`} class='px-3 py-3'>
         <h3 class='text-[19px] font-bold text-muted'>
             {title}
         </h3>

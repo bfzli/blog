@@ -6,7 +6,7 @@ import {
     wallpapppers,
     launchdock,
     cloudagents,
-    // uebfaqe,
+    uebfaqe,
     pikegjaku,
     focux,
     muslimTab
@@ -43,12 +43,12 @@ export const ventures: Venture[] = [
         icon: cloudagents,
         url: 'https://cloudagents.run'
     },
-    // {
-    //     name: 'Uebfaqe',
-    //     description: 'Krijo uebfaqen tënde me AI brenda pak minutash.',
-    //     icon: uebfaqe,
-    //     url: 'https://uebfaqe.ai'
-    // },
+    {
+        name: 'Uebfaqe',
+        description: 'Krijo uebfaqen tënde me AI brenda pak minutash.',
+        icon: uebfaqe,
+        url: 'https://uebfaqe.ai'
+    },
     {
         name: 'Pikëgjaku',
         description: 'Dhuro gjak — sot për dikë, nesër për ty.',

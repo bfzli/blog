@@ -10,7 +10,7 @@ export type StaticPageMeta = {
 export const staticPages: Record<StaticPageMeta['slug'], StaticPageMeta> = {
     index: {
         slug: 'index',
-        title: pageTitle('Software Engineer'),
+        title: pageTitle('Principal Engineer'),
         description: 'A place where I share my thoughts and learnings 💭',
         keywords:
             'uses, tools, web, software, personal, website, blog development, environment'
@@ -24,7 +24,8 @@ export const staticPages: Record<StaticPageMeta['slug'], StaticPageMeta> = {
     resume: {
         slug: 'resume',
         title: pageTitle('Resume'),
-        description: 'Resume of Benjamin Fazli - Software Engineer',
+        description:
+            'Resume of Benjamin Fazli, principal engineer at Modulify: roles, experience and a technical stack spanning TypeScript, Node, Bun, Astro and React.',
         keywords:
             'resume, cv, curriculum vitae, benjamin fazli, software engineer'
     },

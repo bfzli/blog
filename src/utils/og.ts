@@ -104,5 +104,5 @@ export async function generateOgImage(
         }
     )
 
-    return await sharp(Buffer.from(svg)).webp({ quality: 90 }).toBuffer()
+    return await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer()
 }
