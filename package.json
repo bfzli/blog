@@ -8,12 +8,12 @@
     "url": "https://github.com/bfzli/blog"
   },
   "scripts": {
-    "www:dev": "astro dev --port 9999",
-    "www:build": "npm run www:check && npm run www:lint && astro build",
-    "www:preview": "astro build; astro preview --port 8888",
-    "www:check": "astro check",
-    "www:format": "prettier -w 'src/**/*.{astro,css,html,json,md,mdx,js,jsx,ts,tsx}'",
-    "www:lint": "eslint --fix '{src,scripts}/**/*.{astro,js,jsx,ts,tsx}'",
+    "web:dev": "astro dev --port 9999",
+    "web:build": "npm run web:check && npm run web:lint && astro build",
+    "web:preview": "astro build; astro preview --port 8888",
+    "web:check": "astro check",
+    "web:format": "prettier -w 'src/**/*.{astro,css,html,json,md,mdx,js,jsx,ts,tsx}'",
+    "web:lint": "eslint --fix '{src,scripts}/**/*.{astro,js,jsx,ts,tsx}'",
     "prepare": "husky",
     "posts:plan": "tsx scripts/plan-posts.ts",
     "posts:write": "tsx scripts/write-post.ts",

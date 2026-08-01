@@ -36,12 +36,12 @@ Astro 5 with MDX, SolidJS islands, Tailwind, and `@astrojs/sitemap`. TypeScript 
 All scripts run from the project root.
 
 ```bash
-npm run www:dev        # Dev server on port 9999
-npm run www:build      # check + lint + astro build
-npm run www:preview    # Build then preview on port 8888
-npm run www:check      # astro check (type check)
-npm run www:format     # Prettier write
-npm run www:lint       # ESLint with --fix
+npm run web:dev        # Dev server on port 9999
+npm run web:build      # check + lint + astro build
+npm run web:preview    # Build then preview on port 8888
+npm run web:check      # astro check (type check)
+npm run web:format     # Prettier write
+npm run web:lint       # ESLint with --fix
 
 npm run posts:plan     # Plan upcoming posts into scripts/queue.json
 npm run posts:write    # Draft a post from the queue
@@ -53,6 +53,6 @@ npm run posts:coverage # Report topic coverage
 - TypeScript everywhere, types centralized in `src/types/`
 - Content lives in `src/content/` as MDX with frontmatter
 - Icons go through `src/assets/icons.ts`, never inline SVG in pages
-- Run `npm run www:build` before deploying, it gates on check and lint
+- Run `npm run web:build` before deploying, it gates on check and lint
 
 Licensed MIT.

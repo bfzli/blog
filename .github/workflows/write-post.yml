@@ -2,12 +2,15 @@ name: Write post
 
 on:
     schedule:
-        - cron: '0 7 * * *'
+        - cron: '0 22 * * *'
     workflow_dispatch:
 
 permissions:
     contents: write
     pull-requests: write
+
+env:
+    HUSKY: 0
 
 jobs:
     write:
@@ -26,15 +29,25 @@ jobs:
               env:
                   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-            - run: npm run www:build
+            - run: npm run web:build
+
+            - name: Advance the queue on the base branch
+              run: |
+                  if git diff --quiet -- scripts/queue.json; then
+                      echo 'Queue unchanged, nothing to advance'
+                      exit 0
+                  fi
+                  git config user.name 'github-actions[bot]'
+                  git config user.email 'github-actions[bot]@users.noreply.github.com'
+                  git add scripts/queue.json
+                  git commit -m 'content: consume queued idea'
+                  git push
 
             - uses: peter-evans/create-pull-request@v7
               with:
-                  branch: content/daily-post
+                  branch: content/post-${{ github.run_number }}
                   title: 'content: new draft post'
                   body: Generated from the next queued idea. Read it before merging, and reject it if it reads generic.
                   commit-message: 'content: add generated draft'
-                  add-paths: |
-                      src/content/posts
-                      scripts/queue.json
+                  add-paths: src/content/posts
                   delete-branch: true
