@@ -1,4 +1,5 @@
 ---
+import { isoDate } from '@/utils/date'
 import { constants } from '@/config'
 
 interface Props {
@@ -19,17 +20,11 @@ const { slug, title, description, date, tags } = Astro.props
         '@type': 'Article',
         headline: title,
         description,
-        image: `${constants.site}/og/${slug}.webp`,
-        datePublished: new Date(date).toISOString(),
-        author: {
-            '@type': 'Person',
-            name: constants.profile.name,
-            url: constants.site
-        },
-        publisher: {
-            '@type': 'Person',
-            name: constants.profile.name
-        },
+        image: `${constants.site}/og/${slug}.png`,
+        datePublished: isoDate(date),
+        author: { '@id': `${constants.site}/#person` },
+        publisher: { '@id': `${constants.site}/#person` },
+        isPartOf: { '@id': `${constants.site}/#website` },
         mainEntityOfPage: {
             '@type': 'WebPage',
             '@id': `${constants.site}/${slug}`

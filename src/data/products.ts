@@ -3,9 +3,11 @@ import type { Venture, VibeCoding } from '@/types'
 import {
     envless,
     ip2geo,
-    cloudagents,
-    pikegjaku,
+    wallpapppers,
     launchdock,
+    cloudagents,
+    uebfaqe,
+    pikegjaku,
     focux,
     muslimTab
 } from '@/assets'
@@ -24,22 +26,34 @@ export const ventures: Venture[] = [
         url: 'https://ip2geo.dev'
     },
     {
-        name: 'Cloudagents',
-        description: 'One-click cloud hosting for OpenClaw AI agents.',
-        icon: cloudagents,
-        url: 'https://cloudagents.run'
-    },
-    {
-        name: 'Pikëgjaku',
-        description: 'Dhuro gjak — sot për dikë, nesër për ty.',
-        icon: pikegjaku,
-        url: 'https://pikegjaku.com'
+        name: 'Wallpapppers',
+        description: 'The next-generation wallpaper platform powered by AI.',
+        icon: wallpapppers,
+        url: 'https://wallpapppers.com'
     },
     {
         name: 'Launchdock',
         description: 'Where self-hosting takes off without limits.',
         icon: launchdock,
         url: 'https://launchdock.sh'
+    },
+    {
+        name: 'Cloudagents',
+        description: 'One-click cloud hosting for OpenClaw AI agents.',
+        icon: cloudagents,
+        url: 'https://cloudagents.run'
+    },
+    {
+        name: 'Uebfaqe',
+        description: 'Krijo uebfaqen tënde me AI brenda pak minutash.',
+        icon: uebfaqe,
+        url: 'https://uebfaqe.ai'
+    },
+    {
+        name: 'Pikëgjaku',
+        description: 'Dhuro gjak — sot për dikë, nesër për ty.',
+        icon: pikegjaku,
+        url: 'https://pikegjaku.com'
     }
 ]
 

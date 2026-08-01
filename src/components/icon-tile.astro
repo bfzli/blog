@@ -19,6 +19,8 @@ const { src, alt, size = 48 } = Astro.props
         alt={alt}
         width={size}
         height={size}
+        loading='eager'
+        data-skeleton
         class='h-full w-full rounded-2xl object-contain'
     />
 </div>

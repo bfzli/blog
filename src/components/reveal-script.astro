@@ -1,0 +1,29 @@
+<script is:inline>
+    ;(function () {
+        var KEY = 'revealed'
+        var root = document.documentElement
+
+        function memory() {
+            try {
+                return window.sessionStorage
+            } catch (error) {
+                return null
+            }
+        }
+
+        function mark() {
+            root.setAttribute('data-revealed', '')
+        }
+
+        var store = memory()
+
+        if (store && store.getItem(KEY)) {
+            mark()
+        } else if (store) {
+            store.setItem(KEY, '1')
+        }
+
+        document.addEventListener('astro:before-swap', mark)
+        document.addEventListener('astro:after-swap', mark)
+    })()
+</script>

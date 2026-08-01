@@ -1,6 +1,7 @@
 ---
 import type { Skill } from '@/types'
 import { SkillGroup } from '@/components'
+import { skillGroups } from '@/data/resume'
 
 interface Props {
     languages: Skill[]
@@ -9,14 +10,15 @@ interface Props {
     others: Skill[]
 }
 
-const { languages, tools, devops, others } = Astro.props
+const technical = Astro.props
 ---
 
-<aside class='space-y-8'>
-    <div class='space-y-6'>
-        <SkillGroup title='Languages' items={languages} />
-        <SkillGroup title='Tools & Databases' items={tools} />
-        <SkillGroup title='DevOps & Cloud' items={devops} />
-        <SkillGroup title='AI & Others' items={others} />
+<aside class='space-y-8' data-reveal>
+    <div class='space-y-6' data-reveal-group>
+        {
+            skillGroups.map((group) => (
+                <SkillGroup title={group.title} items={technical[group.key]} />
+            ))
+        }
     </div>
 </aside>

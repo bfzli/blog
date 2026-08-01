@@ -18,10 +18,12 @@ export default {
                 soft: 'var(--soft)',
                 subtle: 'var(--subtle)',
                 'primary-hover': 'var(--primary-hover)',
-                'post-hover': 'var(--post-hover)'
+                'post-hover': 'var(--post-hover)',
+                'icon-secondary': 'var(--icon-secondary)',
+                pill: 'var(--pill)'
             },
             fontFamily: {
-                sans: ['Hanken Grotesk', ...fontFamily.sans],
+                sans: ['DM Sans', 'DM Sans Fallback', ...fontFamily.sans],
                 mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
             },
             minHeight: {

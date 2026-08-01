@@ -11,12 +11,12 @@ const {
 } = Astro.props as Product
 ---
 
-<li class='flex'>
+<li class='-mx-3 flex'>
     <a
         href={href}
         target={external ? '_blank' : undefined}
         rel={external ? 'noopener noreferrer' : undefined}
-        class='group flex w-full items-start gap-4 rounded-xl bg-post p-4 transition-hover hover:bg-post-hover'
+        class='group flex w-full items-start gap-4 rounded-xl px-3 py-3 transition-hover hover:bg-post-hover'
     >
         <IconTile src={icon} alt={name} />
         <div class='min-w-0 flex-1'>

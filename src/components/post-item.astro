@@ -1,31 +1,20 @@
 ---
 import { Link, ListItem } from '@/components'
-import { Icon } from 'solid-heroicons'
-import { calendar } from 'solid-heroicons/outline'
 
 interface Props {
     slug: string
-    date: string
     title: string
     description: string
 }
 
-const { slug, date, title, description } = Astro.props
+const { slug, title, description } = Astro.props
 ---
 
 <ListItem
-    class='group mt-2 flex flex-col rounded-xl bg-post transition-hover first:mt-4 hover:bg-post-hover'
+    class='transition-hover group -mx-3 mt-2 flex flex-col rounded-xl first:mt-0 hover:bg-post-hover'
 >
-    <Link href={`/${slug}`} class='p-4'>
-        <time
-            datetime={date}
-            class='inline-flex items-center gap-1.5 text-[12px] font-medium text-soft'
-        >
-            <Icon path={calendar} class='h-3.5 w-3.5' aria-hidden='true' />
-            {date}
-        </time>
-
-        <h3 class='mt-2 text-[19px] font-bold text-muted'>
+    <Link href={`/${slug}`} class='px-3 py-3'>
+        <h3 class='text-[19px] font-bold text-muted'>
             {title}
         </h3>
 

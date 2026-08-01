@@ -1,0 +1,115 @@
+{
+    "stacks": [
+        "Next.js",
+        "Astro",
+        "Nuxt",
+        "SvelteKit",
+        "Remix",
+        "Vite",
+        "Node",
+        "Bun",
+        "Deno",
+        "Cloudflare Workers",
+        "Cloudflare Pages",
+        "React Native",
+        "Electron",
+        "Express",
+        "Hono"
+    ],
+    "contexts": [
+        "during SSR",
+        "at build time",
+        "in middleware",
+        "in a Worker",
+        "in development but not production",
+        "in production but not development",
+        "inside a CI pipeline",
+        "after a dependency upgrade"
+    ],
+    "topics": [
+        {
+            "id": "window-is-not-defined",
+            "label": "the \"window is not defined\" ReferenceError",
+            "kind": "error",
+            "stacks": ["Next.js", "Astro", "Nuxt", "SvelteKit", "Remix", "Vite"],
+            "contexts": ["during SSR", "at build time", "in middleware"]
+        },
+        {
+            "id": "document-is-not-defined",
+            "label": "the \"document is not defined\" ReferenceError",
+            "kind": "error",
+            "stacks": ["Next.js", "Astro", "Nuxt", "SvelteKit", "Remix"],
+            "contexts": ["during SSR", "at build time"]
+        },
+        {
+            "id": "hydration-mismatch",
+            "label": "a hydration mismatch between server and client output",
+            "kind": "error",
+            "stacks": ["Next.js", "Astro", "Nuxt", "SvelteKit", "Remix"],
+            "contexts": ["in production but not development", "after a dependency upgrade"]
+        },
+        {
+            "id": "module-not-found-esm-cjs",
+            "label": "ERR_REQUIRE_ESM and CommonJS versus ESM interop failures",
+            "kind": "error",
+            "stacks": ["Node", "Bun", "Vite", "Express", "Electron"],
+            "contexts": ["at build time", "after a dependency upgrade", "inside a CI pipeline"]
+        },
+        {
+            "id": "env-vars-undefined",
+            "label": "environment variables coming back undefined at runtime",
+            "kind": "error",
+            "stacks": ["Next.js", "Astro", "Vite", "Cloudflare Workers", "Node", "Bun"],
+            "contexts": ["in production but not development", "inside a CI pipeline", "at build time"]
+        },
+        {
+            "id": "cors-blocked",
+            "label": "a request blocked by CORS policy",
+            "kind": "error",
+            "stacks": ["Express", "Hono", "Cloudflare Workers", "Next.js"],
+            "contexts": ["in production but not development", "in middleware"]
+        },
+        {
+            "id": "connect-cloudflare-account",
+            "label": "connecting a Cloudflare account to a project",
+            "kind": "task",
+            "stacks": ["Cloudflare Pages", "Cloudflare Workers"],
+            "contexts": ["inside a CI pipeline", "in development but not production"]
+        },
+        {
+            "id": "custom-domain-setup",
+            "label": "pointing a custom domain at a deployment",
+            "kind": "task",
+            "stacks": ["Cloudflare Pages", "Cloudflare Workers", "Next.js", "Astro"],
+            "contexts": []
+        },
+        {
+            "id": "deploy-static-site",
+            "label": "deploying a static site end to end",
+            "kind": "build",
+            "stacks": ["Astro", "Next.js", "Nuxt", "SvelteKit", "Vite"],
+            "contexts": ["inside a CI pipeline"]
+        },
+        {
+            "id": "build-a-cli",
+            "label": "building and publishing a command line tool",
+            "kind": "build",
+            "stacks": ["Node", "Bun", "Deno"],
+            "contexts": []
+        },
+        {
+            "id": "typed-sdk-design",
+            "label": "designing a typed SDK with multiple entry points",
+            "kind": "build",
+            "stacks": ["Node", "Bun", "Deno", "Vite"],
+            "contexts": []
+        },
+        {
+            "id": "scheduled-jobs",
+            "label": "running scheduled or cron work",
+            "kind": "build",
+            "stacks": ["Cloudflare Workers", "Node", "Bun"],
+            "contexts": ["inside a CI pipeline", "in production but not development"]
+        }
+    ]
+}

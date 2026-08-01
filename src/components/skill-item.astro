@@ -1,18 +1,16 @@
 ---
 import type { Skill } from '@/types'
+import { techIcons } from '@/assets'
 
 const { name, icon } = Astro.props as Skill
+
+const svg = techIcons[icon].replace(
+    '<svg',
+    `<svg class="h-4 w-4 flex-shrink-0" aria-hidden="true" focusable="false" data-tech="${icon}"`
+)
 ---
 
 <li class='flex items-center gap-2 text-sm text-muted'>
-    <img
-        src={icon}
-        alt={name}
-        width={16}
-        height={16}
-        loading='lazy'
-        decoding='async'
-        class='h-4 w-4 object-contain'
-    />
+    <Fragment set:html={svg} />
     {name}
 </li>

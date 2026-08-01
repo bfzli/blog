@@ -1,8 +1,7 @@
 ---
 import { Page } from '@/layouts'
+import { Icon } from '@/components'
 import { staticPages } from '@/data/pages'
-import { Icon } from 'solid-heroicons'
-import { faceFrown, arrowLeft } from 'solid-heroicons/outline'
 
 const meta = staticPages['404']
 ---
@@ -11,15 +10,12 @@ const meta = staticPages['404']
     title={meta.title}
     description={meta.description}
     keywords={meta.keywords}
-    image={`/og/${meta.slug}.webp`}
+    image={`/og/${meta.slug}.png`}
     type='website'
+    noindex
 >
     <div class='flex flex-col items-center pt-44 text-center'>
-        <Icon
-            path={faceFrown}
-            class='h-16 w-16 text-default'
-            aria-hidden='true'
-        />
+        <Icon name='smileySad' class='h-16 w-16 text-default' />
 
         <h1 class='mt-6 text-3xl font-bold'>Page Not Found</h1>
 
@@ -32,7 +28,7 @@ const meta = staticPages['404']
             href='/'
             class='mt-8 inline-flex items-center gap-2 text-sm font-medium text-primary transition-hover hover:text-primary-hover'
         >
-            <Icon path={arrowLeft} class='h-4 w-4' aria-hidden='true' />
+            <Icon name='arrowLeft' class='h-4 w-4' />
             <span>Back to Home</span>
         </a>
     </div>

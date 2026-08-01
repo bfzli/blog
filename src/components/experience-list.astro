@@ -9,10 +9,10 @@ interface Props {
 const { items } = Astro.props
 ---
 
-<section>
+<section data-reveal>
     <h3 class='mb-3 font-bold text-default'>Experience</h3>
 
-    <div class='space-y-8'>
+    <div class='space-y-8' data-reveal-group>
         {items.map((job) => <ExperienceItem {...job} />)}
     </div>
 </section>

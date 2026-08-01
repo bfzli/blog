@@ -1,4 +1,4 @@
-import type { Experience } from '@/types'
+import type { Experience, Skill, TechnicalGroup } from '@/types'
 import { modulify, azwedo, dreampix, trokit, nun } from '@/assets'
 
 export const experience: Experience[] = [
@@ -51,37 +51,44 @@ export const experience: Experience[] = [
     }
 ]
 
-export const technical = {
+export const technical: Record<TechnicalGroup['key'], Skill[]> = {
     languages: [
-        { name: 'TypeScript, JavaScript', icon: '/tech-icons/typescript.svg' },
-        { name: 'Next.js, Astro, Vite', icon: '/tech-icons/nextjs.svg' },
-        { name: 'React, Native, Expo', icon: '/tech-icons/react.svg' },
-        { name: 'Node, Express, Electron', icon: '/tech-icons/nodejs.svg' },
-        { name: 'Bun, Hono, Elysia', icon: '/tech-icons/bun.svg' },
-        { name: 'CLI’s, Rollup, Webpack', icon: '/tech-icons/rollup.svg' }
+        { name: 'TypeScript, JavaScript', icon: 'typescript' },
+        { name: 'Next.js, Astro, Vite', icon: 'nextjs' },
+        { name: 'React, Native, Expo', icon: 'react' },
+        { name: 'Node, Express, Electron', icon: 'nodejs' },
+        { name: 'Bun, Hono, Elysia', icon: 'bun' },
+        { name: 'CLI’s, Rollup, Webpack', icon: 'rollup' }
     ],
     tools: [
-        { name: 'GraphQL, Apollo', icon: '/tech-icons/graphql.svg' },
-        { name: 'Firebase, Firestore', icon: '/tech-icons/firebase.svg' },
-        { name: 'Prisma, Neon, Turso', icon: '/tech-icons/prisma.svg' },
-        { name: 'Mongo, PostgreSQL', icon: '/tech-icons/mongodb.svg' },
+        { name: 'GraphQL, Apollo', icon: 'graphql' },
+        { name: 'Firebase, Firestore', icon: 'firebase' },
+        { name: 'Prisma, Neon, Turso', icon: 'prisma' },
+        { name: 'Mongo, PostgreSQL', icon: 'mongodb' },
         {
             name: 'Redux, Redux Toolkit, Zustand',
-            icon: '/tech-icons/redux.svg'
+            icon: 'redux'
         },
-        { name: 'Tailwind, Shadcn', icon: '/tech-icons/tailwind.svg' },
-        { name: 'Storybook, Vitest, Jest', icon: '/tech-icons/storybook.svg' }
+        { name: 'Tailwind, Shadcn', icon: 'tailwind' },
+        { name: 'Storybook, Vitest, Jest', icon: 'storybook' }
     ],
     devops: [
-        { name: 'Cloudflare', icon: '/tech-icons/cloudflare.svg' },
-        { name: 'AWS', icon: '/tech-icons/aws.svg' },
-        { name: 'Google Cloud', icon: '/tech-icons/googlecloud.svg' },
-        { name: 'Vercel, Render, Railway', icon: '/tech-icons/vercel.svg' },
-        { name: 'DigitalOcean, Fly.io', icon: '/tech-icons/digitalocean.svg' }
+        { name: 'Cloudflare', icon: 'cloudflare' },
+        { name: 'AWS', icon: 'aws' },
+        { name: 'Google Cloud', icon: 'googlecloud' },
+        { name: 'Vercel, Render, Railway', icon: 'vercel' },
+        { name: 'DigitalOcean, Fly.io', icon: 'digitalocean' }
     ],
     others: [
-        { name: 'Claude, v0, z.ai', icon: '/tech-icons/claude.svg' },
-        { name: 'Figma', icon: '/tech-icons/figma.svg' },
-        { name: 'Webflow', icon: '/tech-icons/webflow.svg' }
+        { name: 'Claude, v0, z.ai', icon: 'claude' },
+        { name: 'Figma', icon: 'figma' },
+        { name: 'Webflow', icon: 'webflow' }
     ]
 }
+
+export const skillGroups: TechnicalGroup[] = [
+    { title: 'Languages', key: 'languages' },
+    { title: 'Tools & Databases', key: 'tools' },
+    { title: 'DevOps & Cloud', key: 'devops' },
+    { title: 'AI & Others', key: 'others' }
+]

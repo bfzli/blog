@@ -13,8 +13,11 @@
     "www:preview": "astro build; astro preview --port 8888",
     "www:check": "astro check",
     "www:format": "prettier -w 'src/**/*.{astro,css,html,json,md,mdx,js,jsx,ts,tsx}'",
-    "www:lint": "eslint --fix 'src/**/*.{astro,js,jsx,ts,tsx}'",
-    "prepare": "husky"
+    "www:lint": "eslint --fix '{src,scripts}/**/*.{astro,js,jsx,ts,tsx}'",
+    "prepare": "husky",
+    "posts:plan": "tsx scripts/plan-posts.ts",
+    "posts:write": "tsx scripts/write-post.ts",
+    "posts:coverage": "tsx scripts/plan-posts.ts --coverage"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.6",
@@ -40,11 +43,14 @@
     "sharp": "^0.33.4",
     "solid-js": "^1.8.15",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5.4.2"
+    "tsx": "^4.20.0",
+    "typescript": "^5.4.2",
+    "zod": "^4.4.3"
   },
   "dependencies": {
     "@astrojs/partytown": "^2.1.4",
-    "satori": "^0.26.0",
-    "solid-heroicons": "^3.2.4"
+    "@phosphor-icons/core": "^2.1.1",
+    "openai": "^7.3.0",
+    "satori": "^0.26.0"
   }
 }

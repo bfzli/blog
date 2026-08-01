@@ -11,6 +11,7 @@ import {
     ArticleSchema,
     CopyCodeScript
 } from '@/components'
+import { pageTitle } from '@/config'
 
 export const getStaticPaths = async () => {
     const posts = await getCollection('posts')
@@ -28,10 +29,10 @@ const { Content } = await post.render()
 ---
 
 <Page
-    title={`${post.data.title} - Benjamin Fazli`}
+    title={pageTitle(post.data.title)}
     description={post.data.description}
     keywords={`blog, post, ${tags.join(', ')}`}
-    image={`/og/${post.slug}.webp`}
+    image={`/og/${post.slug}.png`}
     type='article'
     date={post.data.date}
     tags={tags}
