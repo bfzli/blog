@@ -27,7 +27,8 @@ Requirements:
 - Include real, runnable code blocks with language tags wherever code clarifies the point. Prefer TypeScript unless the topic demands otherwise.
 - Be specific: exact commands, exact error strings, exact package names.
 - Close with what actually changed or what he would do differently, not a generic summary.
-- Output GitHub-flavored Markdown body only. No frontmatter, no code fence around the whole thing.`
+- Output GitHub-flavored Markdown body only. No frontmatter, no code fence around the whole thing.
+- The file is compiled as MDX, so a bare < or { in prose is a syntax error. Wrap every inline type, generic, HTML tag, JSX snippet, shell redirect and object literal in backticks, for example \`Array<string>\`, \`<script>\`, \`{ retries: 3 }\`. Fenced code blocks need no escaping.`
 
 const main = async () => {
     const queue = readQueue()

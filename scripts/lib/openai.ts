@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 
-export const MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-sol'
+export const MODEL = 'gpt-5.4-mini'
 
 export const openai = () => {
     if (!process.env.OPENAI_API_KEY) {

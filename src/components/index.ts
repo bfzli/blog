@@ -13,6 +13,7 @@ import BackLink from '@/components/back-link.astro'
 import ActionLink from '@/components/action-link.astro'
 import HomeHero from '@/components/home-hero.astro'
 import Greeting from '@/components/greeting.astro'
+import GreetingScript from '@/components/greeting-script.astro'
 import SiteHead from '@/components/site-head.astro'
 import SiteHeader from '@/components/site-header.astro'
 import SiteFooter from '@/components/site-footer.astro'
@@ -49,6 +50,7 @@ export {
     ActionLink,
     HomeHero,
     Greeting,
+    GreetingScript,
     SiteHead,
     SiteHeader,
     SiteFooter,

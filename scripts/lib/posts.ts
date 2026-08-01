@@ -62,6 +62,18 @@ export const frontmatter = (idea: PostIdea, date: Date) =>
         '---'
     ].join('\n')
 
+const escapeOutsideCode = (text: string) =>
+    text
+        .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
+        .map((part, index) =>
+            index % 2
+                ? part
+                : part.replace(/<(?=[a-zA-Z/])/g, '\\<').replace(/\{/g, '\\{')
+        )
+        .join('')
+
+export const mdxSafe = (body: string) => escapeOutsideCode(body)
+
 export const writePost = (idea: PostIdea, body: string, date = new Date()) => {
     const file = path.join(POSTS_DIR, `${idea.slug}.mdx`)
 
@@ -69,7 +81,10 @@ export const writePost = (idea: PostIdea, body: string, date = new Date()) => {
         throw new Error(`Refusing to overwrite existing post: ${file}`)
     }
 
-    fs.writeFileSync(file, `${frontmatter(idea, date)}\n\n${body.trim()}\n`)
+    fs.writeFileSync(
+        file,
+        `${frontmatter(idea, date)}\n\n${mdxSafe(body.trim())}\n`
+    )
 
     return file
 }

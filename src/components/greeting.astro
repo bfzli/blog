@@ -52,56 +52,7 @@ const { greeting } = constants
     }
 </style>
 
-<script is:inline>
-    document.addEventListener('astro:page-load', function () {
-        var root = document.querySelector('[data-greeting]')
-        if (!root || root.dataset.bound) return
-        root.dataset.bound = '1'
-
-        var words = root.querySelectorAll('.greeting-word')
-        if (words.length < 2) return
-
-        var interval = Number(root.dataset.interval)
-        var current = Number(root.dataset.index) || 0
-
-        var start = function () {
-            root.style.width = words[current].offsetWidth + 'px'
-            root.classList.add('is-ready')
-
-            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-                return
-            }
-
-            var timer = setInterval(function () {
-                if (!root.isConnected) return clearInterval(timer)
-
-                var next = (current + 1) % words.length
-
-                words[current].classList.remove('is-active')
-                words[current].classList.add('is-leaving')
-
-                words[next].classList.remove('is-leaving')
-                words[next].classList.add('is-active')
-
-                root.style.width = words[next].offsetWidth + 'px'
-                current = next
-                root.dataset.index = String(current)
-
-                try {
-                    sessionStorage.setItem('greeting', String(current))
-                } catch (error) {
-                    return
-                }
-            }, interval)
-        }
-
-        if (document.fonts && document.fonts.ready) {
-            document.fonts.ready.then(start)
-        } else {
-            start()
-        }
-    })
-</script><span class='sr-only'>{greeting.words[0].text}</span><span
+<span class='sr-only'>{greeting.words[0].text}</span><span
     class='greeting'
     aria-hidden='true'
     transition:persist='greeting'
@@ -114,22 +65,4 @@ const { greeting } = constants
                 dir={word.dir}
             >{word.text}</span>
         ))
-    }</span><script is:inline>
-    ;(function () {
-        var root = document.currentScript.previousElementSibling
-        var words = root.querySelectorAll('.greeting-word')
-        var index = 0
-
-        try {
-            index = Number(sessionStorage.getItem('greeting')) || 0
-        } catch (error) {
-            index = 0
-        }
-
-        if (!words[index] || index === 0) return
-
-        words[0].classList.remove('is-active')
-        words[index].classList.add('is-active')
-        root.dataset.index = String(index)
-    })()
-    </script>
+    }</span>

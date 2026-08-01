@@ -1,4 +1,4 @@
-name = "bfzli-www"
+name = "bfzli-web"
 compatibility_date = "2026-04-06"
 pages_build_output_dir = "./dist"
 
