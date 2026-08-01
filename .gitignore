@@ -1,7 +1,12 @@
 .astro
 dist
 node_modules
-scripts
+scripts/*
+!scripts/lib
+!scripts/plan-posts.ts
+!scripts/write-post.ts
+!scripts/queue.json
+!scripts/topics.json
 .env
 .wrangler
 **/*.DS_Store

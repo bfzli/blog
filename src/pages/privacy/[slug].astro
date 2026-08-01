@@ -1,0 +1,47 @@
+---
+import type { VibeCoding } from '@/types'
+
+import { Page } from '@/layouts'
+import { BackLink, H1, IconTile, Link } from '@/components'
+import { vibeCoding } from '@/data/products'
+import { privacyPermissions } from '@/data/privacy'
+import { constants, pageTitle } from '@/config'
+
+export const getStaticPaths = async () =>
+    vibeCoding.map((app) => ({ params: { slug: app.slug }, props: app }))
+
+const app = Astro.props as VibeCoding
+const { profile } = constants
+---
+
+<Page
+    title={pageTitle(`${app.name} Privacy Policy`)}
+    description={`Privacy policy for the ${app.name} Chrome extension.`}
+    keywords={`privacy, privacy policy, ${app.name.toLowerCase()}, chrome extension`}
+    image={`/og/privacy/${app.slug}.webp`}
+    type='website'
+>
+    <BackLink href='/products' />
+
+    <div class='mb-6 flex items-center gap-4'>
+        <IconTile src={app.icon} alt={app.name} />
+        <div class='flex flex-col'>
+            <H1 class='!mb-0 !mt-0 text-xl font-extrabold'>{app.name}</H1>
+            <p class='-mt-0.5 text-sm text-comment'>{app.description}</p>
+        </div>
+    </div>
+
+    <p class='mt-4 leading-relaxed text-muted'>{app.privacyPolicy}</p>
+
+    <p class='mt-4 leading-relaxed text-muted'>{privacyPermissions}</p>
+
+    <p class='mt-4 leading-relaxed text-muted'>
+        Questions about {app.name} can go to:{' '}
+        <Link
+            href={profile.links.email}
+            class='text-default underline transition-hover hover:text-muted'
+        >
+            {profile.links.email.replace('mailto:', '')}
+        </Link>
+    </p>
+</Page>

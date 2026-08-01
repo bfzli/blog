@@ -1,7 +1,5 @@
 ---
-import { Link } from '@/components'
-import { Icon } from 'solid-heroicons'
-import { arrowTopRightOnSquare } from 'solid-heroicons/outline'
+import { Icon, Link } from '@/components'
 
 interface Props {
     href: string
@@ -31,11 +29,7 @@ const {
                 class='h-3.5 w-3.5'
             />
         ) : (
-            <Icon
-                path={arrowTopRightOnSquare}
-                class='h-3.5 w-3.5'
-                aria-hidden='true'
-            />
+            <Icon name='arrowSquareOut' class='h-3.5 w-3.5' />
         )
     }
     {label}

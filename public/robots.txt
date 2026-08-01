@@ -1,3 +1,42 @@
 User-agent: *
 Allow: /
+
+# AI search crawlers — explicitly allowed for citation visibility
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+# Agent-readable markdown
+# Append .md to any page path, e.g. https://bfzli.com/resume.md
+# Curated index: https://bfzli.com/llms.txt
+
 Sitemap: https://bfzli.com/sitemap-index.xml

@@ -7,6 +7,7 @@ export const collections = {
             description: z.string(),
             tags: z.array(z.string()),
             date: z.string(),
+            cell: z.string().optional(),
             actionUrl: z.string().optional(),
             actionText: z.string().optional()
         })

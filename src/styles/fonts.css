@@ -39,6 +39,32 @@
 }
 
 @font-face {
+    font-family: 'DM Sans Fallback';
+    font-style: normal;
+    font-weight: 400;
+    src:
+        local('HelveticaNeue'), local('ArialMT'), local('Arial'),
+        local('Segoe UI'), local('Roboto');
+    size-adjust: 101.12%;
+    ascent-override: 98.10%;
+    descent-override: 30.66%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'DM Sans Fallback';
+    font-style: normal;
+    font-weight: 500 800;
+    src:
+        local('HelveticaNeue-Bold'), local('Arial-BoldMT'),
+        local('Segoe UI Bold'), local('Roboto-Bold');
+    size-adjust: 100.53%;
+    ascent-override: 98.68%;
+    descent-override: 30.84%;
+    line-gap-override: 0%;
+}
+
+@font-face {
     font-family: 'Space Grotesk';
     font-style: normal;
     font-weight: 100 900;

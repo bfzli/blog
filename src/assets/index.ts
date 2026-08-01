@@ -11,6 +11,11 @@ import ip2geo from '@/assets/projects/ip2geo.webp'
 import launchdock from '@/assets/projects/launchdock.webp'
 import muslimTab from '@/assets/projects/muslim-tab.webp'
 import pikegjaku from '@/assets/projects/pikegjaku.webp'
+import uebfaqe from '@/assets/projects/uebfaqe.webp'
+import wallpapppers from '@/assets/projects/wallpapppers.webp'
+
+export * from '@/assets/icons'
+export * from '@/assets/tech-icons'
 
 export {
     avatar,
@@ -25,5 +30,7 @@ export {
     ip2geo,
     launchdock,
     muslimTab,
-    pikegjaku
+    pikegjaku,
+    uebfaqe,
+    wallpapppers
 }

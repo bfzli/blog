@@ -1,0 +1,79 @@
+---
+import { navigationTabs } from '@/data/navigation'
+import { cleanPath } from '@/utils/url'
+
+const path = cleanPath(Astro.url.pathname)
+
+const isActive = (href: string) =>
+    href === '/' ? path === '/' : path.startsWith(href)
+---
+
+<nav class='relative inline-flex items-center gap-1 rounded-full bg-elevate p-1'>
+    {
+        navigationTabs.map((tab) => (
+            <a
+                href={tab.href}
+                aria-current={isActive(tab.href) ? 'page' : undefined}
+                aria-disabled={isActive(tab.href) ? 'true' : undefined}
+                class:list={[
+                    'transition-hover relative z-10 rounded-full px-4 py-1.5 text-sm font-medium',
+                    isActive(tab.href)
+                        ? 'pointer-events-none text-default'
+                        : 'cursor-pointer text-comment hover:bg-post'
+                ]}
+            >
+                {isActive(tab.href) && (
+                    <span
+                        class='absolute inset-0 rounded-full bg-pill'
+                        data-pill
+                        aria-hidden='true'
+                    />
+                )}
+                <span class='relative'>{tab.name}</span>
+            </a>
+        ))
+    }
+</nav>
+
+<script is:inline>
+    ;(function () {
+        if (window.__navPillBound) return
+        window.__navPillBound = 1
+
+        var previous = null
+
+        var pill = function () {
+            return document.querySelector('[data-pill]')
+        }
+
+        document.addEventListener('astro:before-swap', function () {
+            var current = pill()
+            previous = current ? current.getBoundingClientRect() : null
+        })
+
+        document.addEventListener('astro:after-swap', function () {
+            var next = pill()
+            if (!next || !previous) return
+
+            var to = next.getBoundingClientRect()
+            var dx = previous.left - to.left
+            var scale = to.width ? previous.width / to.width : 1
+
+            previous = null
+
+            if (!dx && scale === 1) return
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                return
+            }
+
+            next.style.transition = 'none'
+            next.style.transformOrigin = 'left center'
+            next.style.transform =
+                'translateX(' + dx + 'px) scaleX(' + scale + ')'
+            next.getBoundingClientRect()
+            next.style.transition =
+                'transform 360ms cubic-bezier(0.22, 1, 0.36, 1)'
+            next.style.transform = 'translateX(0) scaleX(1)'
+        })
+    })()
+</script>

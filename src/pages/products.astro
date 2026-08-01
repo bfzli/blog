@@ -11,8 +11,8 @@ const ventureItems = ventures.map((v) => ({
 }))
 const vibeItems = vibeCoding.map((v) => ({
     ...v,
-    href: `/products/${v.slug}`,
-    external: false
+    href: v.url,
+    external: true
 }))
 const meta = staticPages.products
 ---
@@ -24,6 +24,6 @@ const meta = staticPages.products
     image={`/og/${meta.slug}.webp`}
     type='website'
 >
-    <ProductList title='Missions' items={ventureItems} />
-    <ProductList title='Vibe Coding' items={vibeItems} class='mt-12' />
+    <ProductList title='Platforms' items={ventureItems} />
+    <ProductList title='Extensions' items={vibeItems} class='mt-12' />
 </Home>

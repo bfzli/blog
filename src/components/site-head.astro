@@ -2,13 +2,25 @@
 import type { Props as PageProps } from '@/types'
 import { ClientRouter } from 'astro:transitions'
 import { constants } from '@/config'
+import { cleanPath, markdownPath } from '@/utils/url'
 
 const { profile } = constants
 const props = Astro.props as PageProps
+const canonical = constants.site + cleanPath(Astro.url.pathname)
+const markdown = constants.site + markdownPath(Astro.url.pathname)
 ---
 
 <meta charset='utf-8' />
-<meta name='theme-color' content='#fcfcfc' />
+<meta
+    name='theme-color'
+    media='(prefers-color-scheme: light)'
+    content='#fcfcfc'
+/>
+<meta
+    name='theme-color'
+    media='(prefers-color-scheme: dark)'
+    content='#0a0a0b'
+/>
 <meta name='color-scheme' content='light dark' />
 
 <meta name='viewport' content='width=device-width, initial-scale=1.0' />
@@ -28,13 +40,13 @@ const props = Astro.props as PageProps
 <meta property='og:image:width' content='1200' />
 <meta property='og:image:height' content='630' />
 <meta property='og:type' content={props.type} />
-<meta property='og:url' content={constants.site + Astro.url.pathname} />
+<meta property='og:url' content={canonical} />
 <meta name='twitter:card' content='summary_large_image' />
 <meta name='twitter:creator' content={`@${profile.username}`} />
 <meta name='twitter:site' content={`@${profile.username}`} />
 <meta name='twitter:title' content={props.title} />
 <meta name='twitter:description' content={props.description} />
-<meta name='twitter:url' content={constants.site + Astro.url.pathname} />
+<meta name='twitter:url' content={canonical} />
 <meta name='twitter:image' content={constants.site + props.image} />
 <meta name='twitter:image:alt' content={props.title} />
 
@@ -47,9 +59,37 @@ const props = Astro.props as PageProps
     ) : null
 }
 
+<link
+    rel='preload'
+    href='/fonts/dm-sans/DMSans-Regular.woff2'
+    as='font'
+    type='font/woff2'
+    crossorigin
+/>
+<link
+    rel='preload'
+    href='/fonts/dm-sans/DMSans-Medium.woff2'
+    as='font'
+    type='font/woff2'
+    crossorigin
+/>
+<link
+    rel='preload'
+    href='/fonts/dm-sans/DMSans-Bold.woff2'
+    as='font'
+    type='font/woff2'
+    crossorigin
+/>
+
 <link rel='shortcut icon' type='image/ico' href='/favicon.ico' />
 <link rel='sitemap' href='/sitemap-index.xml' />
-<link rel='canonical' href={constants.site + Astro.url.pathname} />
+<link rel='canonical' href={canonical} />
+<link
+    rel='alternate'
+    type='text/markdown'
+    title={`${props.title} (Markdown)`}
+    href={markdown}
+/>
 
 <title>
     {props.title}

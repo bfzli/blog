@@ -5,13 +5,16 @@ import '@/styles/layers.css'
 import '@/styles/fonts.css'
 import '@/styles/colors.css'
 import '@/styles/global.css'
+import '@/styles/animations.css'
 import '@/styles/syntax.css'
 
 import {
     SiteHead,
     SiteHeader,
     SiteFooter,
+    ScrollScript,
     ThemeScript,
+    RevealScript,
     ServiceWorker,
     Analytics
 } from '@/components'
@@ -21,7 +24,9 @@ const props = Astro.props as Props
 
 <html lang='en' dir='ltr'>
     <head>
+        <ScrollScript />
         <ThemeScript />
+        <RevealScript />
         <SiteHead {...props} />
         <Analytics />
     </head>
@@ -34,7 +39,10 @@ const props = Astro.props as Props
         >
             <SiteHeader />
 
-            <main class='min-h-xs flex-1 px-2 py-14 pt-10 sm:py-20 sm:pt-12'>
+            <main
+                class='min-h-xs flex-1 px-2 py-14 pt-10 sm:py-20 sm:pt-12'
+                data-reveal
+            >
                 <slot />
             </main>
 

@@ -1,24 +1,23 @@
 ---
-import type { CollectionEntry } from 'astro:content'
+import type { Post } from '@/types'
 import { List, PostItem } from '@/components'
 
 interface Props {
     title: string
-    items: CollectionEntry<'posts'>[]
+    items: Post[]
 }
 
 const { title, items } = Astro.props
 ---
 
-<section>
+<section data-reveal>
     <h2 class='mt-8 text-2xl font-bold'>{title}</h2>
 
-    <List class='mt-4'>
+    <List class='mt-4' data-reveal-group>
         {
             items.map((post) => (
                 <PostItem
                     slug={post.slug}
-                    date={post.data.date}
                     title={post.data.title}
                     description={post.data.description}
                 />

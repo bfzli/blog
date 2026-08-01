@@ -3,29 +3,33 @@
     --light-primary: #2a6cea;
     --light-neutral: #fefeff;
     --light-surface: #fcfcfc;
-    --light-element: #f5f6f7;
-    --light-elevate: #edf0f6;
-    --light-comment: #72809a;
-    --light-post-bg: #f8f9fb;
+    --light-element: #f4f4f5;
+    --light-elevate: #f1f1f4;
+    --light-comment: #71717a;
+    --light-post-bg: #f7f7f8;
     --light-muted: #3a3a3d;
     --light-soft: #5e5e63;
     --light-subtle: #8a8a90;
     --light-primary-hover: #2056c4;
-    --light-post-hover: #f1f3f7;
+    --light-post-hover: #efeff1;
+    --light-pill: #ffffff;
+    --light-icon-secondary: #c3c8d4;
 
-    --dark-default: #fff;
-    --dark-primary: #81a7f1;
-    --dark-neutral: #070e1d;
+    --dark-default: #fafafa;
+    --dark-primary: #6f9dfa;
+    --dark-neutral: #08080a;
     --dark-surface: #0a0a0b;
-    --dark-element: #0f182c;
-    --dark-elevate: #1b263c;
-    --dark-comment: #72809a;
-    --dark-post-bg: #141d30;
-    --dark-muted: #d3d3d6;
-    --dark-soft: #a8a8ad;
-    --dark-subtle: #828289;
-    --dark-primary-hover: #a3c0f5;
-    --dark-post-hover: #3a4458;
+    --dark-element: #131316;
+    --dark-elevate: #1f1f24;
+    --dark-comment: #7c7c86;
+    --dark-post-bg: #121215;
+    --dark-muted: #d6d6da;
+    --dark-soft: #9c9ca5;
+    --dark-subtle: #71717a;
+    --dark-primary-hover: #96b8fc;
+    --dark-post-hover: #18181c;
+    --dark-pill: #2c2c33;
+    --dark-icon-secondary: #45454d;
 
     --light-syntax-keywords: #d73a49;
     --light-syntax-selector: #22863a;
@@ -45,7 +49,7 @@
     --dark-syntax-surround: #a5d6ff;
     --dark-syntax-comments: #8b949e;
     --dark-syntax-modified: #81a7f1;
-    --dark-syntax-highline: #0d1628;
+    --dark-syntax-highline: #16161a;
 }
 
 :root {
@@ -63,6 +67,8 @@
     --subtle: var(--light-subtle);
     --primary-hover: var(--light-primary-hover);
     --post-hover: var(--light-post-hover);
+    --pill: var(--light-pill);
+    --icon-secondary: var(--light-icon-secondary);
 
     --syntax-keywords: var(--light-syntax-keywords);
     --syntax-selector: var(--light-syntax-selector);
@@ -90,6 +96,8 @@
     --subtle: var(--light-subtle);
     --primary-hover: var(--light-primary-hover);
     --post-hover: var(--light-post-hover);
+    --pill: var(--light-pill);
+    --icon-secondary: var(--light-icon-secondary);
 
     --syntax-keywords: var(--light-syntax-keywords);
     --syntax-selector: var(--light-syntax-selector);
@@ -117,6 +125,8 @@
     --subtle: var(--dark-subtle);
     --primary-hover: var(--dark-primary-hover);
     --post-hover: var(--dark-post-hover);
+    --pill: var(--dark-pill);
+    --icon-secondary: var(--dark-icon-secondary);
 
     --syntax-keywords: var(--dark-syntax-keywords);
     --syntax-selector: var(--dark-syntax-selector);

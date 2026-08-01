@@ -1,0 +1,2 @@
+export const privacyPermissions =
+    'The permissions requested at install time are used only to deliver the features described on the Chrome Web Store listing. Nothing is transmitted off your device, so there is no server to breach and no account to delete.'

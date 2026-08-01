@@ -1,0 +1,18 @@
+<script is:inline>
+    ;(function () {
+        var nav = performance.getEntriesByType('navigation')[0]
+
+        if (!nav || nav.type !== 'reload' || location.hash) return
+
+        history.scrollRestoration = 'manual'
+
+        if (history.state) {
+            history.replaceState(
+                Object.assign({}, history.state, { scrollX: 0, scrollY: 0 }),
+                ''
+            )
+        }
+
+        window.scrollTo(0, 0)
+    })()
+</script>

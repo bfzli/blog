@@ -1,42 +1,36 @@
 ---
 import { Image } from 'astro:assets'
-import { Navigation, InlineLink } from '@/components'
+import { Navigation, Greeting } from '@/components'
 import { avatar } from '@/assets'
+import { constants } from '@/config'
 
-const skopjeUrl = 'https://www.google.com/search?q=Skopje,+North+Macedonia'
+const { profile } = constants
 ---
 
-<div>
+<div data-reveal-group>
     <Image
         src={avatar}
         alt='Benjamin'
         width={96}
         height={96}
         class='mb-6 h-24 w-24 select-none rounded-full'
+        loading='eager'
+        fetchpriority='high'
+        data-skeleton
         draggable={false}
     />
 
-    <h1 class='mb-2 mt-4 text-4xl font-bold'>Hello 👋, I'm Benjamin</h1>
+    <h1 class='mb-2 mt-4 text-4xl font-bold leading-[1.2]'>
+        <Greeting />, I'm Benjamin <span class='wave'>👋</span>
+    </h1>
 
     <section class='mb-4 mt-2 space-y-2'>
         <h2 class='text-md font-normal leading-loose sm:leading-loose'>
-            A curious software engineer based in
-            <InlineLink href={skopjeUrl}>Skopje, North Macedonia</InlineLink>,
-            building products that solve real problems. Currently working on:
-            <InlineLink href='https://envless.cloud'>@envless</InlineLink>,
-            <InlineLink href='https://cloudagents.run'>@cloudagents</InlineLink>,
-            <InlineLink href='https://pikegjaku.com'>@pikegjaku</InlineLink>,
-            <InlineLink href='https://launchdock.sh'>@launchdock</InlineLink>,
-            and
-            <InlineLink href='https://ip2geo.dev'>@ip2geo</InlineLink>.
+            {profile.bio}
         </h2>
     </section>
 
     <div class='mt-8'>
-        <Navigation
-            currentPath={Astro.url.pathname}
-            client:load
-            transition:persist
-        />
+        <Navigation />
     </div>
 </div>
