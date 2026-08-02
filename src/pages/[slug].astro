@@ -37,7 +37,7 @@ const { Content } = await post.render()
     date={post.data.date}
     tags={tags}
 >
-    <BackLink href='/' />
+    <BackLink href='/' label='Posts' />
 
     <ArticleSchema
         slug={post.slug}
@@ -47,11 +47,7 @@ const { Content } = await post.render()
         tags={tags}
     />
 
-    <PostHeader
-        title={post.data.title}
-        description={post.data.description}
-        date={post.data.date}
-    />
+    <PostHeader title={post.data.title} date={post.data.date} tags={tags} />
 
     <Content components={MDXComponents} />
 
