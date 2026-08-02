@@ -1,24 +1,21 @@
 ---
 import { H1, Icon } from '@/components'
 import { isoDate } from '@/utils/date'
+
 interface Props {
     title: string
-    description: string
     date: string
+    tags?: string[]
 }
 
-const { title, description, date } = Astro.props
+const { title, date, tags = [] } = Astro.props
 ---
 
 <H1>
     {title}
 </H1>
 
-<p class='text-muted'>
-    {description}
-</p>
-
-<div class='mt-5'>
+<div class='mt-5 flex flex-wrap items-center gap-x-5 gap-y-2'>
     <time
         datetime={isoDate(date)}
         class='inline-flex items-center gap-1.5 text-[12px] font-medium text-soft'
@@ -26,6 +23,15 @@ const { title, description, date } = Astro.props
         <Icon name='calendarBlank' class='h-3.5 w-3.5' />
         {date}
     </time>
+
+    {
+        tags.length > 0 && (
+            <span class='inline-flex items-center gap-1.5 text-[12px] font-medium text-soft'>
+                <Icon name='tag' class='h-3.5 w-3.5' />
+                {tags.join(', ')}
+            </span>
+        )
+    }
 </div>
 
-<hr class='h-8 border-0' />
+<hr class='mb-10 mt-8 border-0 border-t border-elevate' />

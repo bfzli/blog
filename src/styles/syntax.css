@@ -3,7 +3,7 @@ code {
     scrollbar-width: none;
 }
 
-pre:has(> code[class*='language-']) {
+pre[class*='language-'] {
     background: transparent;
     padding: 0;
     margin: 0;
@@ -15,8 +15,21 @@ code::-webkit-scrollbar {
     display: none;
 }
 
-:is(li, p) code {
-    @apply text-sm font-normal;
+.inline-code {
+    font-size: 0.875em;
+    font-weight: 500;
+    line-height: inherit;
+    padding: 0.14em 0.4em;
+    border-radius: 0.375rem;
+    background: var(--element);
+    border: 1px solid var(--elevate);
+    overflow-wrap: break-word;
+}
+
+:is(h1, h2, h3, h4, h5, h6) .inline-code {
+    font-size: 0.82em;
+    font-weight: 600;
+    padding: 0.08em 0.32em;
 }
 
 code .highlight-line {

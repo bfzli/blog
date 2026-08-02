@@ -5,7 +5,7 @@
             button.dataset.bound = '1'
 
             button.addEventListener('click', function () {
-                var code = button.parentElement?.querySelector('code')
+                var code = button.closest('[data-code-block]')?.querySelector('code')
                 if (!code) return
 
                 navigator.clipboard

@@ -52,6 +52,7 @@ export type IconName =
     | 'moon'
     | 'smileySad'
     | 'sun'
+    | 'tag'
 
 export interface IconProps {
     name: IconName
