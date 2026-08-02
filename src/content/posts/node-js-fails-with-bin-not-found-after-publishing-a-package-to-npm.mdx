@@ -1,0 +1,480 @@
+---
+title: "Node.js Fails with bin Not Found After Publishing a Package to npm"
+description: "Fix npm packages that install but do not expose the expected CLI command."
+tags: ["nodejs", "npm", "cli", "publishing"]
+date: Aug 1, 2026
+cell: "bin-not-found-pnpm-packages::nodejs::cli-publish"
+---
+
+`npm install` succeeds, but the expected CLI command is missing from `node_modules/.bin`, and running it prints `sh: <command>: command not found` or `npm ERR! missing script: <command>` depending on how it is invoked.
+
+## How npm decides whether to create a command
+
+npm does not expose every file in a package as a shell command. It only creates a symlink or shim when the package manifest contains a `bin` entry that points to an executable file inside the published tarball.
+
+The three pieces that must line up are:
+
+- the package name in `package.json`
+- the `bin` field in `package.json`
+- the actual entry file path that gets published
+
+If any one of them is wrong, the package can install cleanly but no executable is linked.
+
+A minimal package that exposes a command looks like this:
+
+```json
+{
+  "name": "acme-tool",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "bin": {
+    "acme-tool": "./dist/cli.js"
+  }
+}
+```
+
+If this package is installed, npm links `acme-tool` to `./dist/cli.js` from the package contents. The command name is `acme-tool`, not the file name. The file path must exist in the published tarball.
+
+## The `bin` field and command naming
+
+The `bin` field can be either a string or an object.
+
+A string form exports one command using the package name as the command name:
+
+```json
+{
+  "name": "acme-tool",
+  "bin": "./dist/cli.js"
+}
+```
+
+This is equivalent to:
+
+```json
+{
+  "name": "acme-tool",
+  "bin": {
+    "acme-tool": "./dist/cli.js"
+  }
+}
+```
+
+The object form is usually safer because it makes the command name explicit. This matters when the package name contains characters that are legal in npm package names but awkward for executable names, such as scopes.
+
+For a scoped package, the package name does not become the executable name automatically. This package:
+
+```json
+{
+  "name": "@acme/tool",
+  "bin": {
+    "tool": "./dist/cli.js"
+  }
+}
+```
+
+installs a command named `tool`, not `@acme/tool`.
+
+If the `bin` field is missing, npm has no instruction to create a command, even if the package contains a script that looks like a CLI. That is the core mechanism behind the missing command.
+
+## Why the entry file path matters
+
+npm links the path named in `bin`, but it links only files that are actually present in the package tarball. A common failure mode is pointing `bin` at a source file that is not published.
+
+For example, this manifest looks plausible:
+
+```json
+{
+  "name": "acme-tool",
+  "version": "1.0.0",
+  "bin": {
+    "acme-tool": "./src/cli.ts"
+  }
+}
+```
+
+That does not work for normal npm consumers unless `src/cli.ts` is included in the published package and the runtime can execute TypeScript directly, which npm does not provide. For a typical Node.js package, the executable should be a compiled JavaScript file such as `./dist/cli.js`.
+
+A common pattern is:
+
+- TypeScript source in `src/`
+- build output in `dist/`
+- `bin` points to `dist/cli.js`
+- `files` includes `dist/`
+
+Example:
+
+```json
+{
+  "name": "acme-tool",
+  "version": "1.0.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "acme-tool": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build"
+  }
+}
+```
+
+This ensures the command path exists in the published artifact.
+
+## The executable needs a shebang
+
+Even when npm links the file correctly, the file still has to be runnable as a command. For Node.js scripts, that means the first line should be a shebang:
+
+```ts
+#!/usr/bin/env node
+
+console.log("acme-tool");
+```
+
+The shebang tells the operating system to run the file with `node`. Without it, a Unix-like shell may try to execute the file as a plain text file and fail with errors such as `Exec format error` or an unexpected shell parse error.
+
+If you compile TypeScript, keep the shebang in the emitted JavaScript. TypeScript preserves the shebang when it is at the top of the source file.
+
+Example CLI source:
+
+```ts
+#!/usr/bin/env node
+
+export {};
+
+const args = process.argv.slice(2);
+console.log(`args: ${args.join(" ")}`);
+```
+
+If you use ESM, keep the file compatible with your package `type`. For CommonJS, the same shebang works:
+
+```js
+#!/usr/bin/env node
+
+console.log(process.argv.slice(2));
+```
+
+## File mode and `chmod`
+
+npm can create the link, but the target file must also be executable on platforms that use Unix file permissions. The file mode in the tarball should include execute permission.
+
+The typical mode is `755`, meaning readable and executable by everyone, writable by the owner:
+
+```bash
+chmod 755 dist/cli.js
+```
+
+When you publish from a build step, verify that the generated file keeps execute permissions in the package tarball. If the file is `644`, it is readable but not executable, and the link may exist without being runnable as a CLI.
+
+On Windows, npm creates a shim `.cmd` file, so the Unix execute bit is less visible to the end user. The package still needs to be correct for the tarball and for Unix installs, which is where this issue usually surfaces.
+
+A safe setup is:
+
+```json
+{
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "postbuild": "chmod 755 dist/cli.js",
+    "prepack": "npm run build"
+  }
+}
+```
+
+`chmod` is not always necessary if your build tool preserves executable mode, but it is worth checking explicitly when the CLI file is generated.
+
+## A complete package shape that works
+
+A reliable layout for a compiled TypeScript CLI is:
+
+```text
+package.json
+src/
+  cli.ts
+  index.ts
+tsconfig.json
+dist/
+```
+
+`package.json`:
+
+```json
+{
+  "name": "acme-tool",
+  "version": "1.0.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "acme-tool": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "test:pack": "npm pack --dry-run"
+  }
+}
+```
+
+`src/cli.ts`:
+
+```ts
+#!/usr/bin/env node
+
+export {};
+
+const [, , ...args] = process.argv;
+
+if (args.includes("--help")) {
+  console.log("Usage: acme-tool [options]");
+  process.exit(0);
+}
+
+console.log(`acme-tool received ${args.length} argument(s)`);
+```
+
+`tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "outDir": "dist",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "rootDir": "src",
+    "strict": true,
+    "declaration": true
+  },
+  "include": ["src"]
+}
+```
+
+This shape works because the `bin` field points to a file that is built before publish and included in the package contents.
+
+## How npm links executables
+
+When a package with a `bin` field is installed, npm creates a link in the consumer’s `node_modules/.bin` directory. The link name comes from the key in the `bin` object.
+
+For this manifest:
+
+```json
+{
+  "name": "@acme/tool",
+  "bin": {
+    "tool": "./dist/cli.js"
+  }
+}
+```
+
+npm installs a `tool` command.
+
+For local development, you can verify the link after installation:
+
+```bash
+npm install
+ls -l node_modules/.bin
+```
+
+On Unix-like systems, you should see a symlink or shim named `tool`. On Windows, the directory contains `.cmd` and related shim files.
+
+If the command is absent, the package was installed without a valid `bin` target, or the installed tarball did not contain the target file.
+
+## Common failure modes
+
+A package can install correctly and still fail to expose a command for several reasons.
+
+### `bin` points at a file that is not published
+
+This is the most common case. The manifest references `./dist/cli.js`, but the package publishes only `src/` or excludes `dist/`.
+
+Use `files` to include the build output:
+
+```json
+{
+  "files": [
+    "dist"
+  ]
+}
+```
+
+Avoid relying on implicit packaging rules if the repository contains build artifacts and sources together.
+
+### The package was published before the build ran
+
+If `prepack` or `prepare` is missing, the tarball can be created from stale or absent build output.
+
+Use `prepack` for publish-time builds:
+
+```json
+{
+  "scripts": {
+    "prepack": "npm run build"
+  }
+}
+```
+
+That runs before `npm pack` and before `npm publish`.
+
+### The command name and package name were confused
+
+The package name can be `@acme/tool`, but the binary name can be `tool`. They are independent.
+
+This is valid:
+
+```json
+{
+  "name": "@acme/tool",
+  "bin": {
+    "acme-tool": "./dist/cli.js"
+  }
+}
+```
+
+This exposes `acme-tool`, not `tool`.
+
+### The file exists but lacks a shebang
+
+The link is created, but the system cannot execute the file as a Node.js script.
+
+Fix the first line:
+
+```ts
+#!/usr/bin/env node
+```
+
+### The file exists but is not executable
+
+The link is present, but the file mode is not `755` or equivalent.
+
+Fix with:
+
+```bash
+chmod 755 dist/cli.js
+```
+
+## How to verify the package before release
+
+The published tarball is the source of truth. Do not assume the repository state matches the package contents.
+
+Run a dry-run pack and inspect the file list:
+
+```bash
+npm pack --dry-run
+```
+
+That prints the files that would be included. Confirm that these are present:
+
+- `package.json`
+- `dist/cli.js`
+- any runtime files imported by `dist/cli.js`
+
+Then create the tarball and inspect it directly:
+
+```bash
+npm pack
+tar -tf acme-tool-1.0.0.tgz
+```
+
+You should see `package/dist/cli.js` in the archive.
+
+To inspect the manifest inside the tarball:
+
+```bash
+tar -xOf acme-tool-1.0.0.tgz package/package.json
+```
+
+Confirm that the `bin` field matches the actual path in the archive.
+
+A quick end-to-end test uses a temporary install:
+
+```bash
+mkdir /tmp/acme-tool-check
+cd /tmp/acme-tool-check
+npm init -y
+npm install /path/to/acme-tool-1.0.0.tgz
+ls -l node_modules/.bin
+node_modules/.bin/acme-tool --help
+```
+
+If the command is missing here, the problem is in the package contents, not the consumer project.
+
+## Validating the executable path in CI
+
+A publish pipeline should fail if the CLI is not present in the tarball.
+
+One straightforward check is to compare the `bin` target with the packed files.
+
+Example script:
+
+```js
+import { execSync } from "node:child_process";
+import fs from "node:fs";
+
+const tarball = execSync("npm pack --json", { encoding: "utf8" });
+const [{ filename }] = JSON.parse(tarball);
+
+const files = execSync(`tar -tf ${filename}`, { encoding: "utf8" })
+  .split("\n")
+  .filter(Boolean);
+
+const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+const bins = typeof pkg.bin === "string" ? { [pkg.name]: pkg.bin } : pkg.bin;
+
+for (const [command, target] of Object.entries(bins)) {
+  const packedPath = `package/${target.replace(/^.\//, "")}`;
+  if (!files.includes(packedPath)) {
+    throw new Error(`Missing bin target for ${command}: ${target}`);
+  }
+}
+```
+
+This check ensures the executable path is actually part of the release artifact.
+
+## Package name, bin name, and path: the rule set
+
+The following relationships determine whether npm creates the command:
+
+- package name identifies the package on the registry
+- `bin` key identifies the command name
+- `bin` value identifies the executable file path
+
+These do not need to match, but the path must resolve inside the tarball.
+
+Valid example:
+
+```json
+{
+  "name": "@acme/tool",
+  "bin": {
+    "tool": "./dist/cli.js"
+  }
+}
+```
+
+Invalid example:
+
+```json
+{
+  "name": "@acme/tool",
+  "bin": {
+    "tool": "./src/cli.ts"
+  }
+}
+```
+
+unless `src/cli.ts` is intentionally published and directly executable, which is uncommon for npm CLI packages.
+
+## The practical fix
+
+Prefer a compiled `dist/cli.js` file with:
+
+- a `bin` entry that points to that file
+- a `#!/usr/bin/env node` shebang
+- executable file mode such as `755`
+- a `prepack` build step
+- `npm pack --dry-run` verification before release
+
+That combination prevents the package from installing without the expected command, because npm can only link what the tarball contains and what the manifest explicitly exposes.

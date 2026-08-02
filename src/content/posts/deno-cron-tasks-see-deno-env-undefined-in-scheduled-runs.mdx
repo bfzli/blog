@@ -1,0 +1,288 @@
+---
+title: "Deno Cron Tasks See DENO_ENV Undefined in Scheduled Runs"
+description: "Make scheduled Deno jobs read environment variables reliably instead of getting undefined at runtime."
+tags: ["deno", "cron", "environment-variables", "runtime"]
+date: Aug 1, 2026
+cell: "deno-cache-secrets-undefined::deno::scheduled-task-env"
+---
+
+## `DENO_ENV` is `undefined` inside a Deno cron task, and the runtime throws `TypeError: Cannot read properties of undefined`
+
+Scheduled Deno tasks do not run inside the same shell process as an interactive terminal session. If task code reads `DENO_ENV` or any other variable from `process.env`, the value can be `undefined` at runtime, and downstream code often fails with an error such as `TypeError: Cannot read properties of undefined` or with a missing configuration error from the library that expected the variable.
+
+The important distinction is that a Deno cron task inherits the runtime configuration, not the current shell environment. Variables exported in a local terminal session are available to child processes started from that shell, but scheduled Deno jobs are executed by the Deno runtime under its own environment handling. If the variable is not explicitly provided to the runtime, it is absent.
+
+## What is happening
+
+In Deno, environment variables are read through `Deno.env.get("NAME")`. That API only returns values that Deno is allowed to see and that have actually been provided to the runtime. It does not automatically reflect every variable that exists in a parent shell.
+
+A local command like this:
+
+```sh
+export DENO_ENV=production
+deno run main.ts
+```
+
+works because the terminal process passes `DENO_ENV` to the child `deno` process. A scheduled task is different. The task definition is executed by Deno's scheduler, which spawns the task with the environment it was configured to use. If the environment was not configured, `Deno.env.get("DENO_ENV")` returns `undefined`.
+
+That distinction matters because many application entrypoints assume configuration exists. For example:
+
+```ts
+const env = Deno.env.get("DENO_ENV");
+if (env === undefined) {
+  throw new Error("DENO_ENV is required");
+}
+```
+
+or, more commonly:
+
+```ts
+const config = JSON.parse(Deno.env.get("DENO_ENV")!);
+```
+
+The non-null assertion operator `!` suppresses the compile-time warning, but it does not create a value. At runtime, `JSON.parse(undefined)` fails immediately.
+
+## Why local shell environment is not enough
+
+A shell environment is process-scoped. When you run `export NAME=value`, the variable is added to the current shell and inherited by processes started from that shell. That works for one-off commands, `deno task`, and manual `deno run` invocations launched from the same terminal.
+
+Scheduled jobs do not rely on that shell session. They run later, often in a different process, with a separate environment snapshot. That snapshot must be defined by the scheduler or deployment platform.
+
+In practice, this means the following common pattern is brittle:
+
+```ts
+const apiKey = Deno.env.get("API_KEY");
+await sendToService(apiKey!);
+```
+
+If `API_KEY` is not configured in the scheduled runtime, the code compiles and then fails when the task executes.
+
+The same issue appears when code expects `DENO_ENV`, `NODE_ENV`, `DATABASE_URL`, or any secret injected only into a deployment shell. The mechanism is not specific to one variable name. It is a runtime environment mismatch.
+
+## Read configuration from `Deno.env.get()` inside the task entrypoint
+
+The scheduled task should read configuration from `Deno.env.get()` at the point where the task starts, not from a module-level assumption that a shell environment exists.
+
+A safe task entrypoint looks like this:
+
+```ts
+// tasks/sync.ts
+function requiredEnv(name: string): string {
+  const value = Deno.env.get(name);
+  if (value === undefined || value === "") {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+const denoEnv = requiredEnv("DENO_ENV");
+const apiKey = requiredEnv("API_KEY");
+
+console.log(`Running in ${denoEnv} mode`);
+
+await fetch("https://example.com/api/sync", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ source: "scheduled-task" }),
+});
+```
+
+This pattern does three things:
+
+1. It reads the environment at runtime.
+2. It fails immediately with a clear error if the variable is missing.
+3. It keeps the task code independent of local shell state.
+
+If the variable is optional, handle that explicitly instead of assuming it exists:
+
+```ts
+const region = Deno.env.get("REGION") ?? "us-east-1";
+```
+
+That avoids turning an optional input into a runtime failure.
+
+## Grant environment access only when the task needs it
+
+Deno does not allow environment access unless the runtime is configured to permit it. If the task uses `Deno.env.get()`, you need `--allow-env` or an equivalent scheduler configuration that includes env access.
+
+For a local run:
+
+```sh
+deno run --allow-net --allow-env tasks/sync.ts
+```
+
+If the task only needs specific variables, you can restrict access:
+
+```sh
+deno run --allow-net --allow-env=DENO_ENV,API_KEY tasks/sync.ts
+```
+
+That flag limits the runtime to those variable names. It is preferable to `--allow-env` without a list when the code has a narrow configuration surface.
+
+The mechanism here is separate from whether the variable is set. Two things must both be true:
+
+- Deno must be allowed to read env vars.
+- The env var must actually be present in the runtime environment.
+
+If either one is missing, `Deno.env.get()` will not produce the expected value.
+
+## Configure secrets in the runtime, not in the shell
+
+For scheduled jobs, secrets and configuration should be injected through the scheduler or deployment platform that launches the task. The exact UI or command depends on the environment, but the principle is the same: define `DENO_ENV`, `API_KEY`, and any other required values in the runtime configuration for the job itself.
+
+A typical Deno task definition might look like this:
+
+```ts
+// deno.json
+{
+  "tasks": {
+    "sync": "deno run --allow-net --allow-env=DENO_ENV,API_KEY tasks/sync.ts"
+  }
+}
+```
+
+Then run it with the environment available in the current shell only for local execution:
+
+```sh
+DENO_ENV=production API_KEY=secret deno task sync
+```
+
+That command works for local testing because the variables are injected into the process that starts `deno task`. It does not solve scheduled execution unless the scheduler also injects the same variables.
+
+For production scheduled jobs, configure the runtime directly. If the system supports explicit secret bindings, prefer those over hardcoded exported variables. The goal is to make the task independent of the login shell, `.bashrc`, or whatever terminal session happened to define the variable.
+
+## Avoid reading env at module load time
+
+A common cause of confusing failures is reading `Deno.env.get()` before the scheduler has reached the task entrypoint. Module-level code runs as soon as the file is imported or evaluated.
+
+This is fragile:
+
+```ts
+// tasks/sync.ts
+const apiKey = Deno.env.get("API_KEY");
+
+export async function run() {
+  await fetch("https://example.com/api", {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+}
+```
+
+If another module imports `tasks/sync.ts` during startup, the environment is read immediately. That makes testing and composition harder, and it can hide configuration problems until import time.
+
+Prefer reading within the task function:
+
+```ts
+export async function run() {
+  const apiKey = Deno.env.get("API_KEY");
+  if (!apiKey) {
+    throw new Error("Missing required environment variable: API_KEY");
+  }
+
+  await fetch("https://example.com/api", {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+}
+```
+
+This keeps the dependency close to the operation that needs it. It also makes the failure mode easier to understand: the task is invoked, the task checks its required configuration, and the task stops with a direct error if the runtime did not provide it.
+
+## Example: a scheduled task with explicit env handling
+
+The following example uses a simple JSON payload and a required database URL.
+
+```ts
+// tasks/cleanup.ts
+function requiredEnv(name: string): string {
+  const value = Deno.env.get(name);
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+export async function runCleanup() {
+  const databaseUrl = requiredEnv("DATABASE_URL");
+  const denoEnv = requiredEnv("DENO_ENV");
+
+  console.log(`Cleanup running for ${denoEnv}`);
+
+  const response = await fetch("https://example.com/cleanup", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      databaseUrl,
+      mode: denoEnv,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Cleanup failed: ${response.status} ${response.statusText}`);
+  }
+}
+
+if (import.meta.main) {
+  await runCleanup();
+}
+```
+
+Local execution:
+
+```sh
+DENO_ENV=production DATABASE_URL=https://db.example.com \
+deno run --allow-net --allow-env=DENO_ENV,DATABASE_URL tasks/cleanup.ts
+```
+
+This works because the variables are present and the runtime is allowed to read them.
+
+If the scheduler launches the task without those variables configured, `requiredEnv()` fails immediately. That is a better failure mode than allowing the code to continue with `undefined` and later throwing a less specific error from deep inside the job logic.
+
+## How to verify the scheduled runtime has the right env
+
+When a scheduled job fails with a missing variable, validate the runtime configuration directly instead of assuming the local shell mirrors it.
+
+Useful checks include:
+
+```ts
+console.log("DENO_ENV:", Deno.env.get("DENO_ENV"));
+console.log("API_KEY present:", Deno.env.get("API_KEY") !== undefined);
+```
+
+Use those only as temporary diagnostics. They should not remain in logs if the values are sensitive.
+
+You can also test the runtime the same way the scheduler will run it. If the production job is launched with a specific command, run that command locally with the same env configuration and the same permissions. For example:
+
+```sh
+env -i DENO_ENV=production API_KEY=secret \
+deno run --allow-net --allow-env=DENO_ENV,API_KEY tasks/sync.ts
+```
+
+The `env -i` portion starts from an empty environment, which makes hidden dependencies obvious. If the task still succeeds, it is not relying on ambient shell state.
+
+## Common mistakes
+
+One mistake is using `process.env` out of habit. Deno is not Node, and `process.env` is not the normal mechanism in Deno programs. The correct API is `Deno.env.get()`.
+
+Another mistake is granting broader permissions than necessary and then assuming that solves configuration issues. `--allow-env` only removes the access restriction. It does not populate missing values.
+
+A third mistake is keeping secret access in a helper imported by many modules. That can cause env reads during import, which makes initialization order matter more than necessary.
+
+A fourth mistake is assuming a scheduled job inherits `.env` files automatically. A file named `.env` is only data on disk until some code loads it. If the runtime depends on `.env`, it must be loaded deliberately, and the job still needs permission to read it if that loader uses `Deno.env.set()` or a file access path.
+
+## Keep the task entrypoint explicit
+
+The most robust pattern is:
+
+- configure required variables in the job runtime,
+- read them with `Deno.env.get()` in the task entrypoint,
+- validate them immediately,
+- use `--allow-env` only for the names the task actually needs.
+
+That keeps scheduled Deno jobs independent of a login shell and makes the failure mode deterministic. If a task sees `undefined`, the problem is almost always that the job runtime was not configured with the variable, or the task was not granted permission to read it.
+
+Prefer explicit runtime configuration over ambient shell state. That prevents scheduled jobs from depending on whatever happened to be exported in a terminal session, and it keeps environment-related failures easy to diagnose.

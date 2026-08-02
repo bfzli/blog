@@ -44,12 +44,69 @@ export const publishedSlugs = () =>
 export const publishedCells = () =>
     new Set(readPublished().map((post) => post.cell).filter(Boolean))
 
+const TIME_ZONE = 'Europe/Skopje'
+
 const postDate = (date: Date) =>
     date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
-        year: 'numeric'
+        year: 'numeric',
+        timeZone: TIME_ZONE
     })
+
+const STOP_WORDS = new Set([
+    'a',
+    'an',
+    'and',
+    'at',
+    'but',
+    'during',
+    'for',
+    'from',
+    'in',
+    'is',
+    'it',
+    'not',
+    'of',
+    'on',
+    'or',
+    'that',
+    'the',
+    'then',
+    'to',
+    'when',
+    'with'
+])
+
+const significant = (title: string) =>
+    new Set(
+        title
+            .toLowerCase()
+            .replace(/[^a-z0-9\s.]/g, ' ')
+            .split(/\s+/)
+            .filter((word) => word && !STOP_WORDS.has(word))
+    )
+
+export const tooSimilar = (title: string, others: string[], limit = 0.6) => {
+    const words = significant(title)
+    if (!words.size) return true
+
+    return others.some((other) => {
+        const against = significant(other)
+        if (!against.size) return false
+
+        let shared = 0
+        for (const word of words) if (against.has(word)) shared += 1
+
+        return shared / Math.min(words.size, against.size) > limit
+    })
+}
+
+export const wordCount = (body: string) =>
+    body
+        .replace(/```[\s\S]*?```/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean).length
 
 export const frontmatter = (idea: PostIdea, date: Date) =>
     [

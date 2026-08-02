@@ -1,0 +1,392 @@
+---
+title: "Electron Throws Refused to Execute Inline Script When a Sandboxed Preload Loads Local HTML"
+description: "Fix CSP failures when Electron loads local HTML with a sandboxed preload and inline script blocked."
+tags: ["electron", "csp", "preload", "security"]
+date: Aug 1, 2026
+cell: "electron-crash-csp-script::electron::sandboxed-preload-csp"
+---
+
+`Refused to execute inline script because it violates the following Content Security Policy directive: "script-src 'self'".` This appears in an Electron renderer when a local HTML file contains inline `<script>` code and the page is loaded with a sandboxed preload. The renderer is still a browser document, so Chromium enforces Content Security Policy `CSP` exactly the same way it does for any other page.
+
+## What is failing
+
+The failure happens in the renderer process, not in the main process and not in the preload itself. Electron can load packaged files from `file://` or from an app-specific protocol, but once the document is rendered, Chromium applies normal web security rules.
+
+If the page includes:
+
+```html
+<script>
+  window.location.hash = 'ready'
+</script>
+```
+
+and the document is subject to a policy such as:
+
+```http
+Content-Security-Policy: script-src 'self'
+```
+
+Chromium blocks the inline script because inline execution is not allowed unless the policy explicitly permits it with `'unsafe-inline'`, a nonce, or a hash.
+
+Electron does not waive that rule just because the HTML file is local or bundled with the application. The renderer still parses the document, enforces `CSP`, and rejects script execution that does not match the directive.
+
+## Why packaged local HTML still gets blocked
+
+A common assumption is that `file://` content is exempt from browser security checks. It is not. Once loaded into an Electron renderer, the page is treated like a normal document with a security origin and a policy.
+
+The main pieces are:
+
+- `BrowserWindow` creates the renderer.
+- The renderer loads HTML from disk or an app protocol.
+- Chromium reads the page's `Content-Security-Policy`.
+- Inline scripts are blocked unless the policy allows them.
+- A sandboxed preload runs in an isolated context and does not change the document's `CSP`.
+
+A preload script is not a loophole. It runs before the page's JavaScript and can expose APIs, but it does not give the page permission to execute inline code.
+
+If the page loads local HTML and the generated HTML includes inline event handlers, inline `<script>` tags, or code inserted by a templating step, the page will still fail under a restrictive policy.
+
+## Reproducing the issue
+
+A minimal Electron app can trigger the error with a sandboxed preload and a local HTML file.
+
+`package.json`:
+
+```json
+{
+  "name": "electron-csp-inline-error",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "typescript": "^5.5.4"
+  }
+}
+```
+
+`src/main.ts`:
+
+```ts
+import { app, BrowserWindow } from 'electron'
+import path from 'node:path'
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 900,
+    height: 700,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      sandbox: true,
+      contextIsolation: true
+    }
+  })
+
+  win.loadFile(path.join(__dirname, 'index.html'))
+}
+
+app.whenReady().then(createWindow)
+```
+
+`src/preload.ts`:
+
+```ts
+import { contextBridge } from 'electron'
+
+contextBridge.exposeInMainWorld('api', {
+  ping: () => 'pong'
+})
+```
+
+`src/index.html`:
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'"
+    />
+    <title>Demo</title>
+  </head>
+  <body>
+    <h1>Renderer</h1>
+    <script>
+      document.body.insertAdjacentHTML('beforeend', '<p>inline script ran</p>')
+    </script>
+  </body>
+</html>
+```
+
+When this page loads, Chromium logs a refusal similar to:
+
+```text
+Refused to execute inline script because it violates the following Content Security Policy directive: "script-src 'self'".
+```
+
+The inline `<script>` is blocked even though the HTML file is local. The reason is that `script-src 'self'` permits scripts loaded from the same origin, but inline script is not a same-origin external resource. It is an in-document execution path, so it fails.
+
+## The mechanism behind the block
+
+`CSP` separates executable code into categories.
+
+For scripts, the important distinctions are:
+
+- external scripts loaded via `<script src="...">`
+- inline `<script>` blocks
+- inline event handlers such as `onclick="..."`
+- dynamically generated code via `eval()` and `new Function()`
+
+A policy like `script-src 'self'` allows only external scripts from the same origin. It does not allow inline blocks.
+
+This is the intended behavior. The policy is designed to reduce the risk of script injection. Electron follows the browser engine here instead of making an exception for packaged files.
+
+A sandboxed preload makes the boundary clearer. With `contextIsolation: true`, the preload runs in a separate JavaScript world. The page cannot reach Node.js APIs directly. That isolation is good, but it also means the page must use normal browser-safe script loading and an explicit bridge for privileged capabilities.
+
+## Move inline code into external bundles
+
+The first fix is to remove inline `<script>` code from the HTML and ship it as an external bundle.
+
+Instead of this:
+
+```html
+<script>
+  const button = document.querySelector('#save')
+  button?.addEventListener('click', () => {
+    window.api.ping()
+  })
+</script>
+```
+
+use a separate file:
+
+`src/renderer.ts`:
+
+```ts
+declare global {
+  interface Window {
+    api: {
+      ping: () => string
+    }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const button = document.querySelector<HTMLButtonElement>('#save')
+  const output = document.querySelector<HTMLElement>('#output')
+
+  button?.addEventListener('click', () => {
+    const result = window.api.ping()
+    if (output) {
+      output.textContent = result
+    }
+  })
+})
+```
+
+`src/index.html`:
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'self'"
+    />
+    <title>Demo</title>
+  </head>
+  <body>
+    <button id="save">Save</button>
+    <div id="output"></div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
+```
+
+This works because the page loads `renderer.js` as an external resource from the same origin. The policy allows that.
+
+Use your bundler to emit the renderer script as a file next to `index.html`. In a Vite, webpack, or esbuild setup, the goal is the same: no executable code in the HTML document body or head.
+
+With `esbuild`, one direct command is:
+
+```bash
+npx esbuild src/renderer.ts --bundle --outfile=dist/renderer.js --format=esm
+```
+
+Then copy `index.html` into `dist/` and point `loadFile()` there.
+
+## Set an explicit `Content-Security-Policy`
+
+The second fix is to define the page's policy clearly instead of relying on defaults or relaxed settings.
+
+A good starting point for an Electron renderer is:
+
+```html
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
+/>
+```
+
+This does a few important things:
+
+- `default-src 'self'` limits unlisted resource types.
+- `script-src 'self'` permits only external scripts from the same origin.
+- `object-src 'none'` blocks plugins and embedded objects.
+- `base-uri 'self'` prevents `<base>` injection tricks.
+- `form-action 'self'` constrains where forms can submit.
+
+If your app loads remote assets or packaged images, adjust `img-src`, `font-src`, or `connect-src` explicitly. Do not widen `script-src` unless there is no alternative.
+
+Avoid fixing the problem by adding `'unsafe-inline'` to `script-src`. That makes the inline script execute, but it also makes inline injection possible again. For an Electron app, that is usually the wrong tradeoff because renderer compromise can become application compromise if the bridge exposes privileged operations.
+
+A nonce is safer than `'unsafe-inline'`, but it still adds operational complexity for local HTML generation. For packaged application code, external bundles are usually simpler.
+
+## Keep the preload isolated with `contextBridge`
+
+The preload should not solve the issue by moving application logic into a privileged script and then loosening page security. The preload should expose a narrow API and nothing more.
+
+`src/preload.ts`:
+
+```ts
+import { contextBridge } from 'electron'
+
+contextBridge.exposeInMainWorld('app', {
+  getVersion: () => process.versions.electron,
+  ping: () => 'pong'
+})
+```
+
+`src/renderer.ts`:
+
+```ts
+declare global {
+  interface Window {
+    app: {
+      getVersion: () => string
+      ping: () => string
+    }
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const version = document.querySelector<HTMLElement>('#version')
+  if (version) {
+    version.textContent = window.app.getVersion()
+  }
+})
+```
+
+This keeps the preload isolated and the renderer unprivileged. The renderer can call an API, but it cannot access `process`, `require`, or Node.js builtins directly when `contextIsolation: true` and `sandbox: true` are enabled.
+
+That isolation matters because the usual response to a blocked inline script is sometimes to relax security settings. In Electron, that often means turning off `contextIsolation`, disabling `sandbox`, or allowing Node integration. Those changes solve the symptom by removing protections, not by fixing the content model.
+
+## Common mistakes that keep the error alive
+
+Several patterns still produce the same `CSP` failure after the page is "fixed".
+
+### Inline event handlers
+
+This fails under `script-src 'self'`:
+
+```html
+<button onclick="window.app.ping()">Ping</button>
+```
+
+Use `addEventListener()` in an external renderer bundle instead.
+
+### Template-injected script strings
+
+This fails too:
+
+```html
+<script>
+  window.__APP_CONFIG__ = { theme: 'dark' }
+</script>
+```
+
+Move the configuration into a JSON script tag only if your policy allows the exact pattern, or better, expose config through the preload or load it from a static JSON file fetched by the renderer.
+
+### `eval()` and `new Function()`
+
+Even when there is no inline `<script>`, some frameworks or libraries generate code dynamically. A restrictive `script-src` can also block that behavior unless `unsafe-eval` is added. Avoid that unless a dependency requires it and there is no safe alternative.
+
+### Mixed loading paths
+
+If `index.html` is packaged but `renderer.js` is still served from a dev server, the policy may fail in production. Make sure the production build uses the same loading path and resource URLs as the deployed app.
+
+## A practical Electron setup
+
+A straightforward production setup looks like this:
+
+`src/main.ts`:
+
+```ts
+import { app, BrowserWindow } from 'electron'
+import path from 'node:path'
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+
+  win.loadFile(path.join(__dirname, 'index.html'))
+}
+
+app.whenReady().then(createWindow)
+```
+
+`src/index.html`:
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'self'"
+    />
+    <title>App</title>
+  </head>
+  <body>
+    <main id="root"></main>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
+```
+
+`src/renderer.ts`:
+
+```ts
+document.addEventListener('DOMContentLoaded', () => {
+  const root = document.querySelector<HTMLElement>('#root')
+  if (root) {
+    root.textContent = 'Loaded'
+  }
+})
+```
+
+Build the renderer and preload into the same output directory, then ship the HTML alongside them. The page executes only external scripts, the `CSP` stays strict, and the preload exposes only the minimum API surface.
+
+## How to keep the problem from coming back
+
+Prefer external renderer bundles and an explicit `Content-Security-Policy` over inline code. That is the simplest and safest way to satisfy Chromium inside Electron.
+
+Keep `sandbox: true`, `contextIsolation: true`, and `nodeIntegration: false` for the window. Use `contextBridge` for the narrowest possible API surface. If the renderer needs configuration, pass it through the bridge or load it from a data file, not from inline JavaScript in the HTML.
+
+If the page still shows `Refused to execute inline script because it violates the following Content Security Policy directive: "script-src 'self'"`, inspect the rendered HTML output. Any `<script>` block, inline handler, or template-generated executable snippet will trigger the same block. Remove the inline code, load a bundled script, and keep the policy explicit.

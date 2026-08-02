@@ -1,4 +1,6 @@
 ---
+import { Icon } from '@/components'
+
 interface Props {
     href: string
     label?: string
@@ -10,9 +12,9 @@ const { href, label = 'Go back' } = Astro.props
 <div class='mb-6'>
     <a
         href={href}
-        class='flex rounded-sm text-sm font-medium text-default transition-hover hover:text-muted'
+        class='inline-flex items-center gap-2 rounded-sm text-sm font-medium text-default transition-hover hover:text-muted'
     >
-        <span class='mr-2'>←</span>
+        <Icon name='arrowLeft' class='h-4 w-4' />
         <span>{label}</span>
     </a>
 </div>

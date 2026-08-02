@@ -1,4 +1,103 @@
 {
-    "generatedAt": "",
-    "ideas": []
+    "generatedAt": "2026-08-02T05:52:14.573Z",
+    "ideas": [
+        {
+            "cell": "env-vars-undefined::nextjs::runtime-client-server-boundary",
+            "title": "Next.js Environment Variables Return Undefined in the Browser After Build",
+            "description": "Why process.env values disappear in client code after a Next.js production build, and how to expose the right variables safely.",
+            "tags": [
+                "nextjs",
+                "environment-variables",
+                "build-time",
+                "client-side",
+                "runtime-config"
+            ],
+            "angle": "Cover the difference between server-only env vars and variables inlined into client bundles. Explain how Next.js replaces only NEXT_PUBLIC_ values at build time, why process.env is not a live browser API, and how to structure code so secrets stay server-side while public values remain available.",
+            "slug": "next-js-environment-variables-return-undefined-in-the-browser-after-build"
+        },
+        {
+            "cell": "bun-require-esm::bun::commonjs-import-boundary",
+            "title": "Bun Throws ERR_REQUIRE_ESM When a CommonJS File Loads an ESM Package",
+            "description": "Why Bun hits ERR_REQUIRE_ESM on mixed module boundaries and how to make the import path match the package format.",
+            "tags": [
+                "bun",
+                "esm",
+                "commonjs",
+                "modules",
+                "runtime"
+            ],
+            "angle": "Explain the module loader boundary that causes require() to fail against an ESM-only package. Cover package.json type fields, .mjs and .cjs extensions, dynamic import(), and the cases where Bun follows Node compatibility rules versus where the package export map changes the resolution target.",
+            "slug": "bun-throws-err-require-esm-when-a-commonjs-file-loads-an-esm-package"
+        },
+        {
+            "cell": "android-window-not-defined::react-native::native-module-initialization",
+            "title": "React Native on Android Throws ReferenceError: window is not defined During Module Initialization",
+            "description": "Why browser globals break during React Native startup on Android and how to move that code behind a native-safe boundary.",
+            "tags": [
+                "react-native",
+                "android",
+                "referenceerror",
+                "javascript",
+                "native-modules"
+            ],
+            "angle": "Focus on code that runs at import time before any UI renders. Explain that React Native does not provide a browser window object, why top-level access crashes on Android startup, and how to replace it with Platform checks, native modules, or lazy execution after the app shell has loaded.",
+            "slug": "react-native-on-android-throws-referenceerror-window-is-not-defined-during-module-initialization"
+        },
+        {
+            "cell": "dns-careset-localhost::node::ipv6-resolution",
+            "title": "Node Fails to Connect to localhost with ECONNREFUSED ::1 on a Local Server",
+            "description": "Why Node tries IPv6 loopback first for localhost and how to match your server bind address to the resolved address.",
+            "tags": [
+                "node",
+                "networking",
+                "localhost",
+                "ipv6",
+                "econnrefused"
+            ],
+            "angle": "Explain that localhost can resolve to ::1 before 127.0.0.1 and the server may only be listening on IPv4. Show how to verify the bind address, force IPv4 when appropriate, and choose a host value that matches the listener so the client and server agree on the same loopback interface.",
+            "slug": "node-fails-to-connect-to-localhost-with-econnrefused-1-on-a-local-server"
+        },
+        {
+            "cell": "form-action-405::remix::html-form-submit",
+            "title": "Remix Returns 405 Method Not Allowed When a Form Submits to the Wrong Route",
+            "description": "Why a Remix form posts to a route without an action and how route matching determines which loader or action runs.",
+            "tags": [
+                "remix",
+                "forms",
+                "actions",
+                "routes",
+                "http-405"
+            ],
+            "angle": "Explain Remix's request routing rules for action and loader functions, including nested routes and index routes. Show why the browser can submit correctly while the route tree rejects the method, and how to place the action on the matching route or point the form at the intended endpoint.",
+            "slug": "remix-returns-405-method-not-allowed-when-a-form-submits-to-the-wrong-route"
+        },
+        {
+            "cell": "typescript-exports-sdk::typescript::multi-entry-package-design",
+            "title": "Design a TypeScript SDK with Multiple Entry Points Without Breaking Imports",
+            "description": "How to publish a typed SDK with subpath exports, preserved types, and stable import paths for ESM and CommonJS.",
+            "tags": [
+                "typescript",
+                "sdk",
+                "package-exports",
+                "esm",
+                "commonjs"
+            ],
+            "angle": "This should be a build and packaging reference, not an error fix. Cover export maps, separate runtime and type entry points, .d.ts generation, and how subpath exports keep tree-shaking and deep imports predictable across bundlers and Node.",
+            "slug": "design-a-typescript-sdk-with-multiple-entry-points-without-breaking-imports"
+        },
+        {
+            "cell": "static-site-deploy-base-path::github-pages::asset-resolution",
+            "title": "Deploying a Static Site to GitHub Pages Breaks Asset URLs Under a Repository Path",
+            "description": "Why a site works locally but 404s on GitHub Pages when assets resolve from the domain root instead of the repo path.",
+            "tags": [
+                "github-pages",
+                "static-site",
+                "deploy",
+                "asset-paths",
+                "base-path"
+            ],
+            "angle": "Explain that GitHub Pages often serves the site from a subpath, not from /. Cover relative versus absolute asset URLs, framework base-path settings, and build output that must embed the correct prefix so CSS, JS, and images resolve after deployment.",
+            "slug": "deploying-a-static-site-to-github-pages-breaks-asset-urls-under-a-repository-path"
+        }
+    ]
 }
