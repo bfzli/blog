@@ -1,0 +1,341 @@
+---
+title: "SQLite Returns SQLITE_BUSY During Concurrent Writes in Drizzle ORM"
+description: "Reduce SQLite write contention when multiple requests try to write through Drizzle at once."
+tags: ["sqlite", "drizzle-orm", "database", "concurrency"]
+date: Aug 1, 2026
+cell: "sqlite-busy-drizzle-batch::sqlite::write-contention"
+---
+
+SQLite writes fail under concurrent load with `SQLITE_BUSY: database is locked`.
+
+## Why SQLite returns `SQLITE_BUSY`
+
+SQLite allows many readers, but only one writer can hold the write lock at a time. That is not a Drizzle ORM limitation. It is SQLite’s concurrency model.
+
+When two requests try to write at the same time, one connection acquires the lock and the others must wait. If the waiting connection does not get the lock before its timeout expires, SQLite returns `SQLITE_BUSY`. In practice, this shows up as a failed `INSERT`, `UPDATE`, `DELETE`, or transaction commit.
+
+With Drizzle ORM, the contention usually appears when multiple application requests share the same SQLite database file and each request performs one or more writes through separate connections or overlapping transactions. Under low traffic, the writes serialize quickly enough that you never see the error. Under load, the queue backs up and the timeout is reached.
+
+The important detail is that SQLite’s lock is at the database level for writes. Two writes to different tables still contend if they target the same database file.
+
+## What the error means in practice
+
+A typical failure looks like this from a Node.js application using Drizzle:
+
+```text
+SqliteError: SQLITE_BUSY: database is locked
+```
+
+Depending on the driver, the message may vary slightly:
+
+```text
+SQLITE_BUSY: database is locked
+```
+
+or:
+
+```text
+Error: SQLITE_BUSY: database is locked
+```
+
+The root cause is the same. A write was attempted while another writer held the lock, and the waiting connection gave up.
+
+The failure can appear during:
+
+- `INSERT` statements
+- `UPDATE` statements
+- `DELETE` statements
+- transaction commit
+- schema changes such as `ALTER TABLE`
+
+It can also appear indirectly when an application opens too many concurrent requests and each one creates its own transaction scope.
+
+## Why concurrent writes queue or fail
+
+SQLite’s concurrency model is optimized for simplicity and local file access. Reads are cheap and can overlap. Writes are serialized.
+
+The sequence is roughly:
+
+1. A writer starts a transaction.
+2. SQLite escalates to a reserved or exclusive lock, depending on journal mode and operation.
+3. Other writers must wait.
+4. If the first writer finishes quickly, the next writer proceeds.
+5. If the lock is held longer than the busy timeout, SQLite throws `SQLITE_BUSY`.
+
+This means the problem is usually not a dead database. It is a healthy database under more write concurrency than it can serialize within the configured wait window.
+
+A busy timeout that is too short makes this worse. A timeout of `0` means “do not wait.” A low timeout on a busy system turns temporary contention into application errors.
+
+## Enable WAL mode
+
+Write-Ahead Logging, or WAL, changes how SQLite handles reads and writes. In WAL mode, readers do not block writers in the same way they do with the default rollback journal. That reduces contention for read-heavy applications.
+
+WAL does not make SQLite multi-writer. There is still only one active writer at a time. It does, however, reduce the chance that reads interfere with writes and improves throughput when many requests are reading while a smaller number are writing.
+
+Enable WAL as soon as the database connection is created:
+
+```ts
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database('app.db');
+sqlite.pragma('journal_mode = WAL');
+
+export const db = drizzle(sqlite);
+```
+
+If you are using `libsql`, `sqlite3`, `bun:sqlite`, or another SQLite driver, the exact call differs, but the setting is the same: `journal_mode=WAL`.
+
+For many deployments, setting WAL once on startup is enough. If the database file is reused by multiple processes, each process should be compatible with WAL mode, but the pragma only needs to be set once on the database file.
+
+### Why WAL helps
+
+In default journal mode, a writer can block readers for parts of the write lifecycle. In WAL mode, readers continue using the last committed snapshot while the writer appends new changes to the WAL file. That reduces lock contention around reads and short writes.
+
+WAL is especially useful when Drizzle is serving:
+
+- API requests that read data on every request
+- dashboards with frequent reads and occasional writes
+- background jobs that write while the web process reads
+
+## Set a busy timeout
+
+A busy timeout tells SQLite how long to wait for a lock before returning `SQLITE_BUSY`. Without an explicit timeout, the default may be too short for production contention.
+
+Set it when opening the connection:
+
+```ts
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+
+const sqlite = new Database('app.db');
+sqlite.pragma('journal_mode = WAL');
+sqlite.pragma('busy_timeout = 5000');
+
+export const db = drizzle(sqlite);
+```
+
+A timeout of `5000` means SQLite waits up to 5 seconds for the write lock to clear.
+
+If you are using the `sqlite3` package, configure the timeout on the connection:
+
+```ts
+import sqlite3 from 'sqlite3';
+import { drizzle } from 'drizzle-orm/sqlite-proxy';
+
+const db = new sqlite3.Database('app.db');
+db.configure('busyTimeout', 5000);
+```
+
+The specific API depends on the driver, but the concept is the same. You want SQLite to wait long enough for ordinary write bursts to drain.
+
+### How to choose a timeout
+
+A timeout should be long enough to cover normal transaction latency, but not so long that a stuck writer causes long request stalls.
+
+Common starting points:
+
+- `1000` ms for low-latency local apps
+- `3000` to `5000` ms for general web workloads
+- higher values only if long write transactions are expected
+
+A timeout is a pressure valve, not a concurrency fix. If writes routinely take seconds, the code still needs restructuring.
+
+## Batch writes inside transactions
+
+The biggest source of lock contention is often not the number of writes alone, but the number of separate transactions. Each write outside an explicit transaction may open and close its own lock window. Many small lock windows are more likely to collide than one short, bounded transaction.
+
+Batch related writes inside a single transaction:
+
+```ts
+import { eq } from 'drizzle-orm';
+import { db } from './db';
+import { posts, postTags } from './schema';
+
+await db.transaction(async (tx) => {
+  const [post] = await tx
+    .insert(posts)
+    .values({ title: 'SQLite concurrency', published: true })
+    .returning();
+
+  await tx.insert(postTags).values([
+    { postId: post.id, tag: 'sqlite' },
+    { postId: post.id, tag: 'drizzle' },
+  ]);
+
+  await tx
+    .update(posts)
+    .set({ slug: `post-${post.id}` })
+    .where(eq(posts.id, post.id));
+});
+```
+
+This does two things:
+
+1. It reduces the number of lock acquisitions.
+2. It keeps the write sequence tightly scoped.
+
+A transaction should contain only the work that must be atomic. Do not place network calls, slow computation, or long loops inside it. A transaction that waits on external I/O holds the write lock longer and increases `SQLITE_BUSY` risk for everyone else.
+
+### Keep transactions short
+
+These patterns increase contention:
+
+- fetching remote data inside a transaction
+- large loops that perform many row-by-row updates
+- transaction scopes that include application validation unrelated to the write
+
+Prefer to prepare data before entering the transaction, then write the final state in one bounded block.
+
+## Avoid write amplification from request handlers
+
+Under load, a request handler that performs multiple small writes can create self-inflicted contention. For example, logging, counters, and secondary updates can multiply the number of times the database has to serialize writes.
+
+Instead of several independent writes, consolidate where possible:
+
+```ts
+await db.transaction(async (tx) => {
+  await tx.insert(auditLog).values({
+    action: 'create_order',
+    entityId: order.id,
+  });
+
+  await tx
+    .update(users)
+    .set({ orderCount: sql`${users.orderCount} + 1` })
+    .where(eq(users.id, order.userId));
+
+  await tx.insert(orderItems).values(items);
+});
+```
+
+If those statements belong to the same business event, one transaction is usually better than three separate calls. It narrows the lock window and prevents partial completion.
+
+## Separate read-heavy paths from write paths
+
+Read-heavy and write-heavy traffic should not compete through the same code path more than necessary.
+
+In SQLite, the database file is still the shared resource, but the application can reduce pressure by separating concerns:
+
+- keep read endpoints read-only
+- route writes through dedicated service functions
+- avoid unnecessary read-modify-write cycles
+- cache derived data outside the hot path when possible
+
+A read endpoint should not open a transaction unless it truly needs one. A write endpoint should avoid extra reads that can be replaced with known input or a single atomic statement.
+
+### Prefer atomic updates
+
+A read followed by a write creates more time between lock acquisition and commit. If the goal is to increment a counter, use one update instead of read-then-write:
+
+```ts
+import { sql, eq } from 'drizzle-orm';
+import { db } from './db';
+import { users } from './schema';
+
+await db
+  .update(users)
+  .set({ loginCount: sql`${users.loginCount} + 1` })
+  .where(eq(users.id, 'user_123'));
+```
+
+That is shorter than loading the row, incrementing it in application code, and writing it back.
+
+### Use separate code paths for reads and writes
+
+A simple layout helps keep the write path narrow:
+
+```ts
+export async function getUser(id: string) {
+  return db.query.users.findFirst({
+    where: (users, { eq }) => eq(users.id, id),
+  });
+}
+
+export async function createUser(input: { id: string; email: string }) {
+  return db.transaction(async (tx) => {
+    await tx.insert(users).values(input);
+  });
+}
+```
+
+The read function stays out of transaction scope. The write function contains only the minimum work required to persist state.
+
+## Reduce connection and process contention
+
+SQLite also contends at the process level. If multiple Node.js workers, serverless instances, or sidecar processes write to the same database file, the single-writer rule still applies across all of them.
+
+That means these setups are more prone to `SQLITE_BUSY`:
+
+- multiple `node` processes sharing one `.db` file
+- a web process and a background job process writing at the same time
+- serverless functions pointing at the same local SQLite file
+
+If the deployment uses a single SQLite file, keep the number of concurrent writers small. Fan out reads if needed, but centralize writes when possible.
+
+A common pattern is to funnel write operations through one process or one queue-backed worker. SQLite can handle substantial write volume when writes are short and serialized. It does not behave like a multi-writer network database.
+
+## When WAL and timeout are not enough
+
+If the error persists after enabling WAL and setting a reasonable timeout, the issue is usually one of these:
+
+- write transactions are too long
+- too many requests perform writes at the same time
+- a process pool is multiplying concurrent writers
+- a loop is issuing many tiny write statements
+- a schema migration or maintenance task is holding the lock
+
+At that point, the fix is architectural. Move hot write paths out of request latency, shorten transaction scopes, or switch the workload to a database designed for higher concurrent write throughput.
+
+## Recommended configuration for Drizzle on SQLite
+
+A practical baseline for a Node.js app with Drizzle and SQLite is:
+
+1. Enable WAL mode.
+2. Set `busy_timeout` to a few seconds.
+3. Wrap related writes in a transaction.
+4. Keep transactions short.
+5. Separate read-heavy and write-heavy code paths.
+
+A minimal startup example with `better-sqlite3`:
+
+```ts
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+
+const sqlite = new Database('app.db');
+sqlite.pragma('journal_mode = WAL');
+sqlite.pragma('busy_timeout = 5000');
+
+export const db = drizzle(sqlite);
+```
+
+And a write endpoint that batches work:
+
+```ts
+import { db } from './db';
+import { users, auditLog } from './schema';
+
+export async function createUser(email: string) {
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .insert(users)
+      .values({ email })
+      .returning();
+
+    await tx.insert(auditLog).values({
+      entityType: 'user',
+      entityId: user.id,
+      action: 'create',
+    });
+
+    return user;
+  });
+}
+```
+
+This pattern keeps the lock window smaller and reduces the chance that concurrent requests collide.
+
+## Practical takeaway
+
+Prefer WAL mode plus a nonzero busy timeout first, because that handles ordinary read/write contention with minimal code change. Then batch related writes inside short transactions. If the application still sees `SQLITE_BUSY`, reduce the number of concurrent writers and separate read-heavy paths from write paths so the single-writer lock is held for less time and less often.

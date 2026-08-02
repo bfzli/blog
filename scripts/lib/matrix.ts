@@ -25,37 +25,6 @@ export const expand = (matrix: TopicMatrix): MatrixCell[] =>
         )
     })
 
-export const nextCells = (
-    cells: MatrixCell[],
-    covered: Set<string>,
-    count: number
-) => {
-    const open = cells.filter((cell) => !covered.has(cell.key))
-
-    const byTopic = new Map<string, MatrixCell[]>()
-    for (const cell of open) {
-        const bucket = byTopic.get(cell.topic.id) ?? []
-        bucket.push(cell)
-        byTopic.set(cell.topic.id, bucket)
-    }
-
-    const buckets = [...byTopic.values()]
-    const picked: MatrixCell[] = []
-
-    for (let depth = 0; picked.length < count; depth++) {
-        const before = picked.length
-
-        for (const bucket of buckets) {
-            if (picked.length >= count) break
-            if (bucket[depth]) picked.push(bucket[depth])
-        }
-
-        if (picked.length === before) break
-    }
-
-    return picked
-}
-
 export const coverage = (cells: MatrixCell[], covered: Set<string>) => {
     const rows = new Map<string, { done: number; total: number }>()
 
@@ -69,7 +38,13 @@ export const coverage = (cells: MatrixCell[], covered: Set<string>) => {
     return [...rows.entries()].map(([label, row]) => ({ label, ...row }))
 }
 
-export const describe = (cell: MatrixCell) =>
-    [cell.topic.label, cell.stack && `in ${cell.stack}`, cell.context]
-        .filter(Boolean)
-        .join(', ')
+export const sample = <T,>(items: T[], count: number) => {
+    const pool = [...items]
+
+    for (let index = pool.length - 1; index > 0; index--) {
+        const swap = Math.floor(Math.random() * (index + 1))
+        ;[pool[index], pool[swap]] = [pool[swap], pool[index]]
+    }
+
+    return pool.slice(0, count)
+}

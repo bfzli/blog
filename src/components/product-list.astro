@@ -3,18 +3,15 @@ import type { Product } from '@/types'
 import { ProductItem } from '@/components'
 
 interface Props {
-    title: string
     items: Product[]
     class?: string
 }
 
-const { title, items, class: className = 'mt-8' } = Astro.props
+const { items, class: className = 'mt-8' } = Astro.props
 ---
 
 <section class={className} data-reveal>
-    <h2 class='text-2xl font-bold'>{title}</h2>
-
-    <ul class='mt-1 space-y-2' data-reveal-group>
+    <ul class='space-y-2' data-reveal-group>
         {items.map((item) => <ProductItem {...item} />)}
     </ul>
 </section>

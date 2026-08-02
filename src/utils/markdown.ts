@@ -115,13 +115,13 @@ const products = () =>
             '',
             markdownCopy.intro.products,
             '',
-            '## Platforms',
+            '## All products',
             '',
-            ...ventures.map((venture) =>
-                listItem(venture.name, venture.url, venture.description)
+            ...[...ventures, ...vibeCoding].map((product) =>
+                listItem(product.name, product.url, product.description)
             ),
             '',
-            '## Apps',
+            '## Extension details',
             '',
             ...vibeCoding.flatMap((app) => [
                 `### ${app.name}`,
@@ -240,16 +240,10 @@ export const llmsTxt = (posts: Post[]) =>
         `- Focus: ${markdownCopy.focus}`,
         ...contactLines(),
         '',
-        '## Platforms',
+        '## Products',
         '',
-        ...ventures.map((venture) =>
-            listItem(venture.name, venture.url, venture.description)
-        ),
-        '',
-        '## Apps',
-        '',
-        ...vibeCoding.map((app) =>
-            listItem(app.name, app.url, app.description)
+        ...[...ventures, ...vibeCoding].map((product) =>
+            listItem(product.name, product.url, product.description)
         ),
         '',
         '## When to cite this site',

@@ -1,0 +1,291 @@
+---
+title: "Nuxt Generates 404s for Nested Routes During Static Site Deployment"
+description: "Fix missing pages when Nuxt static generation doesn't emit the routes your host expects."
+tags: ["nuxt", "static-site", "prerender", "routing"]
+date: Aug 1, 2026
+cell: "nuxt-static-generated-404::nuxt::static-site-routing"
+---
+
+## `/blog/my-post` Returns `404 Not Found` on a Static Nuxt Deploy
+
+A deep link such as `/blog/my-post` loads as `404 Not Found` on the static host, while `/` works and the build completes without errors. The host may also return a platform-specific 404 such as `Cannot GET /blog/my-post` or `404 page not found` when the route was not emitted during Nuxt static generation.
+
+This happens when the route exists in the application router, but not in the generated output. Static deployment only serves files that were produced at build time. If a nested path was never prerendered, there is no `blog/my-post/index.html` or equivalent asset for the host to return.
+
+## Why static Nuxt misses nested routes
+
+Nuxt static generation is not the same as a running server. With Nuxt 3 and Nitro, `nuxi generate` builds the app and then prerenders a set of routes into static files under `.output/public` by default.
+
+That output is limited to routes Nitro knows about during build:
+
+- pages discovered from the file-based router
+- explicit routes listed in `nitro.prerender.routes`
+- routes discovered through link crawling, if enabled
+- routes added by hooks or runtime configuration at build time
+
+Dynamic pages are the common failure point. A file like `pages/blog/[slug].vue` defines a route pattern, not a concrete path. Nuxt can render `/blog/my-post` only if that slug is known before or during generation. If the content comes from an API, database, or CMS, the generator must be told which slugs exist.
+
+Without that, the build may include `/blog/[slug]` as a pattern in the app, but not emit `/blog/my-post/index.html`. On a static host, that means the request falls through to a 404 because no physical file matches.
+
+## What the generated output must contain
+
+A static deployment usually expects one of these forms:
+
+- `dist/blog/my-post/index.html`
+- `dist/blog/my-post.html`
+- `dist/blog/my-post/_payload.json` or a shared payload asset referenced by the page
+
+The exact layout depends on Nitro and the host, but the key rule is the same: the path must exist as a file or be rewritten to an existing file.
+
+Nuxt also separates page HTML from payload data. With route rules and prerendering, a page may have HTML plus payload assets used for hydration. If the page HTML is emitted but the payload is missing, client-side navigation can fail or trigger extra network fetches. If the HTML is missing entirely, the host returns a hard 404 before the app even starts.
+
+## Make Nitro prerender the concrete routes
+
+The first fix is to enumerate all concrete routes that need static output. Use `nitro.prerender.routes` in `nuxt.config.ts`.
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nitro: {
+    prerender: {
+      routes: [
+        '/',
+        '/about',
+        '/blog/my-post',
+        '/blog/another-post'
+      ]
+    }
+  }
+})
+```
+
+This is the simplest mechanism when the set of routes is small or already available at build time.
+
+If the application pulls slugs from an API, generate the list before prerendering. The configuration file can be asynchronous.
+
+```ts
+// nuxt.config.ts
+type Post = {
+  slug: string
+}
+
+export default defineNuxtConfig(async () => {
+  const posts = await $fetch<Post[]>('https://example.com/api/posts')
+
+  return {
+    nitro: {
+      prerender: {
+        routes: [
+          '/',
+          '/blog',
+          ...posts.map(post => `/blog/${post.slug}`)
+        ]
+      }
+    }
+  }
+})
+```
+
+This works because prerendering runs after the config is resolved. The generator receives concrete routes and can render them into files.
+
+If the source of routes is expensive or unreliable, it is better to cache or precompute the route list in CI rather than depend on a network call during every build.
+
+## Use `crawlLinks` only when the app can expose all routes
+
+Nitro can discover some routes by crawling generated HTML, which helps for linked pages that are already reachable from seeded routes.
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nitro: {
+    prerender: {
+      crawlLinks: true
+    }
+  }
+})
+```
+
+This only helps if the crawler can find the links in the generated pages. It does not invent routes that are never linked from a seeded page. Dynamic routes hidden behind API responses, client-only rendering, auth gates, or conditional UI still need explicit routes.
+
+For nested routes, crawling often finds the first level and then stops if the deeper links are not rendered during prerender. That is why `crawlLinks` is useful as a supplement, not as the sole strategy.
+
+## Ensure payload and static asset handling are enabled
+
+Nuxt prerendered pages often depend on payload extraction and static assets emitted alongside the HTML. If those files are not deployed together, the page may load incorrectly or redirect back to 404 paths.
+
+Keep the default prerender payload behavior unless there is a specific reason to disable it. In Nuxt 3, payload extraction is commonly controlled through route rules or experimental options, depending on version. The important part is that the generated payload files must be included in the deployment artifact.
+
+A typical static build should publish the full `.output/public` directory, not only selected HTML files.
+
+```bash
+npx nuxi generate
+```
+
+After the build, verify that the expected files exist.
+
+```bash
+find .output/public -maxdepth 3 | sort
+```
+
+For a route like `/blog/my-post`, you should expect a corresponding directory or file structure under `.output/public/blog/my-post` or the host’s equivalent output format. If the build does not contain that route, the host cannot serve it.
+
+Also verify that shared assets are present:
+
+- `/_nuxt/` JavaScript and CSS bundles
+- payload files produced for prerendered pages
+- any images, fonts, or public assets referenced by the page
+
+If the HTML is present but the bundle paths are broken, the page may render a shell and then fail client-side navigation. That is a different failure mode from a pure 404, but it has the same root cause: incomplete static output or incorrect hosting paths.
+
+## Make sure the host rewrites deep links to the generated page
+
+Static hosts often need a rewrite rule so direct navigation to nested routes serves the correct HTML file.
+
+This matters because a browser request to `/blog/my-post` is not the same as clicking a link inside the app. On a hard refresh, the server must resolve that path. If the host does not know about SPA or prerendered routes, it will try to find an exact file and return 404.
+
+The correct rewrite depends on the host.
+
+### Netlify
+
+If the site is fully static and you want all non-file routes to resolve through the generated app, add a redirect rule.
+
+```txt
+/*    /index.html   200
+```
+
+Place that in `public/_redirects` or the configured publish directory. For a fully prerendered app, this can be too broad if you want direct file hits to specific HTML files, but it is a common fallback when the app relies on client-side routing.
+
+If you are serving prerendered routes as actual files, ensure the host can serve the generated directory structure without forcing everything to `index.html`.
+
+### Vercel
+
+Use `vercel.json` rewrites if the deployment does not already understand the Nuxt output format.
+
+```json
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+```
+
+This turns the site into an SPA fallback. It fixes deep links, but it does not replace prerendering. If the route should be statically emitted, the generated file is still preferable because it gives the correct HTML without requiring client-side boot.
+
+### Nginx
+
+Serve the generated files directly, then fall back to `index.html` for routes not represented as files.
+
+```nginx
+location / {
+  try_files $uri $uri/ /index.html;
+}
+```
+
+If you are deploying prerendered nested paths as directories, `try_files` can resolve those directly. If you are using an SPA fallback, the same rule hands the request to the app shell.
+
+### GitHub Pages
+
+GitHub Pages is file-based and does not support server rewrites. That means you must generate the exact routes you want to serve. For nested routes, the output must contain matching directories and `index.html` files.
+
+If a route is not present as a file, GitHub Pages returns 404. There is no server-side rewrite layer to hide the problem.
+
+## Distinguish prerendered routes from client-only navigation
+
+A link in Vue or Nuxt can appear to work during local navigation even when the static output is incomplete. Client-side routing uses the app already loaded in the browser. It does not prove the server can serve a direct request to the same URL.
+
+This distinction matters for nested routes.
+
+- Clicking `<NuxtLink to="/blog/my-post">` may work after the home page loads.
+- Refreshing `/blog/my-post` may fail with `404 Not Found`.
+- Opening the same URL in a new tab may fail for the same reason.
+
+To test the deployment correctly, request the route directly from the built host, not only through app navigation.
+
+```bash
+curl -I https://your-site.example.com/blog/my-post
+```
+
+A healthy static deployment returns `200 OK` or `304 Not Modified`. A bad one returns `404 Not Found`.
+
+## Dynamic routes need build-time discovery
+
+The file `pages/blog/[slug].vue` is only a pattern. Nuxt needs the actual slugs at build time.
+
+For content-driven sites, this usually means one of these approaches:
+
+- fetch a slug list from the CMS during `nuxt.config.ts`
+- generate a route manifest in CI and import it into the config
+- use a prerender hook to inject routes before Nitro writes files
+
+A prerender hook is useful when route generation belongs in code rather than config.
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  hooks: {
+    'prerender:routes'(ctx) {
+      ctx.routes.add('/blog/my-post')
+      ctx.routes.add('/blog/another-post')
+    }
+  }
+})
+```
+
+This hook runs during generation and can add routes programmatically. It is especially useful when routes are derived from local data files or a build artifact.
+
+If routes are user-generated and unbounded, full static generation is usually the wrong deployment model. In that case, use server rendering or hybrid rendering so unknown routes can be resolved on demand.
+
+## Check `routeRules` for static and hybrid behavior
+
+Nuxt `routeRules` can change how individual paths are rendered and cached. For static generation, they can also help define which routes should be prerendered.
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  routeRules: {
+    '/': { prerender: true },
+    '/blog/**': { prerender: true }
+  }
+})
+```
+
+This tells Nitro that matching routes should be pre-rendered. For a dynamic blog, the wildcard can help if the generator already knows the concrete pages from crawling or route injection. It does not make unknown slugs appear by itself.
+
+A wildcard rule is useful as a policy, not as route discovery. The discovery step still has to happen somewhere.
+
+## Validate the output before deploying
+
+A static deployment should be checked like a compiled artifact. Confirm both file presence and route behavior.
+
+```bash
+npx nuxi generate
+ls -R .output/public | sed -n '1,120p'
+```
+
+Then test a nested route locally by serving the output directory with a static server.
+
+```bash
+npx serve .output/public
+```
+
+Request a deep link directly:
+
+```bash
+curl -I http://localhost:3000/blog/my-post
+```
+
+If the local static server returns 404, the generated output is incomplete. If local serving works but production fails, the host rewrite rules are wrong.
+
+## Practical fix order
+
+Prefer emitting the route during build, then add a host fallback only if the platform requires it.
+
+1. Add concrete paths to `nitro.prerender.routes` or `prerender:routes`.
+2. Make sure the generated `.output/public` contains the nested page and its payload or related assets.
+3. Configure rewrites only for hosts that need them, especially SPA-style platforms.
+4. Re-run direct URL tests against the deployed host.
+
+The durable fix is to make Nuxt generate every nested route that must be reachable by direct URL. Host rewrites can mask missing routes, but they should not be the primary mechanism when the route can be prerendered.

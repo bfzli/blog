@@ -7,8 +7,8 @@
     --light-elevate: #f1f1f4;
     --light-comment: #71717a;
     --light-post-bg: #f7f7f8;
-    --light-muted: #3a3a3d;
-    --light-soft: #5e5e63;
+    --light-muted: #2e2e33;
+    --light-soft: #54545a;
     --light-subtle: #8a8a90;
     --light-primary-hover: #2056c4;
     --light-post-hover: #efeff1;
@@ -23,8 +23,8 @@
     --dark-elevate: #1f1f24;
     --dark-comment: #7c7c86;
     --dark-post-bg: #121215;
-    --dark-muted: #d6d6da;
-    --dark-soft: #9c9ca5;
+    --dark-muted: #dcdce0;
+    --dark-soft: #a6a6ae;
     --dark-subtle: #71717a;
     --dark-primary-hover: #96b8fc;
     --dark-post-hover: #18181c;

@@ -1,0 +1,395 @@
+---
+title: "Cloudflare Workers Reject POST Requests with a CORS Preflight Failure"
+description: "Return the right CORS headers from a Worker so browser preflight requests stop failing."
+tags: ["cloudflare-workers", "cors", "fetch", "browser"]
+date: Aug 1, 2026
+cell: "workers-cors-preflight-denied::cloudflare-workers::cross-origin-post"
+---
+
+A browser `fetch()` to a Cloudflare Worker rejects the `POST` before the handler runs, and DevTools shows `Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource.`
+
+## What the browser is doing
+
+A cross-origin `POST` does not always go straight to the request handler. If the request is not considered “simple”, the browser sends a preflight `OPTIONS` request first.
+
+That preflight checks whether the server will allow the real request. The browser includes headers such as:
+
+- `Origin`
+- `Access-Control-Request-Method`
+- `Access-Control-Request-Headers` when custom headers are present
+
+The Worker must answer that `OPTIONS` request with the right CORS headers. Only then does the browser send the actual `POST`.
+
+If the `OPTIONS` response is missing `Access-Control-Allow-Origin`, or if it does not list the requested method or headers, the browser stops there. The `POST` never reaches your Worker code.
+
+This is a browser enforcement issue, not an HTTP routing issue. A `curl` request can succeed while the browser still blocks the same endpoint.
+
+## Why Cloudflare Workers hit this
+
+A Cloudflare Worker runs at the edge and can return any HTTP response you construct. It does not automatically add CORS headers.
+
+That means the Worker has to do two separate things:
+
+1. Detect and answer preflight `OPTIONS` requests.
+2. Include matching CORS headers on the actual `POST` response as well.
+
+Both matter.
+
+The preflight response tells the browser the request is allowed. The actual response tells the browser that the response may be exposed to JavaScript. If the `POST` response lacks `Access-Control-Allow-Origin`, the request can still be sent, but `fetch()` will reject access to the response body.
+
+## The browser preflight sequence
+
+For a cross-origin request like this:
+
+```ts
+fetch("https://api.example.workers.dev/v1/items", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Api-Key": "abc123",
+  },
+  body: JSON.stringify({ name: "widget" }),
+})
+```
+
+the browser typically does this:
+
+1. Sends `OPTIONS /v1/items`
+2. Includes:
+   - `Origin: https://app.example.com`
+   - `Access-Control-Request-Method: POST`
+   - `Access-Control-Request-Headers: content-type,x-api-key`
+3. Waits for a `2xx` or `204` response
+4. Checks the CORS response headers
+5. Sends `POST /v1/items` only if the preflight passes
+
+The preflight is required here because:
+
+- `POST` with `application/json` is not a “simple” content type
+- `X-Api-Key` is a non-simple custom header
+
+If any requested header or method is not permitted, the browser blocks the request.
+
+## Required headers and what they mean
+
+The core headers for this pattern are:
+
+- `Access-Control-Allow-Origin`
+- `Access-Control-Allow-Methods`
+- `Access-Control-Allow-Headers`
+
+You often also need:
+
+- `Access-Control-Max-Age` to cache preflight results
+- `Vary: Origin` if the allowed origin is dynamic
+
+### `Access-Control-Allow-Origin`
+
+This must match the browser `Origin` or be `*` for public, non-credentialed requests.
+
+Use `*` only when:
+
+- you do not send cookies
+- you do not use `Authorization` credentials in a way that requires a specific origin policy
+- the endpoint is meant to be broadly public
+
+If you need credentials, `*` is not allowed. The header must echo a specific origin, and the response must also include `Access-Control-Allow-Credentials: true`.
+
+### `Access-Control-Allow-Methods`
+
+This must include the method the browser wants to use, such as `POST`.
+
+For a preflight to a `POST`, you can return something like:
+
+```http
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+```
+
+### `Access-Control-Allow-Headers`
+
+This must include every header named by `Access-Control-Request-Headers`.
+
+If the browser asks for `content-type,x-api-key`, then the response must permit both. Header names are case-insensitive, but the browser compares the set of names.
+
+A common failure is allowing `Content-Type` but forgetting `X-Api-Key`.
+
+## A minimal Worker that handles CORS correctly
+
+This Worker responds to preflight `OPTIONS` requests and returns the same CORS headers on the real `POST` response.
+
+```ts
+export interface Env {
+  ALLOWED_ORIGIN?: string;
+}
+
+function corsHeaders(request: Request, env: Env): Headers {
+  const origin = request.headers.get("Origin");
+  const allowedOrigin = env.ALLOWED_ORIGIN ?? "*";
+
+  const headers = new Headers();
+  headers.set("Access-Control-Allow-Origin", allowedOrigin === "*" ? "*" : allowedOrigin);
+  headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, X-Api-Key");
+  headers.set("Access-Control-Max-Age", "86400");
+  headers.set("Vary", "Origin");
+
+  return headers;
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders(request, env),
+      });
+    }
+
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+
+    const body = await request.json();
+
+    const responseHeaders = corsHeaders(request, env);
+    responseHeaders.set("Content-Type", "application/json");
+
+    return new Response(JSON.stringify({ ok: true, body }), {
+      status: 200,
+      headers: responseHeaders,
+    });
+  },
+};
+```
+
+This version is intentionally explicit.
+
+The `OPTIONS` branch returns `204 No Content`. That is a common preflight response because the browser only cares about the headers.
+
+The `POST` branch returns the same CORS headers. That matters because the browser still enforces CORS on the actual response.
+
+## A stricter origin check
+
+If the endpoint should only accept a known frontend, echo only that origin and reject others.
+
+```ts
+const ALLOWED_ORIGINS = new Set([
+  "https://app.example.com",
+  "https://admin.example.com",
+]);
+
+function getCorsOrigin(request: Request): string | null {
+  const origin = request.headers.get("Origin");
+  if (!origin) return null;
+  return ALLOWED_ORIGINS.has(origin) ? origin : null;
+}
+
+function buildCorsHeaders(request: Request): Headers {
+  const origin = getCorsOrigin(request);
+  const headers = new Headers();
+
+  if (origin) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Vary", "Origin");
+  }
+
+  headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, X-Api-Key");
+  headers.set("Access-Control-Max-Age", "86400");
+
+  return headers;
+}
+```
+
+Use this pattern when the API is only meant for a known set of browser origins.
+
+Do not mirror arbitrary `Origin` values from the request unless that is truly intended. Reflecting any origin turns CORS into a permission bypass.
+
+## Matching the requested headers exactly
+
+The browser sends `Access-Control-Request-Headers` with the headers it plans to use. If the request uses `content-type` and `x-api-key`, the preflight must allow both.
+
+A robust way to handle this is to read the requested headers and validate them against an allowlist.
+
+```ts
+const ALLOWED_REQUEST_HEADERS = new Set([
+  "content-type",
+  "x-api-key",
+]);
+
+function allowRequestedHeaders(request: Request): string | null {
+  const requested = request.headers.get("Access-Control-Request-Headers");
+  if (!requested) return "";
+
+  const values = requested
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+
+  for (const header of values) {
+    if (!ALLOWED_REQUEST_HEADERS.has(header)) {
+      return null;
+    }
+  }
+
+  return values.join(", ");
+}
+```
+
+Then use the result in the preflight response:
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    if (request.method === "OPTIONS") {
+      const headers = new Headers();
+      headers.set("Access-Control-Allow-Origin", "https://app.example.com");
+      headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+
+      const allowedHeaders = allowRequestedHeaders(request);
+      if (allowedHeaders === null) {
+        return new Response("Forbidden headers", { status: 403 });
+      }
+
+      headers.set("Access-Control-Allow-Headers", allowedHeaders);
+      headers.set("Access-Control-Max-Age", "86400");
+      headers.set("Vary", "Origin");
+
+      return new Response(null, { status: 204, headers });
+    }
+
+    return new Response("OK");
+  },
+};
+```
+
+This is safer than hard-coding a long header list when the set of allowed headers is meant to be narrow and explicit.
+
+## Why the preflight can fail even when the route exists
+
+Cloudflare Workers route on path and method, but the browser preflight is a separate request.
+
+If your Worker only handles `POST` and returns `405` or `404` for `OPTIONS`, the browser sees a failed preflight. The actual `POST` is never sent.
+
+A CORS failure can also happen if you return a response from a different layer, such as a fallback route, an origin server, or a proxy in front of the Worker, and that response does not include the correct CORS headers.
+
+The browser does not care that the endpoint is “reachable” in the HTTP sense. It only cares whether the preflight response satisfies the CORS policy.
+
+## Testing with `curl`
+
+`curl` does not enforce browser CORS rules, but it is useful for verifying the exact preflight response.
+
+Simulate the browser’s `OPTIONS` request like this:
+
+```bash
+curl -i -X OPTIONS 'https://api.example.workers.dev/v1/items' \
+  -H 'Origin: https://app.example.com' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type,x-api-key'
+```
+
+A correct response should include something like:
+
+```http
+HTTP/2 204
+access-control-allow-origin: https://app.example.com
+access-control-allow-methods: POST, OPTIONS
+access-control-allow-headers: Content-Type, X-Api-Key
+access-control-max-age: 86400
+vary: Origin
+```
+
+Then test the actual `POST`:
+
+```bash
+curl -i 'https://api.example.workers.dev/v1/items' \
+  -H 'Origin: https://app.example.com' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Api-Key: abc123' \
+  --data '{"name":"widget"}'
+```
+
+The response must also include `Access-Control-Allow-Origin`. Otherwise the browser can receive the HTTP response but block JavaScript from reading it.
+
+## Common mistakes
+
+### Returning CORS headers only on `OPTIONS`
+
+That lets the preflight pass but still causes the actual `POST` response to be blocked.
+
+### Forgetting `OPTIONS` in `Access-Control-Allow-Methods`
+
+If the browser sees `Access-Control-Allow-Methods: POST` and the route answers `OPTIONS`, the preflight can still fail because the preflight response itself must permit the target method, and the `OPTIONS` response must be a valid CORS preflight response.
+
+### Omitting a custom header from `Access-Control-Allow-Headers`
+
+If the request includes `X-Api-Key`, `Authorization`, or another non-simple header, that header must be allowed.
+
+### Returning a body with the preflight when a `204` is enough
+
+A body is unnecessary. The browser only needs the headers. A `204` keeps the preflight response simple.
+
+### Using `Access-Control-Allow-Origin: *` with credentials
+
+That is invalid for credentialed requests. If cookies or credentialed `fetch()` are involved, echo a specific origin and set `Access-Control-Allow-Credentials: true`.
+
+## A complete example for a JSON API
+
+This version is suitable for a Worker that accepts `POST` JSON from one allowed frontend origin and uses a custom API key header.
+
+```ts
+const ALLOWED_ORIGIN = "https://app.example.com";
+
+function cors(request: Request): Headers {
+  const headers = new Headers();
+  headers.set("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+  headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, X-Api-Key");
+  headers.set("Access-Control-Max-Age", "86400");
+  headers.set("Vary", "Origin");
+  return headers;
+}
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    if (request.method === "OPTIONS") {
+      const origin = request.headers.get("Origin");
+      if (origin !== ALLOWED_ORIGIN) {
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      return new Response(null, {
+        status: 204,
+        headers: cors(request),
+      });
+    }
+
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+
+    const origin = request.headers.get("Origin");
+    if (origin !== ALLOWED_ORIGIN) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    const data = await request.json();
+
+    return new Response(JSON.stringify({ received: data }), {
+      status: 200,
+      headers: {
+        ...Object.fromEntries(cors(request)),
+        "Content-Type": "application/json",
+      },
+    });
+  },
+};
+```
+
+For production code, many teams prefer returning a `Headers` object directly instead of spreading `Object.fromEntries()`. That avoids accidental header loss if additional response headers are added later.
+
+## Practical takeaway
+
+Prefer a single CORS helper that adds the same `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, and `Access-Control-Allow-Headers` values to both the preflight `OPTIONS` response and the real `POST` response. That prevents the browser from failing the preflight and also prevents the actual response from being hidden from JavaScript.
+
+If the endpoint should only serve one frontend, echo only that origin and keep `Vary: Origin`. If the endpoint is public and does not use credentials, `Access-Control-Allow-Origin: *` is simpler. Either way, the preflight must be answered before the `POST` runs, and the method and headers in the response must match what the browser asked for.

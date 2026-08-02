@@ -1,0 +1,319 @@
+---
+title: "Next.js Hydration Mismatch: Random UUIDs Render Different HTML on Server and Client"
+description: "Fix hydration errors caused by non-deterministic UUIDs in server-rendered Next.js components."
+tags: ["nextjs", "hydration", "ssr", "react"]
+date: Aug 1, 2026
+cell: "hydration-mismatch-uuid-nextjs::nextjs::ssr-client-random-id"
+---
+
+Hydration breaks in Next.js when a server-rendered component calls `crypto.randomUUID()` during render and the client renders a different UUID. The runtime reports a hydration mismatch such as `Warning: Text content did not match. Server: "..." Client: "..."` or `Error: Hydration failed because the initial UI does not match what was rendered on the server.`
+
+## Why this happens
+
+Next.js renders React components on the server first, then hydrates the same component tree in the browser. Hydration requires the first client render to produce markup identical to the server HTML.
+
+`crypto.randomUUID()` is non-deterministic. Each call returns a different RFC 4122 UUID. If you call it while rendering JSX, the server generates one value and the browser generates another value during hydration.
+
+That means the rendered tree differs before any effects run. React compares the server markup to the client render, finds a mismatch, and hydration fails or falls back to client rendering for that subtree.
+
+This is not specific to `crypto.randomUUID()`. Any render-time source of nondeterminism can cause the same problem:
+
+- `Math.random()`
+- `Date.now()`
+- `new Date().toISOString()`
+- environment-dependent branches
+- data that is only available in one runtime
+
+`crypto.randomUUID()` is especially common because it looks like a convenient way to create stable keys or element IDs. It is only stable for the lifetime of a single render call. It is not stable across server and client renders.
+
+## Minimal reproduction
+
+A component like this can fail hydration:
+
+```tsx
+// app/page.tsx
+export default function Page() {
+  const id = crypto.randomUUID();
+
+  return (
+    <main>
+      <label htmlFor={id}>Email</label>
+      <input id={id} name="email" />
+    </main>
+  );
+}
+```
+
+The server might render:
+
+```html
+<label for="3f1b9b17-8b1d-4c7f-8ef3-6f2f7d2f4e55">Email</label>
+<input id="3f1b9b17-8b1d-4c7f-8ef3-6f2f7d2f4e55" name="email">
+```
+
+The client might render:
+
+```html
+<label for="cde7b96d-7f77-4c52-8f0f-32c74566fa61">Email</label>
+<input id="cde7b96d-7f77-4c52-8f0f-32c74566fa61" name="email">
+```
+
+React sees different attribute values during hydration and raises a mismatch.
+
+The same issue appears with visible text:
+
+```tsx
+export default function Page() {
+  return <p>Request ID: {crypto.randomUUID()}</p>;
+}
+```
+
+Now the text node itself differs between server and client markup.
+
+## Why render-time UUIDs are unstable
+
+React render functions are expected to be pure. For a given set of props and state, a render should return the same output every time.
+
+`crypto.randomUUID()` breaks that rule because it has side effects in the sense that it produces a new value on each invocation. The function is not a pure transform of inputs.
+
+During server-side rendering:
+
+1. Next.js executes the component on the server.
+2. `crypto.randomUUID()` returns a UUID.
+3. The resulting HTML is sent to the browser.
+
+During hydration:
+
+1. React executes the same component in the browser.
+2. `crypto.randomUUID()` returns a different UUID.
+3. React compares the new output to the existing server HTML.
+
+Because the values differ, the markup no longer matches.
+
+React 18 development `StrictMode` makes this easier to detect because it intentionally double-invokes render for components in development. That means you can see two different UUIDs even before considering server versus client. The double render does not cause the bug by itself, but it exposes the fact that the render is not deterministic. Production still hydrates against one server render and one client render, so the underlying mismatch remains.
+
+## Fix 1: Generate the UUID after mount with `useEffect`
+
+If the UUID is only needed on the client, generate it after hydration. That keeps the initial render deterministic.
+
+```tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+
+export default function ClientOnlyUuid() {
+  const [id, setId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setId(crypto.randomUUID());
+  }, []);
+
+  if (id === null) {
+    return <p>Loading ID...</p>;
+  }
+
+  return <p>Client ID: {id}</p>;
+}
+```
+
+This works because:
+
+- the server renders `Loading ID...`
+- the first client render matches `Loading ID...`
+- `useEffect` runs only after hydration completes
+- the UUID is inserted after React has already attached to the server markup
+
+Use this pattern when the UUID is purely decorative, temporary, or only needed after mount. Examples include local debug labels, one-time client-only identifiers, or values that are not part of the initial HTML contract.
+
+If the UUID is used in form labels, keep in mind that the placeholder content must still be valid and accessible until the effect runs. A safer pattern is to use a deterministic fallback or move the ID generation somewhere else.
+
+## Fix 2: Use `useMemo` only when the inputs are stable and deterministic
+
+`useMemo` does not fix nondeterminism by itself. Wrapping `crypto.randomUUID()` in `useMemo` with an empty dependency list still produces one random UUID per mount, which can still differ between server and client.
+
+This is wrong for hydration:
+
+```tsx
+'use client';
+
+import { useMemo } from 'react';
+
+export default function BadExample() {
+  const id = useMemo(() => crypto.randomUUID(), []);
+
+  return <p>{id}</p>;
+}
+```
+
+The server render and client render still compute different values.
+
+`useMemo` only helps if the value is derived from stable inputs that are already identical on both sides. For example, if you need a deterministic ID from known data, hash that data instead of generating a random UUID.
+
+```tsx
+import { useMemo } from 'react';
+
+function stableIdFromSlug(slug: string) {
+  return `post-${slug}`;
+}
+
+type Props = {
+  slug: string;
+};
+
+export default function PostHeading({ slug }: Props) {
+  const id = useMemo(() => stableIdFromSlug(slug), [slug]);
+
+  return <h2 id={id}>Post</h2>;
+}
+```
+
+Here the input `slug` is deterministic. The output is deterministic too.
+
+If you need a value that looks unique but must remain stable across hydration, use stable derivation from props, route params, or fetched data. `useMemo` is useful for avoiding repeated computation, not for making randomness safe.
+
+## Fix 3: Generate the UUID on the server and pass it down
+
+If the UUID must exist in the initial HTML, generate it on the server and treat it as data. That keeps server and client renders aligned because both sides receive the same value.
+
+In the Next.js `App Router`, a server component can generate the UUID and pass it to a client component as a prop:
+
+```tsx
+// app/page.tsx
+import Form from './form';
+
+export default function Page() {
+  const id = crypto.randomUUID();
+
+  return <Form inputId={id} />;
+}
+```
+
+```tsx
+// app/form.tsx
+'use client';
+
+type Props = {
+  inputId: string;
+};
+
+export default function Form({ inputId }: Props) {
+  return (
+    <main>
+      <label htmlFor={inputId}>Email</label>
+      <input id={inputId} name="email" />
+    </main>
+  );
+}
+```
+
+The UUID is still random, but it is generated once on the server and reused in the client render through props. Hydration succeeds because the browser renders the same string that was embedded in the HTML.
+
+This is the right choice when the UUID must be present for semantic reasons in the server HTML, such as:
+
+- `label` and `input` associations
+- ARIA attributes like `aria-labelledby`
+- stable element anchors
+- keys or identifiers derived from server state
+
+If the value belongs to data, generate it where the data is created or fetched, not during UI rendering.
+
+## Prefer `useId` for element IDs
+
+For element IDs tied to labels and accessibility attributes, React `useId` is often the better option than a random UUID. It is designed to be stable across server and client rendering.
+
+```tsx
+'use client';
+
+import { useId } from 'react';
+
+export default function AccessibleField() {
+  const id = useId();
+
+  return (
+    <div>
+      <label htmlFor={id}>Email</label>
+      <input id={id} name="email" />
+    </div>
+  );
+}
+```
+
+`useId` solves the common case where you need a unique but hydration-safe identifier for a component instance. It is not a replacement for server-generated primary keys or application-level IDs, but it is the correct tool for DOM relationships inside React trees.
+
+If you are using `crypto.randomUUID()` only to connect labels and inputs, `useId` is usually the simplest fix.
+
+## When `useEffect` is not enough
+
+`useEffect` only runs after the component mounts on the client. That means the initial HTML cannot depend on the UUID.
+
+If the initial markup contains the random value, moving the generation into `useEffect` changes what users see after hydration. That is fine for client-only state, but not for content that must exist immediately in the server HTML.
+
+Examples where `useEffect` is acceptable:
+
+- local component state that can start empty
+- debug labels
+- temporary client-side identifiers
+- enhancement after hydration
+
+Examples where `useEffect` is not enough:
+
+- IDs used in initial accessible markup
+- content that must match server HTML exactly
+- values needed before any interaction
+- data that affects routing, indexing, or copyable output
+
+In those cases, prefer server generation, `useId`, or deterministic derivation from props and fetched data.
+
+## StrictMode double render considerations
+
+React 18 `StrictMode` in development intentionally renders components more than once. This includes invoking render logic twice for certain components to help detect impure behavior.
+
+A render-time `crypto.randomUUID()` therefore produces different values across the two development renders even before hydration is involved. That can make the problem easier to notice, but it can also be mistaken for a dev-only issue.
+
+It is not dev-only if the UUID participates in rendered markup. The browser still hydrates against server HTML in production, and the same nondeterminism can still break the match.
+
+If a component only works when render runs once, it is still unsafe. `StrictMode` is exposing the impurity, not creating it.
+
+## How to verify the fix
+
+Run the app in development and production to check both render paths.
+
+For a Next.js project, use:
+
+```bash
+npm run dev
+npm run build
+npm run start
+```
+
+Then inspect the browser console and the page HTML around the affected component. If the markup includes a UUID, verify that:
+
+- the server HTML contains the same value the browser renders initially
+- the component does not call `crypto.randomUUID()` during render
+- any client-only generation happens inside `useEffect`
+- any server-generated value is passed as a prop into client components
+
+If you need to confirm hydration behavior in production, build and start the app locally rather than relying only on development mode. Development warnings can differ from production failure modes.
+
+## Related patterns that cause the same class of bug
+
+`crypto.randomUUID()` is only one instance of the broader hydration mismatch problem. The same fix strategy applies to other render-time nondeterminism.
+
+Avoid rendering values from:
+
+```tsx
+Date.now()
+Math.random()
+new Date().toLocaleString()
+window.innerWidth
+navigator.language
+localStorage.getItem('...')
+```
+
+Any value that can differ between the server and browser during the initial render can produce the same mismatch.
+
+If the value is required for the first HTML response, compute it on the server and serialize it. If it is only needed after hydration, compute it in `useEffect`. If it should be stable and derived, use a deterministic function from stable inputs. If it is a DOM ID, prefer `useId`.
+
+## Practical takeaway
+
+Prefer `useId` for element IDs, server-side generation for data that must exist in the initial HTML, and `useEffect` for client-only UUIDs that can appear after mount. Do not call `crypto.randomUUID()` during render unless the value is guaranteed to stay out of the hydrated markup. The key requirement is determinism: the first server render and the first client render must produce the same output, or React hydration will fail.
