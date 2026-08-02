@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-02T05:52:14.573Z",
     "ideas": [
         {
-            "cell": "env-vars-undefined::nextjs::runtime-client-server-boundary",
-            "title": "Next.js Environment Variables Return Undefined in the Browser After Build",
-            "description": "Why process.env values disappear in client code after a Next.js production build, and how to expose the right variables safely.",
-            "tags": [
-                "nextjs",
-                "environment-variables",
-                "build-time",
-                "client-side",
-                "runtime-config"
-            ],
-            "angle": "Cover the difference between server-only env vars and variables inlined into client bundles. Explain how Next.js replaces only NEXT_PUBLIC_ values at build time, why process.env is not a live browser API, and how to structure code so secrets stay server-side while public values remain available.",
-            "slug": "next-js-environment-variables-return-undefined-in-the-browser-after-build"
-        },
-        {
             "cell": "bun-require-esm::bun::commonjs-import-boundary",
             "title": "Bun Throws ERR_REQUIRE_ESM When a CommonJS File Loads an ESM Package",
             "description": "Why Bun hits ERR_REQUIRE_ESM on mixed module boundaries and how to make the import path match the package format.",
