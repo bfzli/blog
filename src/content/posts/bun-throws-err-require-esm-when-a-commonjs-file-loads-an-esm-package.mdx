@@ -1,0 +1,421 @@
+---
+title: "Bun Throws ERR_REQUIRE_ESM When a CommonJS File Loads an ESM Package"
+description: "Why Bun hits ERR_REQUIRE_ESM on mixed module boundaries and how to make the import path match the package format."
+tags: ["bun", "esm", "commonjs", "modules", "runtime"]
+date: Aug 4, 2026
+cell: "bun-require-esm::bun::commonjs-import-boundary"
+---
+
+A CommonJS file fails under Bun when it `require()`s an ESM-only package, and the runtime throws `Error [ERR_REQUIRE_ESM]: require() of ES Module not supported`.
+
+## What the error means
+
+`ERR_REQUIRE_ESM` means the module loader reached a package entry point that is classified as ES module code, but the caller used CommonJS `require()`.
+
+That boundary is not about Bun specifically. It is the same format mismatch that Node.js enforces for mixed module graphs. Bun aims for Node compatibility here, so the failure happens when Bun has enough information to classify the target as ESM and the call site is still CommonJS.
+
+The important detail is that `require()` is synchronous and expects CommonJS semantics. ES modules use static `import` and asynchronous module loading. A CommonJS loader cannot safely execute an ES module in the same synchronous path, so the runtime refuses with `ERR_REQUIRE_ESM`.
+
+A minimal reproduction looks like this:
+
+```ts
+// src/index.cjs
+const chalk = require("chalk")
+
+console.log(chalk.green("hello"))
+```
+
+Run it with Bun:
+
+```bash
+bun src/index.cjs
+```
+
+If the installed `chalk` version is ESM-only, such as `chalk@5`, the output includes:
+
+```text
+Error [ERR_REQUIRE_ESM]: require() of ES Module not supported
+```
+
+## Why CommonJS cannot `require()` an ES module
+
+CommonJS and ES modules are different loading systems.
+
+CommonJS:
+
+- uses `require()`
+- loads synchronously
+- exports with `module.exports` and `exports`
+- resolves files using CommonJS rules
+
+ES modules:
+
+- use `import` and `export`
+- may be loaded asynchronously
+- have live bindings
+- are classified by file extension, `package.json` metadata, or the export target chosen by the resolver
+
+The loader boundary is where this fails. A CommonJS file can import some ESM through a compatibility layer only if the runtime can switch into the ESM loader path. A plain `require()` call cannot do that. It stays on the CommonJS path and stops when the target is tagged as ESM-only.
+
+That tag can come from several places:
+
+- the package’s `package.json` contains `"type": "module"`
+- the file extension is `.mjs`
+- the package `exports` map points `import` and `require` to different files, and the `require` target is missing or still ESM
+- the package is published as ESM-only, with no CommonJS entry point
+
+## How Bun decides which loader to use
+
+Bun follows Node compatibility rules for module format detection.
+
+The main signals are:
+
+- `package.json` `"type"`
+- file extension
+- `exports` conditions
+- the import site format
+
+A file inside a package with `"type": "module"` is treated as ESM by default when it has a `.js` extension. A `.mjs` file is also ESM regardless of `type`. A `.cjs` file is CommonJS regardless of `type`.
+
+Examples:
+
+```json
+{
+  "type": "module"
+}
+```
+
+With that `package.json`:
+
+- `src/index.js` is ESM
+- `src/index.mjs` is ESM
+- `src/index.cjs` is CommonJS
+
+Without that `package.json`:
+
+- `src/index.js` is CommonJS
+- `src/index.mjs` is ESM
+- `src/index.cjs` is CommonJS
+
+This matters because the same code can be valid in one file and invalid in another. If a CommonJS file uses `require()` against a package entry point that Bun has classified as ESM, the error is expected.
+
+## Package `exports` can redirect the target
+
+The package export map is often the reason the resolver lands on an ESM file even when the package contains both formats.
+
+A package can ship separate CommonJS and ESM entry points:
+
+```json
+{
+  "name": "example-pkg",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+This is the preferred compatibility pattern.
+
+If the map is written incorrectly, `require()` may still be sent to ESM:
+
+```json
+{
+  "name": "example-pkg",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "type": "module"
+}
+```
+
+In that case, both `import "example-pkg"` and `require("example-pkg")` can resolve to an ESM file, because the export target is just `./dist/index.js` and the package `type` marks `.js` as ESM. `require()` then fails with `ERR_REQUIRE_ESM`.
+
+This is why the presence of `exports` matters as much as the file extension. The resolver does not just look at the specifier. It follows the package map and the package metadata to determine the actual module format.
+
+## A concrete example with `chalk`
+
+`chalk@5` is ESM-only. It does not provide a CommonJS entry point.
+
+Install it:
+
+```bash
+bun add chalk@5
+```
+
+CommonJS usage fails:
+
+```ts
+// src/index.cjs
+const chalk = require("chalk")
+console.log(chalk.green("ok"))
+```
+
+```bash
+bun src/index.cjs
+```
+
+The fix is to use ESM syntax in an ESM file:
+
+```ts
+// src/index.mts
+import chalk from "chalk"
+
+console.log(chalk.green("ok"))
+```
+
+Or, if the file is `.ts` and the package `type` is module, the same `import` syntax works:
+
+```ts
+// src/index.ts
+import chalk from "chalk"
+
+console.log(chalk.green("ok"))
+```
+
+If the surrounding project is still CommonJS, then a dynamic `import()` is the bridge:
+
+```ts
+// src/index.cjs
+async function main() {
+  const chalk = await import("chalk")
+  console.log(chalk.default.green("ok"))
+}
+
+main().catch((err) => {
+  console.error(err)
+  process.exitCode = 1
+})
+```
+
+That works because `import()` switches to the ESM loader path and returns a promise. The CommonJS file stays CommonJS, but the actual package loads through the ESM mechanism.
+
+## Dynamic `import()` in CommonJS
+
+`import()` is the correct escape hatch when a CommonJS file must reach an ESM-only package.
+
+Use it when:
+
+- the file must remain `.cjs`
+- the rest of the codebase is still CommonJS
+- the dependency only ships ESM
+
+Example:
+
+```ts
+// src/render.cjs
+async function render() {
+  const { default: yaml } = await import("yaml")
+  const data = yaml.parse("name: bun")
+  console.log(data.name)
+}
+
+render().catch((err) => {
+  console.error(err)
+  process.exitCode = 1
+})
+```
+
+The `default` access depends on how the ESM package exports its API. Some ESM packages expose a default export, others expose named exports. You need to match the package’s actual export shape.
+
+This is the key difference from `require()`. `require()` expects one synchronous export object. `import()` can load an ES module and expose the module namespace.
+
+## File extensions that prevent the mismatch
+
+The file extension is often the simplest fix because it moves the caller into the correct module system.
+
+Use `.mjs` for ESM:
+
+```ts
+// src/app.mjs
+import { readFile } from "node:fs/promises"
+import pkg from "nanoid"
+
+console.log(pkg.nanoid())
+```
+
+Use `.cjs` for CommonJS:
+
+```ts
+// src/app.cjs
+const { readFile } = require("node:fs/promises")
+console.log(typeof readFile)
+```
+
+A `.js` file inherits its meaning from the nearest `package.json` `"type"` field.
+
+That means these combinations are common:
+
+- package `"type": "module"` plus `.js` and `import`
+- package `"type": "commonjs"` or no `type` plus `.cjs` and `require`
+- package `"type": "module"` plus `.cjs` and `require` for legacy CommonJS islands
+
+If a package boundary or app boundary is mixed, naming the file extension clearly often prevents accidental loader mismatch.
+
+## How to check the boundary in practice
+
+When `ERR_REQUIRE_ESM` appears, inspect these three places.
+
+### 1. The caller file format
+
+Check whether the calling file is CommonJS or ESM.
+
+- `.cjs` is CommonJS
+- `.mjs` is ESM
+- `.js` depends on `package.json` `"type"`
+
+### 2. The dependency entry point
+
+Inspect the dependency package:
+
+```bash
+cat node_modules/chalk/package.json
+```
+
+Look for:
+
+- `"type": "module"`
+- `"exports"`
+- `"main"`
+
+For ESM-only packages, the `exports` map often points to ESM files and omits CommonJS paths entirely.
+
+### 3. The exact import target
+
+A package specifier like `require("pkg")` can resolve differently from `require("pkg/subpath")`. Subpaths are governed by the `exports` map. If the subpath is mapped only to ESM, `require()` fails even if the package root has a CommonJS build.
+
+For example:
+
+```json
+{
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./feature": "./dist/feature.js"
+  },
+  "type": "module"
+}
+```
+
+Here `require("example-pkg")` works because `require` has a CJS target, but `require("example-pkg/feature")` fails because `./dist/feature.js` is ESM under `"type": "module"` and no CommonJS alternative exists.
+
+## When Bun follows Node compatibility rules
+
+Bun follows Node-compatible module classification in these cases:
+
+- interpreting `.mjs` as ESM
+- interpreting `.cjs` as CommonJS
+- using `package.json` `"type"` to classify `.js`
+- honoring `exports` condition resolution
+- rejecting `require()` against ESM-only modules
+
+That means the same source layout that fails under Node also fails under Bun. The error is not a Bun-specific parser issue. It is a loader boundary issue.
+
+This is useful for debugging because the fix is usually structural, not runtime-specific. If the package is ESM-only, changing the runtime does not make synchronous `require()` valid.
+
+## When the export map changes the resolution target
+
+The package export map can override what looks like a straightforward path.
+
+A package without `exports` may fall back to `main` or legacy resolution rules. A package with `exports` is more explicit. The resolver only sees the paths the map allows.
+
+That means this package can behave differently depending on its metadata:
+
+```json
+{
+  "main": "./dist/index.cjs"
+}
+```
+
+versus:
+
+```json
+{
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "type": "module"
+}
+```
+
+In the first case, `require("example-pkg")` may work if `main` points to CommonJS. In the second case, `require("example-pkg")` reaches an ESM file and fails.
+
+Subpath exports make this sharper. A package can support `require("pkg")` but not `require("pkg/subpath")` if only the root export has a CommonJS condition.
+
+## Fix options, ordered by reliability
+
+The cleanest fix is to make the import syntax match the package format.
+
+### Prefer ESM for ESM-only dependencies
+
+If the dependency is ESM-only, use `import` from an ESM file.
+
+```ts
+// src/index.mts
+import express from "express"
+```
+
+This avoids wrappers and preserves normal static analysis.
+
+### Use dynamic `import()` from CommonJS when you must keep CommonJS
+
+```ts
+// src/index.cjs
+async function main() {
+  const { default: express } = await import("express")
+}
+```
+
+This is the correct bridge when the surrounding code cannot move to ESM yet.
+
+### Switch to a CommonJS-compatible package version
+
+Some packages have a last CommonJS major version. For example:
+
+- `chalk@4` is CommonJS-compatible
+- `chalk@5` is ESM-only
+
+If the codebase is intentionally CommonJS, pinning to the CommonJS line can be the simplest operational choice.
+
+```bash
+bun add chalk@4
+```
+
+This is a compatibility choice, not a format fix. It works only when an older CommonJS version exists and is acceptable.
+
+### Publish dual entry points if you own the package
+
+For package authors, ship both formats through `exports`:
+
+```json
+{
+  "name": "example-pkg",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+This gives both loaders a valid target and prevents `ERR_REQUIRE_ESM` at the package boundary.
+
+## Keeping the error from returning
+
+The durable fix is to keep module format aligned across the file, the package, and the entry point.
+
+Use these checks:
+
+- if the dependency is ESM-only, do not `require()` it
+- if the current file is CommonJS, use `import()` or convert the file to ESM
+- if the package has `exports`, verify the `require` condition points to a CommonJS file
+- if `package.json` has `"type": "module"`, do not assume `.js` is CommonJS
+- use `.cjs` for CommonJS islands and `.mjs` for ESM boundaries
+
+The practical default is simple: prefer converting the caller to ESM when the dependency is already ESM-only. Use dynamic `import()` only when the caller must remain CommonJS. That keeps the import path and package format aligned, which is what prevents `ERR_REQUIRE_ESM` from appearing again.
