@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-02T05:52:14.573Z",
     "ideas": [
         {
-            "cell": "bun-require-esm::bun::commonjs-import-boundary",
-            "title": "Bun Throws ERR_REQUIRE_ESM When a CommonJS File Loads an ESM Package",
-            "description": "Why Bun hits ERR_REQUIRE_ESM on mixed module boundaries and how to make the import path match the package format.",
-            "tags": [
-                "bun",
-                "esm",
-                "commonjs",
-                "modules",
-                "runtime"
-            ],
-            "angle": "Explain the module loader boundary that causes require() to fail against an ESM-only package. Cover package.json type fields, .mjs and .cjs extensions, dynamic import(), and the cases where Bun follows Node compatibility rules versus where the package export map changes the resolution target.",
-            "slug": "bun-throws-err-require-esm-when-a-commonjs-file-loads-an-esm-package"
-        },
-        {
             "cell": "android-window-not-defined::react-native::native-module-initialization",
             "title": "React Native on Android Throws ReferenceError: window is not defined During Module Initialization",
             "description": "Why browser globals break during React Native startup on Android and how to move that code behind a native-safe boundary.",
