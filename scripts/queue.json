@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-02T05:52:14.573Z",
     "ideas": [
         {
-            "cell": "android-window-not-defined::react-native::native-module-initialization",
-            "title": "React Native on Android Throws ReferenceError: window is not defined During Module Initialization",
-            "description": "Why browser globals break during React Native startup on Android and how to move that code behind a native-safe boundary.",
-            "tags": [
-                "react-native",
-                "android",
-                "referenceerror",
-                "javascript",
-                "native-modules"
-            ],
-            "angle": "Focus on code that runs at import time before any UI renders. Explain that React Native does not provide a browser window object, why top-level access crashes on Android startup, and how to replace it with Platform checks, native modules, or lazy execution after the app shell has loaded.",
-            "slug": "react-native-on-android-throws-referenceerror-window-is-not-defined-during-module-initialization"
-        },
-        {
             "cell": "dns-careset-localhost::node::ipv6-resolution",
             "title": "Node Fails to Connect to localhost with ECONNREFUSED ::1 on a Local Server",
             "description": "Why Node tries IPv6 loopback first for localhost and how to match your server bind address to the resolved address.",
