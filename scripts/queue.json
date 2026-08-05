@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-02T05:52:14.573Z",
     "ideas": [
         {
-            "cell": "dns-careset-localhost::node::ipv6-resolution",
-            "title": "Node Fails to Connect to localhost with ECONNREFUSED ::1 on a Local Server",
-            "description": "Why Node tries IPv6 loopback first for localhost and how to match your server bind address to the resolved address.",
-            "tags": [
-                "node",
-                "networking",
-                "localhost",
-                "ipv6",
-                "econnrefused"
-            ],
-            "angle": "Explain that localhost can resolve to ::1 before 127.0.0.1 and the server may only be listening on IPv4. Show how to verify the bind address, force IPv4 when appropriate, and choose a host value that matches the listener so the client and server agree on the same loopback interface.",
-            "slug": "node-fails-to-connect-to-localhost-with-econnrefused-1-on-a-local-server"
-        },
-        {
             "cell": "form-action-405::remix::html-form-submit",
             "title": "Remix Returns 405 Method Not Allowed When a Form Submits to the Wrong Route",
             "description": "Why a Remix form posts to a route without an action and how route matching determines which loader or action runs.",
