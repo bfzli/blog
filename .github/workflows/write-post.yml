@@ -86,8 +86,18 @@ jobs:
               env:
                   GH_TOKEN: ${{ github.token }}
               run: |
-                  title='Post pipeline is failing'
                   run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+                  echo "::error::$GITHUB_WORKFLOW failed. $run_url"
+
+                  # The tracking issue needs Issues enabled on the repository. If
+                  # they are off, fall back to the annotation above rather than
+                  # failing this step and burying why the run actually broke.
+                  if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq '.has_issues')" != 'true' ]; then
+                      echo 'Issues are disabled on this repository, no tracking issue created'
+                      exit 0
+                  fi
+
+                  title='Post pipeline is failing'
                   body="\`$GITHUB_WORKFLOW\` failed. Run: $run_url"
                   existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
                   if [ -n "$existing" ]; then
