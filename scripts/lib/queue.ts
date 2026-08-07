@@ -19,9 +19,6 @@ const isIdea = (value: unknown): value is PostIdea => {
     )
 }
 
-// queue.json is machine state written by two scheduled jobs. A malformed or
-// truncated file must fail loudly rather than silently read as an empty queue,
-// because an empty queue is indistinguishable from "nothing left to publish".
 export const readQueue = (): PostQueue => {
     if (!fs.existsSync(QUEUE_FILE)) return { ...EMPTY }
 

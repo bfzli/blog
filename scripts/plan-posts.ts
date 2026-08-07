@@ -14,9 +14,6 @@ import {
 import { readQueue, writeQueue } from './lib/queue'
 import { coverage, expand, readMatrix, sample } from './lib/matrix'
 
-// The writer consumes one idea a day and the planner refills weekly, so a target
-// of 7 is exactly break-even: one rejected idea, one failed run or one skipped
-// cron starves a day. Carry a few days of slack instead.
 const TARGET = 10
 const ASSIGNED_STACKS = 5
 const SEED_TOPICS = 6
@@ -83,9 +80,6 @@ const main = async () => {
     const published = readPublished()
     const queue = readQueue()
 
-    // Drafted ideas are written but not merged, so they appear in neither the
-    // posts directory nor the queue. Without them here the planner happily plans
-    // a problem that is already sitting in an open PR.
     const covered = new Set([
         ...publishedCells(),
         ...queue.ideas.map((idea) => idea.cell).filter(Boolean),
