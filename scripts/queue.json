@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-02T05:52:14.573Z",
     "ideas": [
         {
-            "cell": "form-action-405::remix::html-form-submit",
-            "title": "Remix Returns 405 Method Not Allowed When a Form Submits to the Wrong Route",
-            "description": "Why a Remix form posts to a route without an action and how route matching determines which loader or action runs.",
-            "tags": [
-                "remix",
-                "forms",
-                "actions",
-                "routes",
-                "http-405"
-            ],
-            "angle": "Explain Remix's request routing rules for action and loader functions, including nested routes and index routes. Show why the browser can submit correctly while the route tree rejects the method, and how to place the action on the matching route or point the form at the intended endpoint.",
-            "slug": "remix-returns-405-method-not-allowed-when-a-form-submits-to-the-wrong-route"
-        },
-        {
             "cell": "typescript-exports-sdk::typescript::multi-entry-package-design",
             "title": "Design a TypeScript SDK with Multiple Entry Points Without Breaking Imports",
             "description": "How to publish a typed SDK with subpath exports, preserved types, and stable import paths for ESM and CommonJS.",
