@@ -1,0 +1,430 @@
+---
+title: "Next.js Environment Variables Return Undefined in the Browser After Build"
+description: "Why process.env values disappear in client code after a Next.js production build, and how to expose the right variables safely."
+tags: ["nextjs", "environment-variables", "build-time", "client-side", "runtime-config"]
+date: Aug 3, 2026
+cell: "env-vars-undefined::nextjs::runtime-client-server-boundary"
+---
+
+`process.env.MY_VAR` is `undefined` in the browser after `next build`, and the client console shows `ReferenceError: process is not defined` or reads `undefined` instead of the expected value.
+
+## Why this happens
+
+Next.js does not ship a live Node.js `process.env` object to the browser.
+
+That distinction matters because server code and client code run in different environments:
+
+- Server code can read the real operating system environment at runtime.
+- Client code runs in the browser, where `process` does not exist unless a bundle inserts a stub.
+
+During `next build`, Next.js statically analyzes code and inlines some environment variable references into the JavaScript bundle. That only happens for variables with the `NEXT_PUBLIC_` prefix when they are referenced in client-side code. Everything else stays server-only by design.
+
+So this code works on the server:
+
+```ts
+// app/api/config/route.ts
+export async function GET() {
+  return Response.json({
+    secret: process.env.API_SECRET,
+    publicUrl: process.env.NEXT_PUBLIC_API_URL,
+  })
+}
+```
+
+But this code does not work in browser-executed code unless the variable is public and inlined at build time:
+
+```ts
+'use client'
+
+export function Widget() {
+  return <div>{process.env.API_SECRET}</div>
+}
+```
+
+In production, the browser bundle cannot read the machine's environment at request time. There is no `process.env` API in the browser. If a value is not compiled into the bundle, it is unavailable.
+
+## How Next.js treats environment variables
+
+Next.js follows a specific rule set:
+
+- Variables without the `NEXT_PUBLIC_` prefix are server-only.
+- Variables with the `NEXT_PUBLIC_` prefix can be exposed to browser code.
+- Public variables are replaced at build time, not looked up dynamically in the browser.
+
+That last point is the usual source of confusion. The browser does not ask the server for `process.env.NEXT_PUBLIC_FOO` on every page load. The string value is baked into the JavaScript asset during build.
+
+For example, if `.env.production` contains:
+
+```bash
+API_SECRET=super-secret
+NEXT_PUBLIC_SITE_NAME=Example
+NEXT_PUBLIC_API_URL=https://api.example.com
+```
+
+then this server-side code can read all three values:
+
+```ts
+export function getConfig() {
+  return {
+    secret: process.env.API_SECRET,
+    siteName: process.env.NEXT_PUBLIC_SITE_NAME,
+    apiUrl: process.env.NEXT_PUBLIC_API_URL,
+  }
+}
+```
+
+But this client component can only safely use the public values:
+
+```ts
+'use client'
+
+export function Header() {
+  return (
+    <header>
+      <p>{process.env.NEXT_PUBLIC_SITE_NAME}</p>
+      <p>{process.env.NEXT_PUBLIC_API_URL}</p>
+    </header>
+  )
+}
+```
+
+Trying to access `process.env.API_SECRET` in the browser gives you nothing useful. Next.js does not expose it there.
+
+## Why `process.env` is not a browser API
+
+`process` is a Node.js global, not a web platform feature.
+
+In Node.js, `process.env` is a live object backed by the runtime environment. In the browser, JavaScript runs inside a sandbox with a different API surface. There is no environment variable store that the browser can query in the same way.
+
+Next.js compensates by transforming some references during bundling. The transformation is lexical and static. It looks for code it can replace ahead of time, such as `process.env.NEXT_PUBLIC_API_URL`, and injects the string literal into the bundle.
+
+That means these cases behave differently:
+
+```ts
+// Usually replaced at build time in client bundles
+process.env.NEXT_PUBLIC_API_URL
+```
+
+```ts
+// Not safe for client code unless the property is statically known and public
+const key = 'NEXT_PUBLIC_API_URL'
+process.env[key]
+```
+
+The second form is a dynamic property lookup. Bundlers cannot reliably replace it because the key is computed. In client code, that often ends up as `undefined`.
+
+The same applies to destructuring:
+
+```ts
+const { NEXT_PUBLIC_API_URL } = process.env
+```
+
+This pattern is not the preferred way to read env vars in client code. Use direct access so the bundler can inline the value.
+
+## The build-time boundary
+
+The production build is the important phase.
+
+When you run:
+
+```bash
+npm run build
+```
+
+Next.js compiles server bundles and client bundles separately. Client bundles get the public environment variable values captured during the build. After deployment, changing the host environment does not magically update already-built browser assets.
+
+This explains a common mismatch:
+
+- `next dev` works because code paths can feel more permissive during development.
+- `next build` and `next start` reveal the real bundling behavior.
+- Environment variables changed after build are not reflected in precompiled client code.
+
+If you deploy the same `.next` output to multiple environments, the values that were inlined for client code remain the ones from build time. That is correct for static client bundles, but it means you cannot use `process.env` in the browser as a dynamic configuration source.
+
+## Safe structure: keep secrets on the server
+
+Secrets should never be exposed to client bundles.
+
+That means values such as:
+
+- database passwords
+- API tokens
+- private signing keys
+- internal service credentials
+
+must remain server-only. Read them only in server components, route handlers, server actions, or backend utility modules that are never imported into client components.
+
+A typical server-only module looks like this:
+
+```ts
+// lib/server/config.ts
+import 'server-only'
+
+export const config = {
+  apiSecret: process.env.API_SECRET,
+  databaseUrl: process.env.DATABASE_URL,
+}
+```
+
+The `server-only` package is a guardrail. It tells Next.js that this module must not be imported from the client side.
+
+Install it if needed:
+
+```bash
+npm install server-only
+```
+
+Then use the values only on the server:
+
+```ts
+// app/api/user/route.ts
+import { config } from '@/lib/server/config'
+
+export async function GET() {
+  if (!config.databaseUrl) {
+    return new Response('Missing DATABASE_URL', { status: 500 })
+  }
+
+  return Response.json({ ok: true })
+}
+```
+
+If a client component needs data derived from a secret, fetch it from a server endpoint rather than reading the secret directly.
+
+## Safe structure: expose only public values to the browser
+
+Anything the browser must read should be explicitly public and non-sensitive.
+
+Use `NEXT_PUBLIC_` for values intended to be bundled into client code:
+
+```bash
+NEXT_PUBLIC_SITE_NAME=Example Docs
+NEXT_PUBLIC_API_BASE_URL=https://api.example.com
+```
+
+Then read them directly in client components:
+
+```tsx
+'use client'
+
+export function Footer() {
+  return (
+    <footer>
+      <p>{process.env.NEXT_PUBLIC_SITE_NAME}</p>
+      <a href={process.env.NEXT_PUBLIC_API_BASE_URL}>API</a>
+    </footer>
+  )
+}
+```
+
+This works because Next.js replaces those references during the build.
+
+Do not put secrets behind `NEXT_PUBLIC_`. That prefix is not a privacy boundary. It is an instruction to embed the value into browser code.
+
+## A common failure pattern
+
+This pattern fails in production:
+
+```tsx
+'use client'
+
+const apiKey = process.env.API_KEY
+
+export function Search() {
+  return <div>{apiKey}</div>
+}
+```
+
+The code looks straightforward, but `API_KEY` is server-only. In a browser bundle, `process.env.API_KEY` is not available.
+
+A second failure pattern is reading env vars inside a helper that is imported by both server and client code:
+
+```ts
+// lib/config.ts
+export const apiUrl = process.env.NEXT_PUBLIC_API_URL
+export const secret = process.env.API_SECRET
+```
+
+If a client component imports `apiUrl` from this file, the module may be pulled into the client bundle. The presence of `secret` creates a risk of accidental leakage or bundling issues, depending on how the module is used.
+
+Split the code by boundary instead:
+
+```ts
+// lib/server/config.ts
+import 'server-only'
+
+export const secret = process.env.API_SECRET
+```
+
+```ts
+// lib/public/config.ts
+export const apiUrl = process.env.NEXT_PUBLIC_API_URL
+```
+
+This makes the intent explicit and reduces cross-boundary imports.
+
+## Server components versus client components
+
+In the `app` router, server components can access server-only environment variables because they run on the server during rendering.
+
+```tsx
+// app/page.tsx
+export default function Page() {
+  return <p>{process.env.API_SECRET ? 'configured' : 'missing'}</p>
+}
+```
+
+If the component is not marked with `'use client'`, it runs on the server. That means server-only env vars are available.
+
+If you add `'use client'`, the same code becomes browser code:
+
+```tsx
+'use client'
+
+export default function Page() {
+  return <p>{process.env.API_SECRET ? 'configured' : 'missing'}</p>
+}
+```
+
+That version is invalid for secrets because the browser cannot read them.
+
+This boundary is the central rule. Server components and server code can read private env vars. Client components can only use public, build-inlined env vars.
+
+## How to verify what is available
+
+To inspect server-side values during development, you can log them in a server-only context:
+
+```ts
+// app/api/debug-env/route.ts
+export async function GET() {
+  return Response.json({
+    apiSecretPresent: Boolean(process.env.API_SECRET),
+    publicUrl: process.env.NEXT_PUBLIC_API_URL,
+  })
+}
+```
+
+From the terminal, hit the route:
+
+```bash
+curl http://localhost:3000/api/debug-env
+```
+
+If the public variable is present on the server but not in client code, the issue is almost always the server/client boundary or a dynamic access pattern.
+
+Also inspect the browser bundle usage. If client code uses one of these forms, it is likely to fail:
+
+```ts
+process.env[key]
+const { NEXT_PUBLIC_API_URL } = process.env
+globalThis.process.env.NEXT_PUBLIC_API_URL
+```
+
+Prefer direct static access in client code:
+
+```ts
+process.env.NEXT_PUBLIC_API_URL
+```
+
+## Runtime configuration alternatives
+
+If the value must change without rebuilding the client bundle, do not use a client-side env var for it. Instead, fetch it from the server at runtime.
+
+A route handler can return public configuration:
+
+```ts
+// app/api/public-config/route.ts
+export async function GET() {
+  return Response.json({
+    apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
+    featureFlag: process.env.NEXT_PUBLIC_FEATURE_FLAG === 'true',
+  })
+}
+```
+
+Then consume it in the browser:
+
+```tsx
+'use client'
+
+import { useEffect, useState } from 'react'
+
+type PublicConfig = {
+  apiBaseUrl: string
+  featureFlag: boolean
+}
+
+export function ConfigPanel() {
+  const [config, setConfig] = useState<PublicConfig | null>(null)
+
+  useEffect(() => {
+    fetch('/api/public-config')
+      .then((res) => res.json())
+      .then(setConfig)
+  }, [])
+
+  if (!config) return null
+
+  return <pre>{JSON.stringify(config, null, 2)}</pre>
+}
+```
+
+This keeps secrets on the server and lets public config be evaluated at request time.
+
+## Edge cases that cause confusion
+
+Several details can make the issue look inconsistent:
+
+- `next dev` can hide build-time problems until production.
+- Environment values changed after `next build` do not update in already built client bundles.
+- Dynamic access like `process.env[variableName]` is not reliably inlined.
+- Importing a shared module into client code can pull env references into the browser bundle.
+- Secrets prefixed with `NEXT_PUBLIC_` will be exposed to every browser that loads the app.
+
+The fix is not to force `process.env` into the browser. The fix is to use the correct boundary for each variable.
+
+## Recommended file organization
+
+A simple layout makes the rules hard to violate:
+
+```txt
+src/
+  lib/
+    server/
+      config.ts
+      db.ts
+    public/
+      config.ts
+  app/
+    api/
+      public-config/
+        route.ts
+```
+
+Example server config:
+
+```ts
+// src/lib/server/config.ts
+import 'server-only'
+
+export const serverConfig = {
+  apiSecret: process.env.API_SECRET,
+  databaseUrl: process.env.DATABASE_URL,
+}
+```
+
+Example public config:
+
+```ts
+// src/lib/public/config.ts
+export const publicConfig = {
+  apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
+  siteName: process.env.NEXT_PUBLIC_SITE_NAME,
+}
+```
+
+This separation makes it clear which values can travel to the browser and which cannot.
+
+## Practical takeaway
+
+Use `NEXT_PUBLIC_` only for values that are safe to embed in client bundles, and read them with direct `process.env.NEXT_PUBLIC_*` access in client code. Keep secrets in server-only modules and read them only on the server. If a value must change after build, serve it from a server endpoint instead of expecting the browser to read `process.env` dynamically. That structure prevents undefined client values and keeps private data out of the bundle.
