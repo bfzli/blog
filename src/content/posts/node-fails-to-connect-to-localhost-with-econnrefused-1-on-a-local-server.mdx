@@ -1,0 +1,355 @@
+---
+title: "Node Fails to Connect to localhost with ECONNREFUSED ::1 on a Local Server"
+description: "Why Node tries IPv6 loopback first for localhost and how to match your server bind address to the resolved address."
+tags: ["node", "networking", "localhost", "ipv6", "econnrefused"]
+date: Aug 6, 2026
+cell: "dns-careset-localhost::node::ipv6-resolution"
+---
+
+`fetch('http://localhost:3000')` fails in Node with `ECONNREFUSED ::1:3000`.
+
+## What that error means
+
+`ECONNREFUSED` means the TCP connection reached a real network stack, but nothing accepted the connection at that address and port. In this case, the address is `::1`, the IPv6 loopback address.
+
+`localhost` does not always mean `127.0.0.1`. On many systems it resolves to both IPv6 and IPv4 loopback addresses, and Node will often use the first resolved address it gets back. If that first result is `::1`, the client tries IPv6. If the server is only listening on IPv4 `127.0.0.1`, the connection is refused.
+
+This is a mismatch between name resolution and bind address, not a generic networking failure.
+
+## Why `localhost` can resolve to `::1`
+
+`localhost` is a host name mapped by the operating system resolver, typically through `/etc/hosts` on Unix-like systems or the Windows hosts file.
+
+A common mapping looks like this:
+
+```txt
+::1       localhost
+127.0.0.1 localhost
+```
+
+When a client resolves `localhost`, it may receive both addresses. Depending on resolver order and the runtime’s connection strategy, the IPv6 address can be tried first.
+
+Node’s `fetch`, `http.request`, `undici`, many browser-like clients, and other Node networking APIs all rely on the platform resolver. If the resolved target is `::1`, the connection is IPv6. If the listening process only bound to IPv4, the connection fails even though `localhost` looks correct.
+
+## Why the server can be listening on only IPv4
+
+A server binds to a specific address or interface. A bind to `127.0.0.1` accepts only IPv4 loopback connections. A bind to `::1` accepts only IPv6 loopback connections. A bind to `0.0.0.0` accepts all IPv4 interfaces. A bind to `::` accepts all IPv6 interfaces, and on some systems can also accept IPv4-mapped traffic if the socket is configured that way.
+
+Many frameworks default to a local address that is not dual-stack in practice. Some examples:
+
+- `vite` dev server can bind to `localhost`, `127.0.0.1`, or `::1` depending on configuration and environment.
+- `next dev`, `express`, `fastify`, and raw `http.createServer()` bind to whatever host you pass, and if you pass `127.0.0.1`, the server is IPv4-only.
+- Containerized services often bind to `127.0.0.1` inside the container, which makes them unreachable from outside the container even when the port is published.
+
+The client and server must agree on the same loopback interface family.
+
+## Verify what address the server is actually listening on
+
+Do not assume the bind address from the URL you typed into the client. Check the listener.
+
+### Use `lsof`
+
+```bash
+lsof -nP -iTCP:3000 -sTCP:LISTEN
+```
+
+Example output:
+
+```txt
+node    12345 yourname   18u  IPv4 0x...      0t0  TCP 127.0.0.1:3000 (LISTEN)
+```
+
+If the output shows `IPv4` and `127.0.0.1:3000`, then an IPv6 `::1:3000` client connection will not match.
+
+If it shows `IPv6` and `::1:3000`, then an IPv4 `127.0.0.1:3000` client connection will not match.
+
+### Use `ss` on Linux
+
+```bash
+ss -ltnp 'sport = :3000'
+```
+
+Example output:
+
+```txt
+LISTEN 0 511 127.0.0.1:3000 0.0.0.0:* users:(("node",pid=12345,fd=18))
+```
+
+Or:
+
+```txt
+LISTEN 0 511 [::1]:3000 [::]:* users:(("node",pid=12345,fd=18))
+```
+
+The address in the listener line is the key detail.
+
+### Use `netstat` if `ss` is unavailable
+
+```bash
+netstat -an | grep 3000
+```
+
+On Windows, use:
+
+```powershell
+netstat -ano | findstr 3000
+```
+
+Look for `127.0.0.1:3000` versus `[::1]:3000`.
+
+## Verify which address `localhost` resolves to
+
+Check name resolution directly.
+
+### With `getent`
+
+```bash
+getent hosts localhost
+```
+
+Possible result:
+
+```txt
+::1             localhost
+127.0.0.1       localhost
+```
+
+If `::1` appears first, a client that chooses the first answer may try IPv6 first.
+
+### With `dig`
+
+```bash
+dig localhost AAAA
+dig localhost A
+```
+
+`AAAA` returns IPv6 records. `A` returns IPv4 records. `localhost` often exists in both forms.
+
+### With Node
+
+Run:
+
+```bash
+node -e "require('dns').lookup('localhost', { all: true }, console.log)"
+```
+
+Possible output:
+
+```txt
+null [
+  { address: '::1', family: 6 },
+  { address: '127.0.0.1', family: 4 }
+]
+```
+
+If `::1` is first, and the client tries the first address, the connection will go to IPv6 first.
+
+## Minimal example that reproduces the mismatch
+
+Start a server that binds to IPv4 only:
+
+```ts
+import http from 'node:http';
+
+const server = http.createServer((_, res) => {
+  res.writeHead(200, { 'content-type': 'text/plain' });
+  res.end('ok');
+});
+
+server.listen(3000, '127.0.0.1', () => {
+  console.log('listening on 127.0.0.1:3000');
+});
+```
+
+Then connect to `localhost`:
+
+```ts
+const res = await fetch('http://localhost:3000');
+console.log(await res.text());
+```
+
+If `localhost` resolves to `::1` first on the system and the client does not fall back to IPv4, the request fails with:
+
+```txt
+TypeError: fetch failed
+    cause: Error: connect ECONNREFUSED ::1:3000
+```
+
+The exact outer error text can vary by API, but the socket error remains `ECONNREFUSED ::1:3000`.
+
+## Fix the client by matching the listener
+
+If the server is bound to IPv4 `127.0.0.1`, connect to IPv4 explicitly:
+
+```ts
+const res = await fetch('http://127.0.0.1:3000');
+console.log(await res.text());
+```
+
+This avoids name resolution entirely. The client connects directly to IPv4 loopback.
+
+If the server is bound to IPv6 `::1`, connect explicitly to IPv6:
+
+```ts
+const res = await fetch('http://[::1]:3000');
+console.log(await res.text());
+```
+
+The brackets are required in a URL literal for IPv6 host literals.
+
+## Fix the server by binding to the address the client uses
+
+If the client must use `localhost`, configure the server to listen on a host that matches what the resolver returns.
+
+### Bind to `::1` for IPv6 loopback
+
+```ts
+import http from 'node:http';
+
+http.createServer((_, res) => {
+  res.end('ok');
+}).listen(3000, '::1');
+```
+
+Use this if the local client will resolve `localhost` to IPv6 first and the environment is expected to prefer IPv6 loopback.
+
+### Bind to `127.0.0.1` for IPv4 loopback
+
+```ts
+import http from 'node:http';
+
+http.createServer((_, res) => {
+  res.end('ok');
+}).listen(3000, '127.0.0.1');
+```
+
+Use this when you want to force the server to accept IPv4 only and the client can be pointed at `127.0.0.1`.
+
+### Bind to all interfaces when local-only is not required
+
+```ts
+import http from 'node:http';
+
+http.createServer((_, res) => {
+  res.end('ok');
+}).listen(3000, '0.0.0.0');
+```
+
+This accepts all IPv4 interfaces. It does not solve an IPv6 `::1` client by itself, but it can be appropriate for services intended to be reachable from outside the machine.
+
+For IPv6-all, use:
+
+```ts
+import http from 'node:http';
+
+http.createServer((_, res) => {
+  res.end('ok');
+}).listen(3000, '::');
+```
+
+Whether `::` also accepts IPv4 connections depends on the OS and socket settings, so do not assume it is dual-stack everywhere.
+
+## Force IPv4 in Node when appropriate
+
+If the application must keep using `localhost`, but the environment resolves `localhost` to IPv6 first and the server is IPv4-only, you can force IPv4 in the client.
+
+### Use an explicit IPv4 URL
+
+This is the simplest fix:
+
+```ts
+await fetch('http://127.0.0.1:3000');
+```
+
+### Set the resolver order for Node
+
+Node provides `dns.setDefaultResultOrder()` for controlling lookup preference in the current process.
+
+```ts
+import dns from 'node:dns';
+
+dns.setDefaultResultOrder('ipv4first');
+```
+
+You can apply it before any network calls. It changes the default address ordering used by `dns.lookup()` in the process.
+
+For a command-line override in newer Node versions, use:
+
+```bash
+NODE_OPTIONS=--dns-result-order=ipv4first node app.js
+```
+
+This is useful when the process internally resolves `localhost` and you need IPv4 preferred across many requests.
+
+This does not change the server bind address. It only changes which address the client tries first.
+
+## Be careful with container and proxy setups
+
+The same error can appear when the server is inside a container or a separate process namespace.
+
+A server bound to `127.0.0.1` inside a container only listens inside that container. Publishing the port with Docker does not make `127.0.0.1` inside the container equal to the host’s loopback.
+
+A common safe pattern is to bind the server to `0.0.0.0` inside the container and connect from outside using the published host port:
+
+```ts
+server.listen(3000, '0.0.0.0');
+```
+
+When a reverse proxy or local tunnel is involved, verify both sides:
+
+- the proxy target host
+- the upstream listener bind address
+- the client URL host
+
+If any one of them uses the wrong loopback family, `ECONNREFUSED ::1` or `ECONNREFUSED 127.0.0.1` can result.
+
+## How to choose the correct host value
+
+Use the host that matches the actual listener.
+
+- If the server listens on `127.0.0.1`, use `127.0.0.1` in the client.
+- If the server listens on `::1`, use `[::1]` in the client URL.
+- If you need name-based access through `localhost`, make the server dual-stack or align the resolver preference with the listener.
+- If the service is for local development only, explicit loopback addresses are less ambiguous than `localhost`.
+
+A good diagnostic sequence is:
+
+1. Check the listener with `lsof`, `ss`, or `netstat`.
+2. Check `localhost` resolution with `dns.lookup()` or `getent hosts localhost`.
+3. Compare the client address family with the server bind address.
+4. Either change the client URL or change the server bind host so both sides use the same family.
+
+## Reference implementation
+
+This example shows a server and a client that are guaranteed to agree by using IPv4 explicitly.
+
+Server:
+
+```ts
+import http from 'node:http';
+
+const server = http.createServer((_, res) => {
+  res.writeHead(200, { 'content-type': 'text/plain' });
+  res.end('ok');
+});
+
+server.listen(3000, '127.0.0.1', () => {
+  console.log('listening on http://127.0.0.1:3000');
+});
+```
+
+Client:
+
+```ts
+const res = await fetch('http://127.0.0.1:3000');
+if (!res.ok) {
+  throw new Error(`unexpected status ${res.status}`);
+}
+console.log(await res.text());
+```
+
+If `localhost` must be used for configuration compatibility, then keep both sides aligned by either binding the server to the resolver’s preferred family or by forcing the client to prefer IPv4.
+
+## Practical takeaway
+
+Prefer an explicit match between the client address and the server bind address. The most reliable fix is to use `127.0.0.1` with an IPv4-only server or `[::1]` with an IPv6-only server, rather than relying on `localhost` to pick the right family. If the codebase must keep `localhost`, verify resolution order and bind host, and use `dns.setDefaultResultOrder('ipv4first')` or `NODE_OPTIONS=--dns-result-order=ipv4first` only when IPv4 is the intended local path.
