@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-07T07:24:29.082Z",
     "ideas": [
         {
-            "cell": "static-site-deploy-base-path::github-pages::asset-resolution",
-            "title": "Deploying a Static Site to GitHub Pages Breaks Asset URLs Under a Repository Path",
-            "description": "Why a site works locally but 404s on GitHub Pages when assets resolve from the domain root instead of the repo path.",
-            "tags": [
-                "github-pages",
-                "static-site",
-                "deploy",
-                "asset-paths",
-                "base-path"
-            ],
-            "angle": "Explain that GitHub Pages often serves the site from a subpath, not from /. Cover relative versus absolute asset URLs, framework base-path settings, and build output that must embed the correct prefix so CSS, JS, and images resolve after deployment.",
-            "slug": "deploying-a-static-site-to-github-pages-breaks-asset-urls-under-a-repository-path"
-        },
-        {
             "cell": "express-bodyparser-req-body-undefined::express::middleware-order",
             "title": "Express Returns req.body Undefined When JSON Middleware Runs Too Late",
             "description": "Fix req.body staying undefined in Express by placing JSON parsing middleware before your route handlers.",
@@ -88,19 +74,19 @@
     ],
     "drafted": [
         {
-            "cell": "typescript-exports-sdk::typescript::multi-entry-package-design",
-            "title": "Design a TypeScript SDK with Multiple Entry Points Without Breaking Imports",
-            "description": "How to publish a typed SDK with subpath exports, preserved types, and stable import paths for ESM and CommonJS.",
+            "cell": "static-site-deploy-base-path::github-pages::asset-resolution",
+            "title": "Deploying a Static Site to GitHub Pages Breaks Asset URLs Under a Repository Path",
+            "description": "Why a site works locally but 404s on GitHub Pages when assets resolve from the domain root instead of the repo path.",
             "tags": [
-                "typescript",
-                "sdk",
-                "package-exports",
-                "esm",
-                "commonjs"
+                "github-pages",
+                "static-site",
+                "deploy",
+                "asset-paths",
+                "base-path"
             ],
-            "angle": "This should be a build and packaging reference, not an error fix. Cover export maps, separate runtime and type entry points, .d.ts generation, and how subpath exports keep tree-shaking and deep imports predictable across bundlers and Node.",
-            "slug": "design-a-typescript-sdk-with-multiple-entry-points-without-breaking-imports",
-            "draftedAt": "2026-08-07T08:16:15.321Z"
+            "angle": "Explain that GitHub Pages often serves the site from a subpath, not from /. Cover relative versus absolute asset URLs, framework base-path settings, and build output that must embed the correct prefix so CSS, JS, and images resolve after deployment.",
+            "slug": "deploying-a-static-site-to-github-pages-breaks-asset-urls-under-a-repository-path",
+            "draftedAt": "2026-08-07T22:27:47.340Z"
         }
     ]
 }
