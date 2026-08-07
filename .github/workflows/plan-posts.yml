@@ -1,13 +1,20 @@
 name: Plan posts
 
 on:
+    # Two hours ahead of the daily writer so the Sunday runs never overlap.
     schedule:
-        - cron: '0 22 * * 0'
+        - cron: '0 20 * * 0'
     workflow_dispatch:
 
 permissions:
     contents: write
-    pull-requests: write
+    issues: write
+
+# queue.json is written by both this workflow and the writer. Serialize them so
+# neither can plan or consume against a stale copy.
+concurrency:
+    group: posts-pipeline
+    cancel-in-progress: false
 
 env:
     HUSKY: 0
@@ -15,6 +22,7 @@ env:
 jobs:
     plan:
         runs-on: ubuntu-latest
+        timeout-minutes: 15
         steps:
             - uses: actions/checkout@v4
 
@@ -29,11 +37,33 @@ jobs:
               env:
                   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-            - uses: peter-evans/create-pull-request@v7
-              with:
-                  branch: content/weekly-plan
-                  title: 'content: weekly post ideas'
-                  body: Seven queued ideas for the coming week. Edit or delete any of them before merging.
-                  commit-message: 'content: refresh the post queue'
-                  add-paths: scripts/queue.json
-                  delete-branch: true
+            # The queue is machine state, not content. Routing it through a PR
+            # meant an unmerged plan starved the writer, which is what emptied
+            # the queue in August. Posts still go through review; this does not.
+            - name: Push the refilled queue
+              run: |
+                  if git diff --quiet -- scripts/queue.json; then
+                      echo 'Queue unchanged, nothing to push'
+                      exit 0
+                  fi
+                  git config user.name 'github-actions[bot]'
+                  git config user.email 'github-actions[bot]@users.noreply.github.com'
+                  git add scripts/queue.json
+                  git commit -m 'content: refresh the post queue'
+                  git pull --rebase origin "$GITHUB_REF_NAME"
+                  git push origin "HEAD:$GITHUB_REF_NAME"
+
+            - name: Report failure
+              if: failure()
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  title='Post pipeline is failing'
+                  run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+                  body="\`$GITHUB_WORKFLOW\` failed. Run: $run_url"
+                  existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+                  if [ -n "$existing" ]; then
+                      gh issue comment "$existing" --body "$body"
+                  else
+                      gh issue create --title "$title" --body "$body"
+                  fi

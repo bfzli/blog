@@ -14,7 +14,10 @@ import {
 import { readQueue, writeQueue } from './lib/queue'
 import { coverage, expand, readMatrix, sample } from './lib/matrix'
 
-const TARGET = 7
+// The writer consumes one idea a day and the planner refills weekly, so a target
+// of 7 is exactly break-even: one rejected idea, one failed run or one skipped
+// cron starves a day. Carry a few days of slack instead.
+const TARGET = 10
 const ASSIGNED_STACKS = 5
 const SEED_TOPICS = 6
 
@@ -47,9 +50,11 @@ Each post explains one concrete problem: what breaks, why it breaks, and how to 
 
 Cover these stacks, one post each:
 ${stacks.map((stack) => `- ${stack}`).join('\n')}
-
-For the remaining ${count - stacks.length} posts, choose any stack, tool, runtime or platform you think is genuinely worth writing about. You are not limited to the list above.
-
+${
+    count > stacks.length
+        ? `\nFor the remaining ${count - stacks.length} posts, choose any stack, tool, runtime or platform you think is genuinely worth writing about. You are not limited to the list above.\n`
+        : ''
+}
 These problem areas are a starting point only. Go beyond them freely, and prefer a specific problem you can picture someone actually hitting over a broad theme:
 ${seeds.map((seed) => `- ${seed}`).join('\n')}
 
@@ -78,9 +83,13 @@ const main = async () => {
     const published = readPublished()
     const queue = readQueue()
 
+    // Drafted ideas are written but not merged, so they appear in neither the
+    // posts directory nor the queue. Without them here the planner happily plans
+    // a problem that is already sitting in an open PR.
     const covered = new Set([
         ...publishedCells(),
-        ...queue.ideas.map((idea) => idea.cell).filter(Boolean)
+        ...queue.ideas.map((idea) => idea.cell).filter(Boolean),
+        ...queue.drafted.map((idea) => idea.cell).filter(Boolean)
     ])
 
     if (showCoverage) {
@@ -118,7 +127,8 @@ const main = async () => {
 
     const taken = [
         ...published.map((post) => post.title),
-        ...queue.ideas.map((idea) => idea.title)
+        ...queue.ideas.map((idea) => idea.title),
+        ...queue.drafted.map((idea) => idea.title)
     ]
 
     const response = await openai().responses.parse({
@@ -134,7 +144,8 @@ const main = async () => {
 
     const slugs = new Set([
         ...publishedSlugs(),
-        ...queue.ideas.map((idea) => idea.slug)
+        ...queue.ideas.map((idea) => idea.slug),
+        ...queue.drafted.map((idea) => idea.slug)
     ])
 
     const fresh: PostIdea[] = []
@@ -176,7 +187,8 @@ const main = async () => {
 
     const next = {
         generatedAt: new Date().toISOString(),
-        ideas: [...queue.ideas, ...fresh]
+        ideas: [...queue.ideas, ...fresh],
+        drafted: queue.drafted
     }
 
     console.log()

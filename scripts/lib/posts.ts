@@ -115,21 +115,84 @@ export const frontmatter = (idea: PostIdea, date: Date) =>
         `description: ${JSON.stringify(idea.description)}`,
         `tags: [${idea.tags.map((tag) => JSON.stringify(tag)).join(', ')}]`,
         `date: ${postDate(date)}`,
-        `cell: ${JSON.stringify(idea.cell)}`,
+        ...(idea.cell ? [`cell: ${JSON.stringify(idea.cell)}`] : []),
         '---'
     ].join('\n')
 
-const escapeOutsideCode = (text: string) =>
-    text
-        .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
-        .map((part, index) =>
-            index % 2
-                ? part
-                : part.replace(/<(?=[a-zA-Z/])/g, '\\<').replace(/\{/g, '\\{')
-        )
-        .join('')
+// An opening fence is three or more backticks or tildes, indented at most three
+// spaces. The closing fence must use the same character and be at least as long,
+// which is what lets a ````-fenced block legally contain ``` inside it.
+const FENCE = /^ {0,3}(`{3,}|~{3,})/
 
-export const mdxSafe = (body: string) => escapeOutsideCode(body)
+// Inline code: a run of N backticks closed by a run of N backticks on the same
+// line. The two-or-more case is matched first so ``a ` b`` stays intact.
+const INLINE = /(`{2,})[^\n]*?\1|`[^`\n]*`/g
+
+// MDX treats a bare `<` as the start of a JSX tag and a bare `{` as the start of
+// an expression. The old escaper only guarded `<` when a letter or slash
+// followed, which let `<=`, `<18` and `<0.5` reach the compiler and fail the
+// build. Escape every one of them outside code instead.
+const escapeRun = (text: string) =>
+    text.replace(/</g, '\\<').replace(/\{/g, '\\{')
+
+const escapeProse = (text: string) => {
+    let out = ''
+    let last = 0
+    let match: RegExpExecArray | null
+
+    INLINE.lastIndex = 0
+
+    while ((match = INLINE.exec(text)) !== null) {
+        out += escapeRun(text.slice(last, match.index))
+        out += match[0]
+        last = match.index + match[0].length
+    }
+
+    return out + escapeRun(text.slice(last))
+}
+
+export const mdxSafe = (body: string) => {
+    const out: string[] = []
+    let prose: string[] = []
+    let fence: string | null = null
+
+    const flush = () => {
+        if (!prose.length) return
+        out.push(escapeProse(prose.join('\n')))
+        prose = []
+    }
+
+    for (const line of body.split('\n')) {
+        const match = FENCE.exec(line)
+
+        if (fence) {
+            out.push(line)
+
+            if (
+                match &&
+                match[1][0] === fence[0] &&
+                match[1].length >= fence.length
+            ) {
+                fence = null
+            }
+
+            continue
+        }
+
+        if (match) {
+            flush()
+            out.push(line)
+            fence = match[1]
+            continue
+        }
+
+        prose.push(line)
+    }
+
+    flush()
+
+    return out.join('\n')
+}
 
 export const writePost = (idea: PostIdea, body: string, date = new Date()) => {
     const file = path.join(POSTS_DIR, `${idea.slug}.mdx`)

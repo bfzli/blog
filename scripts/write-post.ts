@@ -30,19 +30,25 @@ Requirements:
 
 const main = async () => {
     const queue = readQueue()
-
-    if (!queue.ideas.length) {
-        console.log('Queue is empty, nothing to write')
-        return
-    }
-
     const published = publishedSlugs()
-    const pending = queue.ideas.filter((idea) => !published.has(idea.slug))
 
+    // A drafted idea whose post has since merged is no longer in flight, so drop
+    // it. What is left is work that exists as an open PR and must not be redone.
+    const drafted = queue.drafted.filter((idea) => !published.has(idea.slug))
+    const inFlight = new Set(drafted.map((idea) => idea.slug))
+
+    const pending = queue.ideas.filter(
+        (idea) => !published.has(idea.slug) && !inFlight.has(idea.slug)
+    )
+
+    // Starvation used to exit 0, so a dead pipeline looked identical to a healthy
+    // one on the Actions dashboard for five days. Fail loudly instead.
     if (!pending.length) {
-        console.log('Every queued idea is already published, clearing the queue')
-        if (!dryRun) writeQueue({ ...queue, ideas: [] })
-        return
+        throw new Error(
+            queue.ideas.length
+                ? `All ${queue.ideas.length} queued ideas are already published or awaiting review, nothing to write`
+                : 'Queue is empty, nothing to write. Run posts:plan to refill it'
+        )
     }
 
     const [idea, ...rest] = pending
@@ -64,10 +70,21 @@ const main = async () => {
         max_output_tokens: 16000
     })
 
+    logUsage(response.usage)
+
+    // A response that hit max_output_tokens still carries output_text, so without
+    // this check a post truncated mid-sentence publishes as a finished article.
+    if (response.status && response.status !== 'completed') {
+        const reason = response.incomplete_details?.reason
+
+        throw new Error(
+            `Model stopped before finishing (status: ${response.status}${reason ? `, reason: ${reason}` : ''}), nothing written`
+        )
+    }
+
     const body = response.output_text.trim()
     const words = wordCount(body)
 
-    logUsage(response.usage)
     console.log(`Prose words: ${words}`)
 
     if (words < MIN_WORDS) {
@@ -84,10 +101,20 @@ const main = async () => {
     }
 
     const file = writePost(idea, body, new Date())
-    writeQueue({ ...queue, ideas: rest })
+
+    // Move rather than delete. The draft only becomes a post once its PR merges,
+    // so until then the idea has to stay recorded: closing the PR must not erase
+    // it, and the planner must not re-plan a problem that is already written.
+    writeQueue({
+        ...queue,
+        ideas: rest,
+        drafted: [...drafted, { ...idea, draftedAt: new Date().toISOString() }]
+    })
 
     console.log(`Wrote ${file}`)
-    console.log(`${rest.length} ideas remain in the queue`)
+    console.log(
+        `${rest.length} ideas remain in the queue, ${drafted.length + 1} awaiting review`
+    )
 }
 
 main().catch((error) => {

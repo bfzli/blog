@@ -151,9 +151,14 @@ export interface PostIdea {
     angle: string
 }
 
+export interface DraftedIdea extends PostIdea {
+    draftedAt: string
+}
+
 export interface PostQueue {
     generatedAt: string
     ideas: PostIdea[]
+    drafted: DraftedIdea[]
 }
 
 export interface MarkdownPage {

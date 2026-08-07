@@ -8,6 +8,13 @@ on:
 permissions:
     contents: write
     pull-requests: write
+    issues: write
+
+# queue.json is written by both this workflow and the planner. Serialize them so
+# neither can plan or consume against a stale copy.
+concurrency:
+    group: posts-pipeline
+    cancel-in-progress: false
 
 env:
     HUSKY: 0
@@ -15,6 +22,7 @@ env:
 jobs:
     write:
         runs-on: ubuntu-latest
+        timeout-minutes: 20
         steps:
             - uses: actions/checkout@v4
 
@@ -39,13 +47,16 @@ jobs:
               with:
                   branch: content/post-${{ github.run_number }}
                   title: 'content: new draft post'
-                  body: Generated from the next queued idea. Read it before merging, and reject it if it reads generic.
+                  body: |
+                      Generated from the next queued idea. Read it before merging, and reject it if it reads generic.
+
+                      Closing this without merging does not lose the idea: it stays in the `drafted` array of `scripts/queue.json`. Delete its entry there to let the planner pick that problem up again.
                   commit-message: 'content: add generated draft'
                   add-paths: src/content/posts
                   delete-branch: true
 
-            # Only consume the idea once the draft is safely in a PR. If the step
-            # above fails, the queue is left untouched and the next run retries it.
+            # Only move the idea into `drafted` once the draft is safely in a PR.
+            # If the step above fails the queue is untouched and tomorrow retries.
             - name: Advance the queue on the base branch
               if: steps.draft.outputs.pull-request-number != ''
               run: |
@@ -61,3 +72,26 @@ jobs:
                   git add scripts/queue.json
                   git commit -m 'content: consume queued idea'
                   git push
+
+            # A green run that produced no PR is a stalled pipeline, not a healthy
+            # one. That ambiguity is what hid the outage for five days.
+            - name: Fail if no draft was opened
+              if: steps.draft.outputs.pull-request-number == ''
+              run: |
+                  echo '::error::No draft PR was created, this run produced nothing'
+                  exit 1
+
+            - name: Report failure
+              if: failure()
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  title='Post pipeline is failing'
+                  run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+                  body="\`$GITHUB_WORKFLOW\` failed. Run: $run_url"
+                  existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+                  if [ -n "$existing" ]; then
+                      gh issue comment "$existing" --body "$body"
+                  else
+                      gh issue create --title "$title" --body "$body"
+                  fi
