@@ -31,8 +31,27 @@ jobs:
 
             - run: npm run web:build
 
+            - name: Set the advanced queue aside
+              run: cp scripts/queue.json "$RUNNER_TEMP/queue.json"
+
+            - uses: peter-evans/create-pull-request@v7
+              id: draft
+              with:
+                  branch: content/post-${{ github.run_number }}
+                  title: 'content: new draft post'
+                  body: Generated from the next queued idea. Read it before merging, and reject it if it reads generic.
+                  commit-message: 'content: add generated draft'
+                  add-paths: src/content/posts
+                  delete-branch: true
+
+            # Only consume the idea once the draft is safely in a PR. If the step
+            # above fails, the queue is left untouched and the next run retries it.
             - name: Advance the queue on the base branch
+              if: steps.draft.outputs.pull-request-number != ''
               run: |
+                  git fetch origin "$GITHUB_REF_NAME"
+                  git checkout -f -B "$GITHUB_REF_NAME" "origin/$GITHUB_REF_NAME"
+                  cp "$RUNNER_TEMP/queue.json" scripts/queue.json
                   if git diff --quiet -- scripts/queue.json; then
                       echo 'Queue unchanged, nothing to advance'
                       exit 0
@@ -42,12 +61,3 @@ jobs:
                   git add scripts/queue.json
                   git commit -m 'content: consume queued idea'
                   git push
-
-            - uses: peter-evans/create-pull-request@v7
-              with:
-                  branch: content/post-${{ github.run_number }}
-                  title: 'content: new draft post'
-                  body: Generated from the next queued idea. Read it before merging, and reject it if it reads generic.
-                  commit-message: 'content: add generated draft'
-                  add-paths: src/content/posts
-                  delete-branch: true
