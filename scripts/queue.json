@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-08-02T05:52:14.573Z",
+    "generatedAt": "2026-08-07T07:24:29.082Z",
     "ideas": [
         {
             "cell": "typescript-exports-sdk::typescript::multi-entry-package-design",
@@ -28,6 +28,76 @@
             ],
             "angle": "Explain that GitHub Pages often serves the site from a subpath, not from /. Cover relative versus absolute asset URLs, framework base-path settings, and build output that must embed the correct prefix so CSS, JS, and images resolve after deployment.",
             "slug": "deploying-a-static-site-to-github-pages-breaks-asset-urls-under-a-repository-path"
+        },
+        {
+            "cell": "express-bodyparser-req-body-undefined::express::middleware-order",
+            "title": "Express Returns req.body Undefined When JSON Middleware Runs Too Late",
+            "description": "Fix req.body staying undefined in Express by placing JSON parsing middleware before your route handlers.",
+            "tags": [
+                "express",
+                "body-parser",
+                "middleware",
+                "json",
+                "http"
+            ],
+            "angle": "Explain that Express does not parse request bodies by default, so req.body stays undefined until a parser runs. Cover why middleware order matters, how express.json() and express.urlencoded() populate req.body, and how content-type affects parsing. Show the minimal route and middleware arrangement that makes JSON POST requests work.",
+            "slug": "express-returns-req-body-undefined-when-json-middleware-runs-too-late"
+        },
+        {
+            "cell": "workers-request-stream-used-after-consume::cloudflare-workers::body-reuse",
+            "title": "Cloudflare Workers Fail with TypeError: Body has already been used for Request",
+            "description": "Understand why a consumed Request body cannot be read twice in Workers and how to clone or buffer it safely.",
+            "tags": [
+                "cloudflare-workers",
+                "fetch",
+                "request-body",
+                "streams",
+                "javascript"
+            ],
+            "angle": "Explain the Fetch body model in Workers: a Request body is a stream that can be consumed only once. Cover where the TypeError comes from, why calling request.json() and then forwarding the same Request fails, and how Request.clone(), await request.text(), or a buffered payload avoids reuse errors. Include the limits of cloning for large bodies and when to read once and reuse the parsed data instead.",
+            "slug": "cloudflare-workers-fail-with-typeerror-body-has-already-been-used-for-request"
+        },
+        {
+            "cell": "hono-middleware-context-missing::hono::route-params",
+            "title": "Hono Cannot Read c.req.param() After a Middleware Forgets next()",
+            "description": "Fix missing route params in Hono by preserving middleware flow and route context.",
+            "tags": [
+                "hono",
+                "middleware",
+                "routing",
+                "typescript",
+                "web-framework"
+            ],
+            "angle": "Explain how Hono composes middleware and route handlers, and why omitting await next() stops downstream handlers from seeing the matched route context. Cover the difference between global middleware and per-route handlers, how param extraction depends on the resolved route, and what code structure keeps c.req.param() available. The takeaway should be when to call next(), when to short-circuit, and how to verify route matching.",
+            "slug": "hono-cannot-read-c-req-param-after-a-middleware-forgets-next"
+        },
+        {
+            "cell": "next-image-loader-host-undefined::nextjs::remote-image-config",
+            "title": "Next.js Cannot Optimize Images from an Unconfigured Remote Host",
+            "description": "Configure next/image so remote images stop failing with host validation and optimization errors.",
+            "tags": [
+                "nextjs",
+                "images",
+                "webpack",
+                "remote-patterns",
+                "react"
+            ],
+            "angle": "Explain how next/image validates remote URLs before optimization and why an unlisted hostname or protocol causes the request to fail. Cover the difference between images.domains and images.remotePatterns, when the optimizer runs, and how the image request is rewritten through the Next.js loader. Show the exact config shape needed for subdomains, query strings, and development versus production hosts.",
+            "slug": "next-js-cannot-optimize-images-from-an-unconfigured-remote-host"
+        },
+        {
+            "cell": "pages-functions-env-undefined::cloudflare-pages::runtime-secrets",
+            "title": "Cloudflare Pages Functions Read undefined Environment Variables at Runtime",
+            "description": "Make Cloudflare Pages Functions see bound secrets and vars instead of undefined values.",
+            "tags": [
+                "cloudflare-pages",
+                "functions",
+                "environment-variables",
+                "wrangler",
+                "edge"
+            ],
+            "angle": "Explain that Pages Functions read bindings from the runtime env object, not from Node-style process.env. Cover how the Pages deployment model injects vars and secrets, why missing bindings or mismatched names return undefined, and how local development with wrangler pages dev can differ from production. Show how to declare vars in the Pages project, access them through context.env or the handler env, and confirm the binding name matches exactly.",
+            "slug": "cloudflare-pages-functions-read-undefined-environment-variables-at-runtime"
         }
     ]
 }
