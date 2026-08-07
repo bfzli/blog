@@ -1,0 +1,374 @@
+---
+title: "Design a TypeScript SDK with Multiple Entry Points Without Breaking Imports"
+description: "How to publish a typed SDK with subpath exports, preserved types, and stable import paths for ESM and CommonJS."
+tags: ["typescript", "sdk", "package-exports", "esm", "commonjs"]
+date: Aug 7, 2026
+cell: "typescript-exports-sdk::typescript::multi-entry-package-design"
+---
+
+`Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './dist/utils' is not defined by "exports" in /node_modules/@acme/sdk/package.json` is what breaks when a TypeScript SDK exposes internal files through deep imports and then adds an export map that does not cover them.
+
+## Why this happens
+
+Node.js resolves package imports through `package.json` fields in a specific order. When a package has an `exports` map, Node stops treating internal files as publicly reachable by path. That is intentional. It makes the package surface explicit, but it also means any import like `@acme/sdk/dist/utils` or `@acme/sdk/src/client` fails unless that subpath is declared.
+
+The same rule applies to bundlers that follow Node package resolution, including modern versions of webpack, Rollup, Vite, and esbuild. TypeScript adds one more layer: the runtime target and the type declaration target can diverge unless both are mapped.
+
+A TypeScript SDK that supports both ESM and CommonJS needs three things to stay predictable:
+
+- a public export map for runtime entry points
+- a matching type map for declaration files
+- a build layout that keeps source, runtime output, and `.d.ts` output aligned
+
+Without those pieces, consumers end up with brittle deep imports, missing types, or format mismatches between `import` and `require`.
+
+## The shape of the package
+
+A stable SDK usually exposes a small top-level API and a few documented subpaths.
+
+For example:
+
+- `@acme/sdk`
+- `@acme/sdk/client`
+- `@acme/sdk/react`
+- `@acme/sdk/utils`
+
+Each of those should be an intentional contract. Anything else should remain private.
+
+A package layout that supports this looks like:
+
+```text
+packages/sdk/
+  src/
+    index.ts
+    client.ts
+    react.ts
+    utils.ts
+  dist/
+    index.js
+    index.cjs
+    index.d.ts
+    client.js
+    client.cjs
+    client.d.ts
+    react.js
+    react.cjs
+    react.d.ts
+    utils.js
+    utils.cjs
+    utils.d.ts
+  package.json
+  tsconfig.json
+  tsconfig.build.json
+```
+
+This layout is not required, but it makes the export map easy to reason about. Every public subpath gets a runtime file and a declaration file.
+
+## Define the public surface with `exports`
+
+The `exports` field controls what consumers can import. It should be the source of truth for supported entry points.
+
+A dual-format package can use conditional exports like this:
+
+```json
+{
+  "name": "@acme/sdk",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "require": "./dist/client.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./utils": {
+      "types": "./dist/utils.d.ts",
+      "import": "./dist/utils.js",
+      "require": "./dist/utils.cjs"
+    },
+    "./package.json": "./package.json"
+  }
+}
+```
+
+This does several things at once:
+
+- `import` gets ESM files
+- `require` gets CommonJS files
+- `types` points TypeScript at the declaration file for each subpath
+- unknown deep imports are blocked
+
+That last point matters. If `./src/*` or `./dist/*` are not exported, consumers cannot accidentally bind themselves to internal layout.
+
+### Why `main` and `module` are not enough
+
+`main` and `module` are legacy hints. They do not define subpath access. They also do not solve type routing. `exports` does both. For modern package consumers, `exports` should be the primary compatibility mechanism.
+
+`main` can still be kept for older tooling, but it should mirror the CommonJS root entry, not define the public API independently.
+
+## Separate runtime entry points from type entry points
+
+TypeScript does not automatically infer that `./dist/client.js` has its types in `./dist/client.d.ts` unless the package exposes that relationship. With subpath exports, each public path needs its own declaration mapping.
+
+That is why the `types` condition belongs inside each export target.
+
+A consumer can then write:
+
+```ts
+import { createClient } from "@acme/sdk/client";
+```
+
+and get both runtime resolution and type checking without reaching into `dist` or `src`.
+
+For packages that support older TypeScript versions, `typesVersions` can be added as a fallback. It is not a replacement for `exports`, but it can help TypeScript versions that do not fully understand conditional `types` exports.
+
+```json
+{
+  "typesVersions": {
+    "*": {
+      "client": ["dist/client.d.ts"],
+      "react": ["dist/react.d.ts"],
+      "utils": ["dist/utils.d.ts"]
+    }
+  }
+}
+```
+
+Use this only if compatibility requires it. The `exports` field is still the runtime contract.
+
+## Generate `.d.ts` files per entry point
+
+A multi-entry SDK needs declaration output that mirrors the runtime graph. A single bundled `index.d.ts` is not enough when subpaths are public.
+
+A common TypeScript build setup uses two configs: one for JavaScript output and one for declarations. If the project uses `tsup`, `unbuild`, `rollup`, or `esbuild`, the same principle applies.
+
+A straightforward `tsc` declaration build looks like this:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": false
+  },
+  "include": ["src/**/*"]
+}
+```
+
+Then a runtime build can use a separate tool or `tsc` in a second pass.
+
+If `tsup` is used, it can emit both ESM and CJS plus declarations:
+
+```json
+{
+  "scripts": {
+    "build": "tsup src/index.ts src/client.ts src/react.ts src/utils.ts --format esm,cjs --dts --out-dir dist"
+  }
+}
+```
+
+That command works when each source file is a public entry point. It generates matching files such as `dist/client.js`, `dist/client.cjs`, and `dist/client.d.ts`.
+
+If only `index.ts` is used as the entry, but the SDK also wants `client` and `react` subpaths, those subpaths should be exposed either as real build entries or as re-export files in `src/`. For example:
+
+```ts
+// src/client.ts
+export { createClient } from "./internal/createClient.js";
+export type { ClientOptions } from "./internal/types.js";
+```
+
+This keeps the public surface explicit and lets the declaration output follow the same file structure.
+
+## Keep subpath exports predictable for tree-shaking
+
+Subpath exports are not just about avoiding `ERR_PACKAGE_PATH_NOT_EXPORTED`. They also help bundlers eliminate unused code.
+
+When a consumer imports from `@acme/sdk/utils`, the bundler can treat that file as a separate module boundary. That makes it easier to tree-shake unused exports than if the consumer imports a monolithic root module with many re-exported internals.
+
+To preserve this behavior:
+
+- keep each public subpath small and focused
+- avoid side effects in top-level module scope
+- set `"sideEffects": false` only if the package truly has no import-time side effects
+- prefer named exports over namespace objects for tree-shaking friendliness
+
+A utility module should look like this:
+
+```ts
+// src/utils.ts
+export function normalizeBaseUrl(input: string): string {
+  return input.endsWith("/") ? input.slice(0, -1) : input;
+}
+
+export function joinPath(base: string, path: string): string {
+  return `${normalizeBaseUrl(base)}/${path.replace(/^\//, "")}`;
+}
+```
+
+A consumer can then import only what it needs:
+
+```ts
+import { joinPath } from "@acme/sdk/utils";
+```
+
+Bundlers can usually eliminate `normalizeBaseUrl` if `joinPath` is not used, provided there are no side effects in the module.
+
+## Make CommonJS and ESM both work
+
+If the SDK supports CommonJS, the package should not force `require()` to load an ESM file through interop. That creates fragile behavior and can produce `ERR_REQUIRE_ESM` in older stacks.
+
+The clean approach is to emit both formats.
+
+The ESM file:
+
+```js
+export function createClient(options) {
+  return {
+    baseUrl: options.baseUrl
+  };
+}
+```
+
+The CommonJS file:
+
+```js
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.createClient = createClient;
+function createClient(options) {
+  return {
+    baseUrl: options.baseUrl
+  };
+}
+```
+
+The declaration file stays format-agnostic:
+
+```ts
+export interface ClientOptions {
+  baseUrl: string;
+}
+
+export declare function createClient(options: ClientOptions): {
+  baseUrl: string;
+};
+```
+
+The `exports` map decides which runtime file each module system receives. TypeScript reads the `.d.ts` file from the `types` condition.
+
+## Use `package.json` exports to block unstable deep imports
+
+A package with a wide `exports` map should still avoid exposing build internals. A consumer should not depend on `@acme/sdk/dist/index.js`, even if that file exists.
+
+If deep imports are left available, they become part of the accidental API. That makes refactors expensive. Renaming folders, changing the bundler, or switching output paths can break consumers even when the public API did not change.
+
+The practical way to prevent that is to export only the supported subpaths:
+
+```json
+{
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs" },
+    "./client": { "types": "./dist/client.d.ts", "import": "./dist/client.js", "require": "./dist/client.cjs" }
+  }
+}
+```
+
+Everything else is private by default.
+
+If a new public surface is needed, add a new explicit subpath. Do not widen a catch-all like `./*` unless the package is intentionally committed to exposing a file-by-file API.
+
+## Test resolution with Node and TypeScript
+
+A package should be validated with the same resolution rules its consumers use.
+
+For Node, test both import styles:
+
+```sh
+node --input-type=module -e "import('@acme/sdk/client').then(m => console.log(typeof m.createClient))"
+node -e "console.log(typeof require('@acme/sdk/client').createClient)"
+```
+
+For TypeScript, test that the declarations resolve cleanly:
+
+```sh
+npx tsc --noEmit
+```
+
+A useful `tsconfig.json` for consumers often includes `moduleResolution` set to `NodeNext` or `Bundler`, depending on the environment. For the package itself, use the resolution mode that matches the emitted runtime layout.
+
+If the package ships both ESM and CJS, test in a matrix:
+
+- Node `18.x` or later for ESM `import`
+- a CommonJS consumer using `require()`
+- at least one bundler such as Vite or webpack
+- TypeScript `5.x` for declaration resolution
+
+That checks both the runtime entry map and the type entry map.
+
+## A reference implementation
+
+A minimal source layout can be built as follows:
+
+```ts
+// src/index.ts
+export { createClient } from "./client.js";
+export type { ClientOptions } from "./client.js";
+```
+
+```ts
+// src/client.ts
+export interface ClientOptions {
+  baseUrl: string;
+}
+
+export function createClient(options: ClientOptions) {
+  return {
+    baseUrl: options.baseUrl
+  };
+}
+```
+
+```ts
+// src/utils.ts
+export function normalizeBaseUrl(input: string): string {
+  return input.endsWith("/") ? input.slice(0, -1) : input;
+}
+```
+
+```json
+{
+  "scripts": {
+    "build": "tsup src/index.ts src/client.ts src/utils.ts --format esm,cjs --dts --out-dir dist",
+    "typecheck": "tsc --noEmit"
+  }
+}
+```
+
+That package exposes a root API plus named subpaths. The declaration files mirror the runtime files. The consumer gets stable imports, and the package author keeps freedom to reorganize internal modules.
+
+## Practical takeaway
+
+Prefer explicit subpath exports with one runtime file and one `.d.ts` file per public entry point. Use `exports` as the contract, not `dist` paths. Emit both ESM and CommonJS when both ecosystems need support. Keep internal modules private, and expose only documented entry points such as `@acme/sdk`, `@acme/sdk/client`, and `@acme/sdk/utils`.
+
+That combination keeps imports stable, preserves type resolution, and makes tree-shaking predictable across Node and bundlers.
