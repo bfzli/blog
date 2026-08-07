@@ -1,0 +1,456 @@
+---
+title: "React Native on Android Throws ReferenceError: window is not defined During Module Initialization"
+description: "Why browser globals break during React Native startup on Android and how to move that code behind a native-safe boundary."
+tags: ["react-native", "android", "referenceerror", "javascript", "native-modules"]
+date: Aug 5, 2026
+cell: "android-window-not-defined::react-native::native-module-initialization"
+---
+
+React Native Android startup fails with `ReferenceError: window is not defined` when a module accesses `window` during import. The crash usually appears before any UI renders, while Metro is evaluating the JavaScript bundle.
+
+## What the error means
+
+`window` is a browser global. In a web runtime, it is created by the browser and populated with DOM-related APIs such as `window.location`, `window.document`, and `window.localStorage`.
+
+React Native does not run inside a browser. On Android, JavaScript executes inside Hermes or JavaScriptCore, with React Native providing a small set of globals such as `global`, `console`, `setTimeout`, and `fetch`. There is no DOM, no `document`, and no browser `window` object.
+
+That means any top-level code that reads `window` will fail immediately if it runs before React Native has a chance to render anything. The error is not specific to Android code paths. It is a runtime mismatch: browser-only code is being executed in a native JavaScript environment.
+
+A typical stack trace looks like this:
+
+```text
+ReferenceError: window is not defined
+    at node_modules/some-package/index.js:12:5
+    at Module._compile (internal/modules/cjs/loader.js:...)
+```
+
+If the access happens during module initialization, the failure occurs as soon as the bundle imports that file.
+
+## Why import-time access crashes startup
+
+JavaScript modules execute their top-level statements when they are imported. That includes code like this:
+
+```ts
+// analytics.ts
+const origin = window.location.origin;
+
+export function track(eventName: string) {
+  return fetch(`${origin}/track`, {
+    method: 'POST',
+    body: JSON.stringify({ eventName }),
+  });
+}
+```
+
+The read of `window.location.origin` is evaluated before `track()` is ever called. In React Native Android, that module loads during bundle initialization, so the bundle crashes before the app shell can mount.
+
+This matters because many libraries perform environment checks or configuration reads at module scope. Examples include:
+
+- reading `window.location`
+- reading `window.navigator`
+- touching `window.localStorage`
+- assigning to `window.someGlobal`
+- creating SDK instances that assume a browser environment
+
+In a browser, this is often harmless because `window` always exists. In React Native, the module graph is evaluated in a non-browser runtime, so top-level browser access is unsafe.
+
+## The difference between browser checks and native checks
+
+A common but incomplete pattern is this:
+
+```ts
+if (typeof window !== 'undefined') {
+  // browser code
+}
+```
+
+That check prevents a `ReferenceError` in environments where `window` is absent. It is useful in shared packages that can run in both web and native contexts.
+
+However, it is not sufficient when the code path still assumes browser APIs after the check. This is valid only if every browser-specific operation stays inside the guarded block.
+
+```ts
+const isBrowser = typeof window !== 'undefined';
+
+if (isBrowser) {
+  console.log(window.location.href);
+}
+```
+
+This works because the access stays inside the guarded branch.
+
+This version does not:
+
+```ts
+const isBrowser = typeof window !== 'undefined';
+const href = window.location.href;
+
+if (isBrowser) {
+  console.log(href);
+}
+```
+
+The access happens before the conditional can help.
+
+In React Native, the safer question is usually not “is there a `window`?”, but “should this code run on native at all?”. That is where `Platform.OS` is usually the right tool.
+
+## How to detect Android-specific execution
+
+React Native exposes `Platform` from `react-native`:
+
+```ts
+import { Platform } from 'react-native';
+
+if (Platform.OS === 'android') {
+  // Android-specific logic
+}
+```
+
+This is useful when the code is valid on native but needs platform branching. It does not create a browser `window`. It only lets you select native behavior.
+
+Use it for code that has an Android-specific implementation and a fallback for other platforms:
+
+```ts
+import { Platform } from 'react-native';
+
+export function getAppThemeName() {
+  if (Platform.OS === 'android') {
+    return 'android';
+  }
+  return 'generic';
+}
+```
+
+Do not use `Platform.OS` as a way to justify top-level browser access. This is incorrect:
+
+```ts
+import { Platform } from 'react-native';
+
+if (Platform.OS === 'android') {
+  const href = window.location.href;
+}
+```
+
+The branch still assumes a browser object on Android, which is the wrong runtime entirely.
+
+## Move browser-dependent work behind a function
+
+The simplest fix is often to stop doing the work at import time. Export a function and call it later, after the runtime and platform are known.
+
+```ts
+// analytics.ts
+export function getTrackingOrigin() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.location.origin;
+}
+```
+
+Then call it from a component, effect, or event handler:
+
+```ts
+import React from 'react';
+import { Text } from 'react-native';
+import { getTrackingOrigin } from './analytics';
+
+export function Screen() {
+  React.useEffect(() => {
+    const origin = getTrackingOrigin();
+    if (origin) {
+      console.log(origin);
+    }
+  }, []);
+
+  return <Text>Ready</Text>;
+}
+```
+
+This works because the module can be imported safely. The browser-specific access happens only when the function runs, and only after the conditional has been evaluated.
+
+The same approach applies to any code that reads from `window`:
+
+```ts
+export function readStoredValue(key: string): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage.getItem(key);
+}
+```
+
+## Use a native-safe boundary for app startup code
+
+If the code must execute during startup, place it behind a boundary that only runs after the app shell has mounted. In React Native, that usually means one of these:
+
+- `useEffect`
+- a button press or other user event
+- a navigation callback
+- a startup initializer that is explicitly native-safe
+
+A `useEffect` example:
+
+```ts
+import React from 'react';
+import { Text, View } from 'react-native';
+import { initializeSdk } from './sdk';
+
+export function App() {
+  React.useEffect(() => {
+    initializeSdk();
+  }, []);
+
+  return (
+    <View>
+      <Text>App shell loaded</Text>
+    </View>
+  );
+}
+```
+
+And the initializer must avoid browser globals:
+
+```ts
+export function initializeSdk() {
+  // Safe to call here only if it doesn't touch window/document.
+}
+```
+
+If the SDK requires browser APIs, it does not belong in this path on Android.
+
+## Replace browser globals with React Native APIs
+
+Many uses of `window` are really attempts to access platform data or persistence. React Native provides native equivalents for some of those needs.
+
+### Persistent storage
+
+Use `@react-native-async-storage/async-storage` instead of `window.localStorage`:
+
+```bash
+npm install @react-native-async-storage/async-storage
+```
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+export async function saveValue(key: string, value: string) {
+  await AsyncStorage.setItem(key, value);
+}
+
+export async function loadValue(key: string) {
+  return AsyncStorage.getItem(key);
+}
+```
+
+### Platform information
+
+Use `Platform` and `Dimensions` rather than browser layout properties:
+
+```ts
+import { Dimensions, Platform } from 'react-native';
+
+export function getScreenInfo() {
+  return {
+    platform: Platform.OS,
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
+  };
+}
+```
+
+### Native device APIs
+
+If the code needs a capability that exists only on Android or iOS, move it into a native module or a library designed for React Native.
+
+For a native module, the JS side should call a bridged API rather than touching browser globals:
+
+```ts
+import { NativeModules } from 'react-native';
+
+const { DeviceInfoModule } = NativeModules;
+
+export function getBatteryLevel(): Promise<number> {
+  return DeviceInfoModule.getBatteryLevel();
+}
+```
+
+That is the correct boundary when the behavior depends on the OS, hardware, or app environment.
+
+## How to spot the bad pattern in a codebase
+
+Search for top-level `window` references in modules imported by your app entry point. The risky cases usually look like this:
+
+```ts
+const apiBaseUrl = window.location.origin;
+const locale = window.navigator.language;
+const hasStorage = !!window.localStorage;
+```
+
+Also watch for indirect import-time evaluation:
+
+```ts
+// config.ts
+export const config = {
+  origin: window.location.origin,
+};
+```
+
+```ts
+// index.ts
+import { config } from './config';
+```
+
+Even if `index.ts` never uses `config`, importing the file still evaluates the object literal and triggers the crash.
+
+A safer version defers evaluation:
+
+```ts
+export function getConfig() {
+  if (typeof window === 'undefined') {
+    return { origin: null };
+  }
+
+  return {
+    origin: window.location.origin,
+  };
+}
+```
+
+The same applies to singleton instances:
+
+```ts
+// bad
+export const client = new Client({
+  origin: window.location.origin,
+});
+```
+
+```ts
+// better
+export function createClient() {
+  if (typeof window === 'undefined') {
+    throw new Error('createClient requires a browser runtime');
+  }
+
+  return new Client({
+    origin: window.location.origin,
+  });
+}
+```
+
+On Android, the function never should be called if the dependency is browser-only.
+
+## When a library is the source of the error
+
+Sometimes the problem is inside a dependency, not your app code. A package may evaluate `window` in its entry file or during static initialization. In that case, the stack trace will point into `node_modules`.
+
+The fix depends on the package:
+
+- upgrade to a React Native-compatible version
+- switch to a native alternative
+- import a subpath that avoids browser initialization
+- lazy-load the package only on web builds
+
+If a package is meant for web only, do not import it from shared code that runs on Android. Guard the import with platform-specific files when possible.
+
+React Native supports platform extensions such as:
+
+- `file.android.ts`
+- `file.ios.ts`
+- `file.native.ts`
+- `file.web.ts`
+
+Example:
+
+```ts
+// storage.native.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+export async function saveToken(token: string) {
+  await AsyncStorage.setItem('token', token);
+}
+```
+
+```ts
+// storage.web.ts
+export async function saveToken(token: string) {
+  window.localStorage.setItem('token', token);
+}
+```
+
+This keeps browser-only APIs out of the native bundle.
+
+## What not to do
+
+Do not create a mock `window` object in React Native just to make imports pass. That hides the mismatch and leaves browser-dependent code in place.
+
+Do not put `window` behind a loose `any` cast.
+
+```ts
+const w = window as any;
+```
+
+That does not change the runtime.
+
+Do not rely on `global.window = {}` in app bootstrap code. Some libraries will still expect DOM methods, location state, or event behavior that the stub does not provide.
+
+Do not import web-only SDKs into files that are loaded on Android startup.
+
+## A practical refactor pattern
+
+A safe refactor usually has three steps.
+
+First, identify module-scope browser access:
+
+```ts
+// before
+const baseUrl = window.location.origin;
+```
+
+Second, move it into a function with a runtime guard:
+
+```ts
+// after
+export function getBaseUrl() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.location.origin;
+}
+```
+
+Third, call it only after the app is running, or only in code paths that are known to be web-only:
+
+```ts
+import React from 'react';
+import { Text } from 'react-native';
+import { getBaseUrl } from './getBaseUrl';
+
+export function App() {
+  React.useEffect(() => {
+    const baseUrl = getBaseUrl();
+    if (baseUrl) {
+      console.log(baseUrl);
+    }
+  }, []);
+
+  return <Text>Loaded</Text>;
+}
+```
+
+If the browser API is essential, split the implementation by platform instead of guarding a broken shared path.
+
+## Closing the gap with linting and module boundaries
+
+This class of bug comes back when browser globals are allowed into shared modules. Prevent that by keeping native entry points free of `window`, `document`, and `localStorage` references at import time.
+
+Useful controls include:
+
+- platform-specific files like `*.native.ts`
+- code review checks for top-level side effects
+- lint rules that forbid browser globals in shared React Native modules
+- dependency review for packages that assume a DOM
+
+The practical default is simple: prefer native-safe APIs such as `Platform`, `AsyncStorage`, and `NativeModules`, and keep any browser-only logic behind lazy functions or web-only files. That avoids `ReferenceError: window is not defined` during Android startup because the bundle no longer evaluates browser code before the runtime can support it.
