@@ -1,0 +1,343 @@
+---
+title: "Remix Returns 405 Method Not Allowed When a Form Submits to the Wrong Route"
+description: "Why a Remix form posts to a route without an action and how route matching determines which loader or action runs."
+tags: ["remix", "forms", "actions", "routes", "http-405"]
+date: Aug 7, 2026
+cell: "form-action-405::remix::html-form-submit"
+---
+
+A Remix form submits, but the target route has no matching `action`, and the server responds with `405 Method Not Allowed`.
+
+## What the 405 means in Remix
+
+In Remix, `GET` requests are handled by `loader` functions. Non-`GET` submissions from forms and fetchers are handled by `action` functions. A `POST` request does not fall back to a `loader`. If the matched route module does not export an `action`, Remix rejects the request with `405 Method Not Allowed`.
+
+That `405` is not a generic browser error. It is Remix telling you that the request reached the route tree, the route was matched, and the matched route does not accept that method. The browser can submit the form correctly. The route definition still determines whether the request is valid.
+
+The key point is matching. Remix does not route form submissions by URL alone in the abstract. It routes them against the nested route tree and then looks for the `action` or `loader` on the route that owns that URL segment.
+
+## How Remix routes requests
+
+A Remix route module can export:
+
+- `loader` for `GET`
+- `action` for `POST`, `PUT`, `PATCH`, `DELETE`, and form submissions using `method`
+- `meta`, `links`, and other route-specific exports
+
+For a request to succeed, Remix needs two things:
+
+1. A route match for the URL.
+2. A handler on that matched route for the HTTP method.
+
+For page navigation, the route match runs the `loader`. For submissions, the route match runs the `action`. If the route is matched but the module does not export the needed handler, Remix returns `405 Method Not Allowed`.
+
+This is especially important with nested routes. A route tree can render a page from multiple route modules, but a form posts to exactly one route module: the route resolved by the form `action` URL.
+
+## A simple failure case
+
+Consider this route structure:
+
+```txt
+app/routes/
+  _index.tsx
+  todos.tsx
+  todos.new.tsx
+```
+
+And these route modules:
+
+```tsx
+// app/routes/todos.tsx
+import { Outlet } from "@remix-run/react";
+
+export default function TodosRoute() {
+  return (
+    <div>
+      <h1>Todos</h1>
+      <Outlet />
+    </div>
+  );
+}
+```
+
+```tsx
+// app/routes/todos.new.tsx
+import { Form } from "@remix-run/react";
+
+export default function NewTodoRoute() {
+  return (
+    <Form method="post" action="/todos">
+      <input name="title" />
+      <button type="submit">Create</button>
+    </Form>
+  );
+}
+```
+
+```tsx
+// app/routes/_index.tsx
+export default function IndexRoute() {
+  return <p>Home</p>;
+}
+```
+
+If `app/routes/todos.tsx` does not export an `action`, a submit to `/todos` with `method="post"` yields `405 Method Not Allowed`.
+
+The browser did its job. It sent `POST /todos`. Remix matched `/todos` to `app/routes/todos.tsx`. That route module had no `action`, so the request was rejected.
+
+## Why the browser can submit correctly
+
+Browsers are not aware of Remix route modules. A form knows only its `action` URL and `method`.
+
+```tsx
+<Form method="post" action="/todos">
+```
+
+That means:
+
+- send a `POST`
+- to `/todos`
+
+The browser does not know whether `/todos` has a Remix `action`.
+It does not know whether the route is nested.
+It does not know whether an index route exists under that path.
+
+Once the request reaches the Remix server, Remix performs route matching. That is where the failure happens.
+
+This separation matters because a form can be syntactically correct and still target the wrong route in the Remix tree.
+
+## Nested routes and the matching route module
+
+Remix nested routing means one URL can correspond to multiple rendered components, but only one route module owns the URL segment for the request.
+
+For example, if the URL is `/projects/123`, and the route files are:
+
+```txt
+app/routes/
+  projects.tsx
+  projects.$projectId.tsx
+```
+
+then:
+
+- `projects.tsx` is the parent route
+- `projects.$projectId.tsx` is the child route for the dynamic segment
+
+If a form is rendered inside `projects.$projectId.tsx` but its `action` points at `/projects`, Remix posts to the parent route. If `projects.tsx` has no `action`, the request fails with `405 Method Not Allowed`.
+
+That is the core mechanism behind many unexpected 405s. The form is rendered in one route, but the `action` URL lands on another route module.
+
+### Example: posting to the wrong level
+
+```tsx
+// app/routes/projects.$projectId.tsx
+import { Form, useParams } from "@remix-run/react";
+
+export default function ProjectDetails() {
+  const { projectId } = useParams();
+
+  return (
+    <Form method="post" action="/projects">
+      <input name="name" />
+      <button type="submit">Update project {projectId}</button>
+    </Form>
+  );
+}
+```
+
+If the intent is to update a specific project, this is wrong for two reasons:
+
+- `/projects` is the parent collection route, not the specific project route.
+- the parent route must export an `action` to accept the `POST`.
+
+A better target is the current route:
+
+```tsx
+<Form method="post">
+```
+
+If you omit `action`, Remix submits to the current route by default.
+
+Or, if the form should submit to the specific project URL, use the route parameter:
+
+```tsx
+<Form method="post" action={`/projects/${projectId}`}>
+```
+
+Then the corresponding route module must export an `action` for `projects.$projectId.tsx`.
+
+## Index routes and why they are easy to mis-target
+
+Index routes are another common source of confusion. An index route renders at the parent route path, but it is still a separate route module.
+
+With this structure:
+
+```txt
+app/routes/
+  projects.tsx
+  projects._index.tsx
+```
+
+the URL `/projects` renders the index route inside the parent layout.
+
+A form in `projects._index.tsx` that submits to `/projects` must still land on a route module with an `action`. Depending on how the route is defined, that may be the parent route or the index route module, but not both by default.
+
+If the parent route exports only a `loader` and the index route exports only a `loader`, a `POST` to `/projects` fails even though the page renders correctly.
+
+That is because rendering and mutation handling are separate concerns in Remix. A route can be responsible for layout and data loading without being responsible for mutations.
+
+## The rule for `loader` versus `action`
+
+The simplest way to think about it:
+
+- `loader` answers `GET` for the matched route.
+- `action` answers non-`GET` submissions for the matched route.
+
+If you need read-only data, use `loader`.
+If you need to process a form submission, add `action` to the route that should own the mutation.
+
+Do not assume a form can post to any visible page route. It must post to a route module that exports the handler for that method.
+
+## Fixing the route mismatch
+
+There are two valid fixes.
+
+### Fix 1: Put the `action` on the route that matches the form `action`
+
+If the form posts to `/todos`, then `app/routes/todos.tsx` must export an `action`.
+
+```tsx
+// app/routes/todos.tsx
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { Form, useLoaderData } from "@remix-run/react";
+
+export async function loader({}: LoaderFunctionArgs) {
+  return json({ items: [] as Array<{ id: string; title: string }> });
+}
+
+export async function action({ request }: ActionFunctionArgs) {
+  const formData = await request.formData();
+  const title = String(formData.get("title") || "").trim();
+
+  if (!title) {
+    return json({ error: "Title is required" }, { status: 400 });
+  }
+
+  return json({ ok: true });
+}
+
+export default function TodosRoute() {
+  const data = useLoaderData<typeof loader>();
+
+  return (
+    <div>
+      <Form method="post">
+        <input name="title" />
+        <button type="submit">Create</button>
+      </Form>
+
+      <pre>{JSON.stringify(data, null, 2)}</pre>
+    </div>
+  );
+}
+```
+
+This is the best choice when the mutation belongs to that URL segment.
+
+### Fix 2: Point the form at the route that already has the `action`
+
+If a child route owns the mutation, make the form submit there.
+
+```tsx
+// app/routes/projects.$projectId.edit.tsx
+import type { ActionFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { Form, useParams } from "@remix-run/react";
+
+export async function action({ params, request }: ActionFunctionArgs) {
+  const projectId = params.projectId;
+  const formData = await request.formData();
+  const name = String(formData.get("name") || "");
+
+  return json({ projectId, name });
+}
+
+export default function EditProjectRoute() {
+  const { projectId } = useParams();
+
+  return (
+    <Form method="post" action={`/projects/${projectId}/edit`}>
+      <input name="name" />
+      <button type="submit">Save</button>
+    </Form>
+  );
+}
+```
+
+This is the better choice when the mutation belongs to a distinct resource endpoint.
+
+## Using a relative `action` to stay on the current route
+
+A common way to avoid mismatches is to let the form default to the current route.
+
+```tsx
+<Form method="post">
+```
+
+In Remix, this is often the safest option when the form and its handler belong together. The form posts to the current route URL, and the matching route module is the one rendering the form.
+
+If you hard-code an absolute path, the route can drift from the component hierarchy. A nested component can end up posting to a parent route or sibling route that has no `action`.
+
+## Debugging a 405 in Remix
+
+When you see `405 Method Not Allowed`, check these points in order:
+
+1. Inspect the form `action` URL.
+2. Confirm which route module matches that URL.
+3. Verify that the matched route exports an `action`.
+4. Check whether the route is an index route, parent route, or nested child.
+5. Check whether the form is inside a nested component but posting to a parent path.
+
+Useful commands and files:
+
+```bash
+npm run dev
+```
+
+```bash
+npx remix routes
+```
+
+The exact command depends on your Remix version and setup, but route inspection is the same idea: verify which file owns the path you are posting to.
+
+If you are using route file conventions, confirm the generated mapping from URL to module. A form can be visually placed in one component while submitting to another route file entirely.
+
+## Special cases that trigger the same error
+
+Several patterns can produce the same `405`:
+
+- A parent route has a `loader` but no `action`.
+- An index route is rendered, but the parent route owns the URL and has no `action`.
+- A nested component hard-codes `action="/parent"` instead of posting to the current route.
+- A form uses a route path that looks right but resolves to a sibling route without an `action`.
+- A route is intended to receive `POST`, but only a `loader` was implemented.
+
+The fix is always the same at the routing layer: align the submission URL with the route module that exports the `action`.
+
+## When to use route-scoped actions versus endpoint-style routes
+
+For standard CRUD forms, prefer route-scoped actions. Put the `action` on the route that renders the form, or on the closest route that owns the resource segment.
+
+Use an endpoint-style route only when the mutation is intentionally separate from the page that renders the form. In that case, the `action` URL should be explicit and the endpoint route should export the corresponding `action`.
+
+That keeps the contract clear:
+
+- page route renders the UI
+- mutation route handles the submit
+
+What matters is consistency between the form `action` and the route file that can accept the method.
+
+## Practical takeaway
+
+Prefer the route that renders the form to also export the `action`, and let the form submit to the current route unless there is a clear reason to target a different endpoint. That keeps Remix route matching, nested layouts, and index routes aligned, and it prevents `POST` requests from landing on a route module that only has a `loader` and returning `405 Method Not Allowed`.
