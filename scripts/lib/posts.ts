@@ -119,19 +119,10 @@ export const frontmatter = (idea: PostIdea, date: Date) =>
         '---'
     ].join('\n')
 
-// An opening fence is three or more backticks or tildes, indented at most three
-// spaces. The closing fence must use the same character and be at least as long,
-// which is what lets a ````-fenced block legally contain ``` inside it.
 const FENCE = /^ {0,3}(`{3,}|~{3,})/
 
-// Inline code: a run of N backticks closed by a run of N backticks on the same
-// line. The two-or-more case is matched first so ``a ` b`` stays intact.
 const INLINE = /(`{2,})[^\n]*?\1|`[^`\n]*`/g
 
-// MDX treats a bare `<` as the start of a JSX tag and a bare `{` as the start of
-// an expression. The old escaper only guarded `<` when a letter or slash
-// followed, which let `<=`, `<18` and `<0.5` reach the compiler and fail the
-// build. Escape every one of them outside code instead.
 const escapeRun = (text: string) =>
     text.replace(/</g, '\\<').replace(/\{/g, '\\{')
 

@@ -32,8 +32,6 @@ const main = async () => {
     const queue = readQueue()
     const published = publishedSlugs()
 
-    // A drafted idea whose post has since merged is no longer in flight, so drop
-    // it. What is left is work that exists as an open PR and must not be redone.
     const drafted = queue.drafted.filter((idea) => !published.has(idea.slug))
     const inFlight = new Set(drafted.map((idea) => idea.slug))
 
@@ -41,8 +39,6 @@ const main = async () => {
         (idea) => !published.has(idea.slug) && !inFlight.has(idea.slug)
     )
 
-    // Starvation used to exit 0, so a dead pipeline looked identical to a healthy
-    // one on the Actions dashboard for five days. Fail loudly instead.
     if (!pending.length) {
         throw new Error(
             queue.ideas.length
@@ -72,8 +68,6 @@ const main = async () => {
 
     logUsage(response.usage)
 
-    // A response that hit max_output_tokens still carries output_text, so without
-    // this check a post truncated mid-sentence publishes as a finished article.
     if (response.status && response.status !== 'completed') {
         const reason = response.incomplete_details?.reason
 
@@ -102,9 +96,6 @@ const main = async () => {
 
     const file = writePost(idea, body, new Date())
 
-    // Move rather than delete. The draft only becomes a post once its PR merges,
-    // so until then the idea has to stay recorded: closing the PR must not erase
-    // it, and the planner must not re-plan a problem that is already written.
     writeQueue({
         ...queue,
         ideas: rest,
