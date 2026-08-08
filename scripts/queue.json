@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-07T07:24:29.082Z",
     "ideas": [
         {
-            "cell": "express-bodyparser-req-body-undefined::express::middleware-order",
-            "title": "Express Returns req.body Undefined When JSON Middleware Runs Too Late",
-            "description": "Fix req.body staying undefined in Express by placing JSON parsing middleware before your route handlers.",
-            "tags": [
-                "express",
-                "body-parser",
-                "middleware",
-                "json",
-                "http"
-            ],
-            "angle": "Explain that Express does not parse request bodies by default, so req.body stays undefined until a parser runs. Cover why middleware order matters, how express.json() and express.urlencoded() populate req.body, and how content-type affects parsing. Show the minimal route and middleware arrangement that makes JSON POST requests work.",
-            "slug": "express-returns-req-body-undefined-when-json-middleware-runs-too-late"
-        },
-        {
             "cell": "workers-request-stream-used-after-consume::cloudflare-workers::body-reuse",
             "title": "Cloudflare Workers Fail with TypeError: Body has already been used for Request",
             "description": "Understand why a consumed Request body cannot be read twice in Workers and how to clone or buffer it safely.",
@@ -87,6 +73,21 @@
             "angle": "Explain that GitHub Pages often serves the site from a subpath, not from /. Cover relative versus absolute asset URLs, framework base-path settings, and build output that must embed the correct prefix so CSS, JS, and images resolve after deployment.",
             "slug": "deploying-a-static-site-to-github-pages-breaks-asset-urls-under-a-repository-path",
             "draftedAt": "2026-08-07T22:27:47.340Z"
+        },
+        {
+            "cell": "express-bodyparser-req-body-undefined::express::middleware-order",
+            "title": "Express Returns req.body Undefined When JSON Middleware Runs Too Late",
+            "description": "Fix req.body staying undefined in Express by placing JSON parsing middleware before your route handlers.",
+            "tags": [
+                "express",
+                "body-parser",
+                "middleware",
+                "json",
+                "http"
+            ],
+            "angle": "Explain that Express does not parse request bodies by default, so req.body stays undefined until a parser runs. Cover why middleware order matters, how express.json() and express.urlencoded() populate req.body, and how content-type affects parsing. Show the minimal route and middleware arrangement that makes JSON POST requests work.",
+            "slug": "express-returns-req-body-undefined-when-json-middleware-runs-too-late",
+            "draftedAt": "2026-08-08T22:21:00.839Z"
         }
     ]
 }
