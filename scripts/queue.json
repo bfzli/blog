@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-09T20:18:26.399Z",
     "ideas": [
         {
-            "cell": "workers-request-stream-used-after-consume::cloudflare-workers::body-reuse",
-            "title": "Cloudflare Workers Fail with TypeError: Body has already been used for Request",
-            "description": "Understand why a consumed Request body cannot be read twice in Workers and how to clone or buffer it safely.",
-            "tags": [
-                "cloudflare-workers",
-                "fetch",
-                "request-body",
-                "streams",
-                "javascript"
-            ],
-            "angle": "Explain the Fetch body model in Workers: a Request body is a stream that can be consumed only once. Cover where the TypeError comes from, why calling request.json() and then forwarding the same Request fails, and how Request.clone(), await request.text(), or a buffered payload avoids reuse errors. Include the limits of cloning for large bodies and when to read once and reuse the parsed data instead.",
-            "slug": "cloudflare-workers-fail-with-typeerror-body-has-already-been-used-for-request"
-        },
-        {
             "cell": "hono-middleware-context-missing::hono::route-params",
             "title": "Hono Cannot Read c.req.param() After a Middleware Forgets next()",
             "description": "Fix missing route params in Hono by preserving middleware flow and route context.",
@@ -158,6 +144,21 @@
             "angle": "Explain that Express does not parse request bodies by default, so req.body stays undefined until a parser runs. Cover why middleware order matters, how express.json() and express.urlencoded() populate req.body, and how content-type affects parsing. Show the minimal route and middleware arrangement that makes JSON POST requests work.",
             "slug": "express-returns-req-body-undefined-when-json-middleware-runs-too-late",
             "draftedAt": "2026-08-08T22:21:00.839Z"
+        },
+        {
+            "cell": "workers-request-stream-used-after-consume::cloudflare-workers::body-reuse",
+            "title": "Cloudflare Workers Fail with TypeError: Body has already been used for Request",
+            "description": "Understand why a consumed Request body cannot be read twice in Workers and how to clone or buffer it safely.",
+            "tags": [
+                "cloudflare-workers",
+                "fetch",
+                "request-body",
+                "streams",
+                "javascript"
+            ],
+            "angle": "Explain the Fetch body model in Workers: a Request body is a stream that can be consumed only once. Cover where the TypeError comes from, why calling request.json() and then forwarding the same Request fails, and how Request.clone(), await request.text(), or a buffered payload avoids reuse errors. Include the limits of cloning for large bodies and when to read once and reuse the parsed data instead.",
+            "slug": "cloudflare-workers-fail-with-typeerror-body-has-already-been-used-for-request",
+            "draftedAt": "2026-08-09T22:22:22.241Z"
         }
     ]
 }
