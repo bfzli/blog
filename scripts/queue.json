@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-09T20:18:26.399Z",
     "ideas": [
         {
-            "cell": "hono-middleware-context-missing::hono::route-params",
-            "title": "Hono Cannot Read c.req.param() After a Middleware Forgets next()",
-            "description": "Fix missing route params in Hono by preserving middleware flow and route context.",
-            "tags": [
-                "hono",
-                "middleware",
-                "routing",
-                "typescript",
-                "web-framework"
-            ],
-            "angle": "Explain how Hono composes middleware and route handlers, and why omitting await next() stops downstream handlers from seeing the matched route context. Cover the difference between global middleware and per-route handlers, how param extraction depends on the resolved route, and what code structure keeps c.req.param() available. The takeaway should be when to call next(), when to short-circuit, and how to verify route matching.",
-            "slug": "hono-cannot-read-c-req-param-after-a-middleware-forgets-next"
-        },
-        {
             "cell": "next-image-loader-host-undefined::nextjs::remote-image-config",
             "title": "Next.js Cannot Optimize Images from an Unconfigured Remote Host",
             "description": "Configure next/image so remote images stop failing with host validation and optimization errors.",
@@ -159,6 +145,21 @@
             "angle": "Explain the Fetch body model in Workers: a Request body is a stream that can be consumed only once. Cover where the TypeError comes from, why calling request.json() and then forwarding the same Request fails, and how Request.clone(), await request.text(), or a buffered payload avoids reuse errors. Include the limits of cloning for large bodies and when to read once and reuse the parsed data instead.",
             "slug": "cloudflare-workers-fail-with-typeerror-body-has-already-been-used-for-request",
             "draftedAt": "2026-08-09T22:22:22.241Z"
+        },
+        {
+            "cell": "hono-middleware-context-missing::hono::route-params",
+            "title": "Hono Cannot Read c.req.param() After a Middleware Forgets next()",
+            "description": "Fix missing route params in Hono by preserving middleware flow and route context.",
+            "tags": [
+                "hono",
+                "middleware",
+                "routing",
+                "typescript",
+                "web-framework"
+            ],
+            "angle": "Explain how Hono composes middleware and route handlers, and why omitting await next() stops downstream handlers from seeing the matched route context. Cover the difference between global middleware and per-route handlers, how param extraction depends on the resolved route, and what code structure keeps c.req.param() available. The takeaway should be when to call next(), when to short-circuit, and how to verify route matching.",
+            "slug": "hono-cannot-read-c-req-param-after-a-middleware-forgets-next",
+            "draftedAt": "2026-08-10T22:29:33.348Z"
         }
     ]
 }
