@@ -1,0 +1,396 @@
+---
+title: "Hono Cannot Read c.req.param() After a Middleware Forgets next()"
+description: "Fix missing route params in Hono by preserving middleware flow and route context."
+tags: ["hono", "middleware", "routing", "typescript", "web-framework"]
+date: Aug 11, 2026
+cell: "hono-middleware-context-missing::hono::route-params"
+---
+
+`c.req.param()` returns `undefined` or throws `Error: Param not found` in a Hono route after middleware runs, because a middleware returned before calling `await next()` and the downstream handler never received the matched route context.
+
+## How Hono builds a request pipeline
+
+Hono composes a request as a chain of middleware and handlers. Each step can either:
+
+- continue the chain with `await next()`, or
+- stop the chain by returning a response immediately.
+
+That behavior is central to how route context is preserved.
+
+A Hono route is not just a function call. The router resolves the incoming request to a matched route, then builds the execution pipeline from:
+
+1. global middleware registered with `app.use()`
+2. path-scoped middleware registered with `app.use('/path/*', ...)`
+3. the route handler registered with `app.get()`, `app.post()`, and similar methods
+
+When a request matches `/users/:id`, the `id` value is attached to the execution context for the downstream handler. `c.req.param('id')` reads from that resolved route context. If the middleware chain stops before the handler runs, the handler never gets a chance to read the route data.
+
+That is why the symptom is not just a missing value. It is a pipeline break.
+
+## The exact failure mode
+
+A minimal example looks like this:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.use('*', async (c, next) => {
+  // Some work here
+  return c.text('blocked by middleware')
+})
+
+app.get('/users/:id', (c) => {
+  const id = c.req.param('id')
+  return c.text(`user ${id}`)
+})
+
+export default app
+```
+
+A request to `GET /users/123` never reaches the route handler. The response is `blocked by middleware`.
+
+If the middleware does call `next()` incorrectly, the problem can be subtler:
+
+```ts
+app.use('*', async (c, next) => {
+  next()
+  return c.text('done')
+})
+```
+
+This returns a response before the downstream handler can finish. In Hono, `await next()` is not optional when the middleware is supposed to preserve the rest of the pipeline.
+
+A route handler that does run may then see `c.req.param('id')` as unavailable if the route was never actually reached through the matched pipeline. Depending on the code path, that can appear as `undefined` or as an exception when a missing param is accessed.
+
+## Why route params depend on resolved route context
+
+Hono route params come from the router match, not from the URL string directly in the handler.
+
+For a route like:
+
+```ts
+app.get('/users/:id', (c) => {
+  return c.text(c.req.param('id'))
+})
+```
+
+the router resolves `:id` from `/users/123` before the handler executes. That resolved match is stored in the request context so `c.req.param('id')` can read it later.
+
+This matters because `c.req.param()` is not a parser that scans the raw request path on demand. It relies on the route matching result already being present in the current execution path. If middleware interrupts the flow, the expected route context is not present in downstream code.
+
+That also explains why a global middleware can appear unrelated to route params and still cause this error. The route declaration is correct. The request path is correct. The execution flow is not.
+
+## `await next()` and why it matters
+
+In Hono middleware, `next()` returns a `Promise`. `await next()` hands control to the next middleware or handler and waits for it to complete before continuing.
+
+Use this pattern when the middleware should allow downstream processing:
+
+```ts
+app.use('*', async (c, next) => {
+  console.log('before')
+  await next()
+  console.log('after')
+})
+```
+
+This preserves the entire chain. The route handler sees the route context, including params, query data, and other matched-request state.
+
+If you omit `await`, the middleware returns early and the downstream handler may never execute before the response is finalized. If you `return` a response instead of calling `next()`, the chain intentionally ends there.
+
+That distinction is the core rule:
+
+- use `await next()` when the request should continue
+- return a response without `next()` when the middleware is meant to short-circuit
+
+## Global middleware versus per-route handlers
+
+Hono lets you register middleware at different scopes. The scope determines whether it can block route matching or preserve it.
+
+### Global middleware
+
+Global middleware registered with `app.use()` applies to all matching paths. It is commonly used for logging, authentication, CORS, tracing, and request normalization.
+
+```ts
+app.use('*', async (c, next) => {
+  console.log(c.req.method, c.req.path)
+  await next()
+})
+```
+
+This kind of middleware should usually call `await next()` unless it is intentionally rejecting the request. A global auth check is a valid place to short-circuit:
+
+```ts
+app.use('/admin/*', async (c, next) => {
+  const authorized = c.req.header('authorization') === 'Bearer secret'
+
+  if (!authorized) {
+    return c.text('Unauthorized', 401)
+  }
+
+  await next()
+})
+```
+
+Here the middleware is supposed to stop unauthorized requests. That is correct behavior.
+
+### Per-route handlers
+
+Per-route middleware and handlers are attached to a specific route pattern. They run after the router has already matched the path, so they can rely on route params being present if they continue the chain.
+
+```ts
+app.get(
+  '/users/:id',
+  async (c, next) => {
+    console.log('route middleware')
+    await next()
+  },
+  (c) => {
+    return c.text(c.req.param('id'))
+  }
+)
+```
+
+In this structure, the route handler receives the resolved `:id` value as long as the route middleware calls `await next()`.
+
+The important difference is scope. Global middleware can run before the route match is fully consumed by your handler chain. Per-route middleware sits closer to the final handler and is safer for route-specific logic that depends on params.
+
+## A broken example and the fix
+
+A broken version often looks like this:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.use('/users/*', async (c, next) => {
+  const token = c.req.header('authorization')
+
+  if (!token) {
+    return c.text('missing token', 401)
+  }
+
+  // Missing await next()
+})
+
+app.get('/users/:id', (c) => {
+  const id = c.req.param('id')
+  return c.text(`user ${id}`)
+})
+
+export default app
+```
+
+A request with an authorization header still does not reach the route handler because the middleware ends without continuing the chain. The route param `id` is never observed by the handler.
+
+The fix is to continue the pipeline:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.use('/users/*', async (c, next) => {
+  const token = c.req.header('authorization')
+
+  if (!token) {
+    return c.text('missing token', 401)
+  }
+
+  await next()
+})
+
+app.get('/users/:id', (c) => {
+  const id = c.req.param('id')
+  return c.text(`user ${id}`)
+})
+
+export default app
+```
+
+Now the middleware either rejects the request or forwards it to the matched handler.
+
+## How to structure middleware so params stay available
+
+If a middleware needs route params, keep it at a scope where the route has already been matched, or make sure it always calls `await next()`.
+
+Use these patterns:
+
+### 1. Short-circuit only for terminal conditions
+
+Short-circuit when the request must stop immediately, such as:
+
+- missing auth
+- invalid content type
+- rate limit exceeded
+- malformed input that makes downstream work pointless
+
+```ts
+app.use('/users/*', async (c, next) => {
+  if (c.req.header('authorization') !== 'Bearer secret') {
+    return c.text('Unauthorized', 401)
+  }
+
+  await next()
+})
+```
+
+### 2. Preserve the chain for decoration or validation
+
+If the middleware enriches state, logs data, or performs checks that should not block route execution, call `await next()`.
+
+```ts
+app.use('*', async (c, next) => {
+  const started = Date.now()
+  await next()
+  console.log(`${c.req.method} ${c.req.path} took ${Date.now() - started}ms`)
+})
+```
+
+### 3. Put param-dependent logic in route-scoped middleware
+
+If the logic needs `c.req.param('id')`, attach it to the same route pattern or to a nested router that already matches the param.
+
+```ts
+app.get(
+  '/users/:id',
+  async (c, next) => {
+    const id = c.req.param('id')
+    if (!/^\d+$/.test(id)) {
+      return c.text('invalid id', 400)
+    }
+
+    await next()
+  },
+  (c) => {
+    return c.text(`user ${c.req.param('id')}`)
+  }
+)
+```
+
+This avoids depending on unrelated global middleware to expose route-specific state.
+
+## Verifying route matching
+
+To confirm whether the route is actually matched, inspect `c.req.path`, the request method, and the route-level execution order.
+
+A simple diagnostic chain helps:
+
+```ts
+app.use('*', async (c, next) => {
+  console.log('global middleware', c.req.method, c.req.path)
+  await next()
+})
+
+app.get('/users/:id', async (c, next) => {
+  console.log('route middleware', c.req.param('id'))
+  await next()
+}, (c) => {
+  console.log('handler', c.req.param('id'))
+  return c.text('ok')
+})
+```
+
+If the first log appears and the later ones do not, the chain is being stopped before the route handler. If the route middleware logs but the handler does not, the per-route middleware is likely returning early.
+
+For command-line verification, use `curl` against the route:
+
+```sh
+curl -i http://localhost:3000/users/123
+```
+
+If authentication is involved, include the header:
+
+```sh
+curl -i \
+  -H 'Authorization: Bearer secret' \
+  http://localhost:3000/users/123
+```
+
+If the middleware is supposed to allow the request, the response should come from the handler, not from the middleware branch.
+
+## Common incorrect patterns
+
+### Calling `next()` without `await`
+
+```ts
+app.use('*', async (c, next) => {
+  next()
+  return c.text('finished')
+})
+```
+
+This is incorrect because the middleware completes before the downstream work does. Use `await next()` instead.
+
+### Returning a response after `await next()` when post-processing is intended
+
+```ts
+app.use('*', async (c, next) => {
+  await next()
+  return c.text('override')
+})
+```
+
+This replaces the downstream response. That may be valid if response rewriting is intended, but it can also hide route handler output and make it look like the handler never saw the param.
+
+### Putting param-dependent logic in a middleware that never reaches the route
+
+```ts
+app.use('/users/*', async (c, next) => {
+  const id = c.req.param('id')
+  // This only works if the current execution path already has the route context.
+  await next()
+})
+```
+
+If this middleware runs before the route match is available in the expected way, param access can be unreliable. Keep route-specific param reads in the route handler or a route-scoped middleware directly attached to the route.
+
+## A safe template
+
+This structure keeps route params available and makes short-circuiting explicit:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.use('/users/*', async (c, next) => {
+  const auth = c.req.header('authorization')
+
+  if (auth !== 'Bearer secret') {
+    return c.text('Unauthorized', 401)
+  }
+
+  await next()
+})
+
+app.get('/users/:id', async (c, next) => {
+  const id = c.req.param('id')
+
+  if (!/^\d+$/.test(id)) {
+    return c.text('Bad Request', 400)
+  }
+
+  await next()
+}, (c) => {
+  const id = c.req.param('id')
+  return c.json({ id })
+})
+
+export default app
+```
+
+The middleware rejects only when it must. Otherwise it forwards the request. The route handler gets the matched `:id` every time the request reaches it.
+
+## When to call `next()`, when to stop
+
+Call `await next()` when the middleware is a pass-through or adds behavior around the downstream handler.
+
+Stop early when the middleware is the final decision point for the request. That includes authorization failures, request validation failures, and explicit redirect or error responses.
+
+If route params are missing, the first thing to inspect is the middleware chain, not the route declaration. A handler cannot read `c.req.param()` if an upstream middleware ended the request before the route was reached.
+
+Use `await next()` in any middleware that should preserve route context. Use short-circuit returns only when the request should not continue. That keeps `c.req.param()` available in route handlers and prevents route matching from being cut off before the handler executes.
