@@ -1,0 +1,507 @@
+---
+title: "Next.js Cannot Optimize Images from an Unconfigured Remote Host"
+description: "Configure next/image so remote images stop failing with host validation and optimization errors."
+tags: ["nextjs", "images", "webpack", "remote-patterns", "react"]
+date: Aug 12, 2026
+cell: "next-image-loader-host-undefined::nextjs::remote-image-config"
+---
+
+`next/image` fails at runtime or build time when it tries to optimize a remote image whose host is not configured in `next.config.js`. The typical error is:
+
+`Invalid src prop (https://...) on "next/image", hostname "..." is not configured under images in your next.config.js`
+
+In newer Next.js versions, a related configuration error can also appear when protocol, hostname, pathname, or search do not match the allowed remote pattern:
+
+`next/image Un-configured Host`
+
+## Why the image request fails
+
+`next/image` does not send arbitrary remote URLs directly to the browser. It rewrites the source into an internal optimization endpoint and checks the URL against the image allowlist before that rewrite happens.
+
+When you render:
+
+```tsx
+import Image from "next/image";
+
+export default function Page() {
+  return (
+    <Image
+      src="https://images.example.com/photos/cat.jpg"
+      alt="Cat"
+      width={1200}
+      height={800}
+    />
+  );
+}
+```
+
+Next.js does not use the remote URL as-is. The component generates a request to the built-in optimizer, usually at `/_next/image`, with query parameters such as:
+
+- `url`
+- `w`
+- `q`
+
+A typical rewritten request looks like this:
+
+```text
+/_next/image?url=https%3A%2F%2Fimages.example.com%2Fphotos%2Fcat.jpg&w=1200&q=75
+```
+
+That internal route is handled by Next.js, which fetches the remote image server-side, validates the origin against the configured allowlist, transforms it, and returns a cached optimized response.
+
+If the host is not allowed, the request is rejected before any fetch or optimization occurs. The failure is a policy check, not a network failure.
+
+## How `next/image` validates remote URLs
+
+Next.js compares the image URL against the `images` configuration in `next.config.js` or `next.config.mjs`. The validation happens during request handling for the optimizer and also during rendering, depending on version and code path.
+
+The check is strict:
+
+- the protocol must match if configured
+- the hostname must match
+- the port must match if configured
+- the pathname must match if configured
+- the search string must match if configured
+
+That means `https://cdn.example.com/image.jpg` and `http://cdn.example.com/image.jpg` are different URLs for validation purposes. `images.example.com` and `www.images.example.com` are also different. A wildcard subdomain is not inferred automatically.
+
+If the configuration is incomplete, the optimizer rejects the request because Next.js cannot safely assume that an arbitrary remote host should be proxied and transformed.
+
+## `images.domains` versus `images.remotePatterns`
+
+Older Next.js configurations often use `images.domains`. This is a hostname allowlist only.
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    domains: ["images.example.com"],
+  },
+};
+
+export default nextConfig;
+```
+
+This allows images from `images.example.com`, but it does not let you express:
+
+- protocol restrictions
+- pathname restrictions
+- query string restrictions
+- multiple subdomain shapes
+- different environments with distinct remote paths
+
+`images.remotePatterns` is the more precise and more flexible option. It lets you describe a complete URL pattern.
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "images.example.com",
+        pathname: "/**",
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+```
+
+Use `images.domains` only when you need a simple hostname allowlist and the remote host structure is stable. Prefer `images.remotePatterns` when you need exact control over origin and path.
+
+In current Next.js versions, `remotePatterns` is the recommended choice because it avoids overly broad access and supports more cases without custom loaders.
+
+## The exact shape required for subdomains
+
+A common failure mode is allowing the root domain while the image actually comes from a subdomain, or allowing one subdomain while the app uses several.
+
+This does not work for subdomains unless the hostname matches exactly:
+
+```ts
+images: {
+  domains: ["example.com"],
+}
+```
+
+That does not automatically permit `cdn.example.com` or `img.example.com`.
+
+With `remotePatterns`, you can allow one specific subdomain:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.example.com",
+        pathname: "/**",
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+```
+
+If you need multiple subdomains, list each one explicitly:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.example.com",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "img.example.com",
+        pathname: "/**",
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+```
+
+If your CDN uses a variable subdomain pattern, such as tenant-specific hosts, `remotePatterns` can express wildcard hostnames in supported versions.
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "**.example.com",
+        pathname: "/assets/**",
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+```
+
+Use this only when you truly need broad subdomain coverage. The wider the pattern, the more hosts the optimizer will accept.
+
+## Query strings and pathname matching
+
+Some remote image URLs rely on query parameters for resizing, auth tokens, or CDN variants. `images.domains` cannot express that. `remotePatterns` can.
+
+For example, if the remote image URL must include a fixed pathname prefix, configure it explicitly:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.example.com",
+        pathname: "/media/**",
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+```
+
+If the URL must include a specific search string, such as a version parameter, include `search` too:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.example.com",
+        pathname: "/media/**",
+        search: "?v=2",
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+```
+
+That configuration allows URLs like:
+
+```text
+https://cdn.example.com/media/cat.jpg?v=2
+```
+
+It rejects:
+
+```text
+https://cdn.example.com/media/cat.jpg?v=3
+```
+
+and:
+
+```text
+https://cdn.example.com/other/cat.jpg?v=2
+```
+
+This is useful when the source URL is signed or parameterized and you want to prevent accidental mismatches. It also explains why a URL that looks correct in the browser can still fail inside `next/image`: the query string is part of the validation.
+
+## Development hosts versus production hosts
+
+Development and production often use different image origins.
+
+A local setup might use:
+
+- `http://localhost:3001`
+- `http://127.0.0.1:4000`
+- `http://host.docker.internal:8080`
+
+Production might use:
+
+- `https://cdn.example.com`
+- `https://images.example.com`
+
+These must all be listed if you want them to work with `next/image`.
+
+A configuration that supports both local development and production can look like this:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "http",
+        hostname: "localhost",
+        port: "3001",
+        pathname: "/**",
+      },
+      {
+        protocol: "http",
+        hostname: "127.0.0.1",
+        port: "4000",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.example.com",
+        pathname: "/**",
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+```
+
+If your development server serves images over HTTP, the protocol must be `http`, not `https`. If the app requests `https://localhost:3001/...` but the image server only speaks HTTP, validation can still fail because the configured pattern does not match the requested URL.
+
+For Docker-based workflows, remember that `localhost` inside the container is not the same as `localhost` on the host machine. If the browser points to a host-side service, the pattern still needs to reflect the exact hostname and port used in the URL that reaches `next/image`.
+
+## When the optimizer runs
+
+The optimizer runs only when `next/image` is used without `unoptimized={true}` and when the image is remote or otherwise not served as a static import.
+
+These are optimized:
+
+```tsx
+<Image
+  src="https://cdn.example.com/media/cat.jpg"
+  alt="Cat"
+  width={1200}
+  height={800}
+/>
+```
+
+These skip optimization:
+
+```tsx
+<Image
+  src="https://cdn.example.com/media/cat.jpg"
+  alt="Cat"
+  width={1200}
+  height={800}
+  unoptimized
+/>
+```
+
+Static imports are handled differently:
+
+```tsx
+import cat from "@/public/cat.jpg";
+
+export default function Page() {
+  return <Image src={cat} alt="Cat" />;
+}
+```
+
+In that case, Next.js knows the asset at build time and does not need remote host validation.
+
+The important part is that the allowlist check happens before the optimizer fetches the remote URL. If the source is not permitted, `/_next/image` is never allowed to retrieve it.
+
+## How to verify the rewritten request
+
+In the browser, inspect the rendered image markup and network request. The `src` attribute for `next/image` typically points to `/_next/image` with encoded `url`, `w`, and `q` parameters.
+
+You can also confirm the request directly:
+
+```bash
+curl -I "http://localhost:3000/_next/image?url=https%3A%2F%2Fcdn.example.com%2Fmedia%2Fcat.jpg&w=1200&q=75"
+```
+
+If the host is not allowed, the response is typically a `400`-class error from Next.js, and the logs include the validation message.
+
+If the host is allowed, the response should be a cacheable image response with a content type such as `image/webp`, `image/jpeg`, or `image/avif`, depending on the configuration and browser support.
+
+## Exact package and config context
+
+The behavior described here applies to `next` and `react` in a Next.js app using `next/image`. A standard current setup looks like this:
+
+```json
+{
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
+```
+
+A TypeScript config file is usually the clearest option:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.example.com",
+        pathname: "/**",
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+```
+
+After changing the config, restart the dev server. Next.js reads `next.config.*` at startup, so a hot reload is not always enough.
+
+```bash
+npm run dev
+```
+
+or:
+
+```bash
+pnpm dev
+```
+
+or:
+
+```bash
+yarn dev
+```
+
+## Common configuration mistakes
+
+A hostname-only allowlist that misses the actual subdomain:
+
+```ts
+images: {
+  domains: ["example.com"],
+}
+```
+
+But the real image source is:
+
+```text
+https://cdn.example.com/media/cat.jpg
+```
+
+A protocol mismatch:
+
+```ts
+{
+  protocol: "https",
+  hostname: "localhost",
+  port: "3001",
+  pathname: "/**",
+}
+```
+
+But the URL is:
+
+```text
+http://localhost:3001/media/cat.jpg
+```
+
+A pathname mismatch:
+
+```ts
+{
+  protocol: "https",
+  hostname: "cdn.example.com",
+  pathname: "/images/**",
+}
+```
+
+But the URL is:
+
+```text
+https://cdn.example.com/media/cat.jpg
+```
+
+A query string mismatch:
+
+```ts
+{
+  protocol: "https",
+  hostname: "cdn.example.com",
+  pathname: "/media/**",
+  search: "?v=2",
+}
+```
+
+But the URL is:
+
+```text
+https://cdn.example.com/media/cat.jpg?v=3
+```
+
+Any of these will cause `next/image` to reject the request because the requested URL does not match the configured remote pattern.
+
+## Prefer `remotePatterns` for new configurations
+
+For a new Next.js setup, `images.remotePatterns` is usually the better fix. It handles subdomains, environment-specific hosts, path prefixes, and query strings without opening access wider than necessary.
+
+Use `images.domains` only when the remote source is simple and stable. If the image host changes across environments, if assets live under different subpaths, or if query strings are part of the URL, `remotePatterns` is the safer option.
+
+The practical way to prevent the problem from returning is to keep the `next.config.*` image allowlist aligned with the exact URL that reaches `next/image`. Match the protocol, hostname, port, pathname, and search string precisely, then restart the server after each change.
