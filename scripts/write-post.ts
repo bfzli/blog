@@ -1,6 +1,7 @@
 import { MODEL, VOICE, logUsage, openai } from './lib/openai'
 import { publishedSlugs, wordCount, writePost } from './lib/posts'
 import { readQueue, writeQueue } from './lib/queue'
+import { setOutput } from './lib/actions'
 
 const MIN_WORDS = 900
 
@@ -95,6 +96,9 @@ const main = async () => {
     }
 
     const file = writePost(idea, body, new Date())
+
+    setOutput('title', idea.title)
+    setOutput('slug', idea.slug)
 
     writeQueue({
         ...queue,

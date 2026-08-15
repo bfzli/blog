@@ -31,29 +31,35 @@ jobs:
             - run: npm ci
 
             - run: npm run posts:write
+              id: write
               env:
                   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-            - run: npm run web:build
-
+            # Saved before the build so a build failure still consumes the idea
+            # instead of retrying the same unbuildable post every night.
             - name: Set the advanced queue aside
               run: cp scripts/queue.json "$RUNNER_TEMP/queue.json"
+
+            - run: npm run web:build
 
             - uses: peter-evans/create-pull-request@v7
               id: draft
               with:
                   branch: content/post-${{ github.run_number }}
-                  title: 'content: new draft post'
+                  title: "content: ${{ steps.write.outputs.title || 'new draft post' }}"
                   body: |
-                      Generated from the next queued idea. Read it before merging, and reject it if it reads generic.
+                      Generated from the next queued idea and merged automatically once the build passes. This PR is the audit trail, not a review gate.
 
-                      Closing this without merging does not lose the idea: it stays in the `drafted` array of `scripts/queue.json`. Delete its entry there to let the planner pick that problem up again.
+                      To pull a published post, revert the merge commit. The idea stays in the `drafted` array of `scripts/queue.json`, so delete its entry there to let the planner pick that problem up again.
                   commit-message: 'content: add generated draft'
                   add-paths: src/content/posts
                   delete-branch: true
 
+            # Runs even when the build failed, so a bad idea is consumed once
+            # rather than wedging the queue. Must land before the merge below,
+            # or pushing onto a moved base branch is rejected.
             - name: Advance the queue on the base branch
-              if: steps.draft.outputs.pull-request-number != ''
+              if: ${{ !cancelled() && steps.write.outcome == 'success' }}
               run: |
                   git fetch origin "$GITHUB_REF_NAME"
                   git checkout -f -B "$GITHUB_REF_NAME" "origin/$GITHUB_REF_NAME"
@@ -67,6 +73,25 @@ jobs:
                   git add scripts/queue.json
                   git commit -m 'content: consume queued idea'
                   git push
+
+            # GitHub computes mergeability asynchronously, so a freshly opened PR
+            # can report as unmergeable for a moment. Retry before giving up.
+            - name: Merge the draft
+              if: steps.draft.outputs.pull-request-number != ''
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  PR: ${{ steps.draft.outputs.pull-request-number }}
+              run: |
+                  for attempt in 1 2 3 4 5; do
+                      if gh pr merge "$PR" --merge --delete-branch; then
+                          echo "Merged #$PR"
+                          exit 0
+                      fi
+                      echo "Merge attempt $attempt failed, retrying in 10s"
+                      sleep 10
+                  done
+                  echo "::error::Could not merge #$PR, it is still open"
+                  exit 1
 
             - name: Fail if no draft was opened
               if: steps.draft.outputs.pull-request-number == ''
