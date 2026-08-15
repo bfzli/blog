@@ -1,6 +1,78 @@
 {
-    "generatedAt": "2026-08-07T07:24:29.082Z",
+    "generatedAt": "2026-08-09T20:18:26.399Z",
     "ideas": [
+        {
+            "cell": "document-is-not-defined::sveltekit::ssr-component-access",
+            "title": "SvelteKit Throws ReferenceError: document is not defined During Server-Side Rendering",
+            "description": "SvelteKit SSR crashes when a component touches document before the browser runs it; isolate browser-only code and gate it behind client checks.",
+            "tags": [
+                "sveltekit",
+                "ssr",
+                "document",
+                "browser-api",
+                "javascript"
+            ],
+            "angle": "Explain that SvelteKit renders components on the server first, so any top-level reference to document fails before hydration. Cover the mechanisms that trigger it, such as module initialization, load functions, and shared utilities, then show the correct fixes: onMount, browser guards, and moving DOM access into client-only code.",
+            "slug": "sveltekit-throws-referenceerror-document-is-not-defined-during-server-side-rendering"
+        },
+        {
+            "cell": "custom-domain-misconfigured::cloudflare-pages::dns-and-hostname",
+            "title": "Point a Custom Domain at Cloudflare Pages Without Leaving the Site on the Default Subdomain",
+            "description": "Cloudflare Pages stays on the generated pages.dev hostname until DNS and the Pages custom domain are configured together.",
+            "tags": [
+                "cloudflare-pages",
+                "dns",
+                "custom-domain",
+                "ssl",
+                "deployment"
+            ],
+            "angle": "Describe how Cloudflare Pages binds hostnames and why DNS alone does not attach a custom domain to a project. Explain the required steps in Pages and the DNS record setup, including apex and www handling, so the reader can verify the hostname, certificate, and route are all aligned.",
+            "slug": "point-a-custom-domain-at-cloudflare-pages-without-leaving-the-site-on-the-default-subdomain"
+        },
+        {
+            "cell": "metro-transformer-crash::react-native::syntax-in-shared-module",
+            "title": "React Native Fails to Bundle When a Shared Module Imports Node Built-ins",
+            "description": "Metro stops bundling when shared code pulls in fs, path, or crypto that the React Native runtime cannot provide.",
+            "tags": [
+                "react-native",
+                "metro",
+                "bundling",
+                "node-core-modules",
+                "javascript"
+            ],
+            "angle": "Explain why React Native’s runtime and Metro resolver do not include Node built-ins, even when a dependency works on web or Node. Cover how to spot the offending import, how transitive dependencies trigger the failure, and how to replace or shim the code with platform-specific modules.",
+            "slug": "react-native-fails-to-bundle-when-a-shared-module-imports-node-built-ins"
+        },
+        {
+            "cell": "server-component-fetch-cache::nextjs::unexpected-stale-data",
+            "title": "Next.js App Router Serves Stale Data Because a Server Component Fetch Is Cached",
+            "description": "Next.js can reuse a server component fetch result unless you set the right cache mode or revalidation behavior.",
+            "tags": [
+                "nextjs",
+                "app-router",
+                "fetch",
+                "cache",
+                "server-components"
+            ],
+            "angle": "Explain how the App Router caches fetch calls in server components by default and why that can return old data. Cover request memoization, static rendering, revalidate, and cache: 'no-store', then show how to choose the right option for per-request freshness or controlled regeneration.",
+            "slug": "next-js-app-router-serves-stale-data-because-a-server-component-fetch-is-cached"
+        },
+        {
+            "cell": "pnpm-workspace-tsconfig::vite::wrong-package-resolution",
+            "title": "Vite Resolves the Wrong Package in a pnpm Workspace Because tsconfig Paths Leak Into Build Imports",
+            "description": "A pnpm monorepo can resolve a local source file instead of the published package entry point and break the build.",
+            "tags": [
+                "vite",
+                "pnpm",
+                "monorepo",
+                "tsconfig",
+                "module-resolution"
+            ],
+            "angle": "Explain how path aliases and workspace links can bypass the package entry point that bundlers expect. Cover why the build resolves differently from TypeScript, how that affects exports, and how to fix it with package.json exports, Vite alias rules, or narrower tsconfig paths.",
+            "slug": "vite-resolves-the-wrong-package-in-a-pnpm-workspace-because-tsconfig-paths-leak-into-build-imports"
+        }
+    ],
+    "drafted": [
         {
             "cell": "static-site-deploy-base-path::github-pages::asset-resolution",
             "title": "Deploying a Static Site to GitHub Pages Breaks Asset URLs Under a Repository Path",
@@ -13,7 +85,8 @@
                 "base-path"
             ],
             "angle": "Explain that GitHub Pages often serves the site from a subpath, not from /. Cover relative versus absolute asset URLs, framework base-path settings, and build output that must embed the correct prefix so CSS, JS, and images resolve after deployment.",
-            "slug": "deploying-a-static-site-to-github-pages-breaks-asset-urls-under-a-repository-path"
+            "slug": "deploying-a-static-site-to-github-pages-breaks-asset-urls-under-a-repository-path",
+            "draftedAt": "2026-08-07T22:27:47.340Z"
         },
         {
             "cell": "express-bodyparser-req-body-undefined::express::middleware-order",
@@ -27,7 +100,8 @@
                 "http"
             ],
             "angle": "Explain that Express does not parse request bodies by default, so req.body stays undefined until a parser runs. Cover why middleware order matters, how express.json() and express.urlencoded() populate req.body, and how content-type affects parsing. Show the minimal route and middleware arrangement that makes JSON POST requests work.",
-            "slug": "express-returns-req-body-undefined-when-json-middleware-runs-too-late"
+            "slug": "express-returns-req-body-undefined-when-json-middleware-runs-too-late",
+            "draftedAt": "2026-08-08T22:21:00.839Z"
         },
         {
             "cell": "workers-request-stream-used-after-consume::cloudflare-workers::body-reuse",
@@ -41,7 +115,8 @@
                 "javascript"
             ],
             "angle": "Explain the Fetch body model in Workers: a Request body is a stream that can be consumed only once. Cover where the TypeError comes from, why calling request.json() and then forwarding the same Request fails, and how Request.clone(), await request.text(), or a buffered payload avoids reuse errors. Include the limits of cloning for large bodies and when to read once and reuse the parsed data instead.",
-            "slug": "cloudflare-workers-fail-with-typeerror-body-has-already-been-used-for-request"
+            "slug": "cloudflare-workers-fail-with-typeerror-body-has-already-been-used-for-request",
+            "draftedAt": "2026-08-09T22:22:22.241Z"
         },
         {
             "cell": "hono-middleware-context-missing::hono::route-params",
@@ -55,7 +130,8 @@
                 "web-framework"
             ],
             "angle": "Explain how Hono composes middleware and route handlers, and why omitting await next() stops downstream handlers from seeing the matched route context. Cover the difference between global middleware and per-route handlers, how param extraction depends on the resolved route, and what code structure keeps c.req.param() available. The takeaway should be when to call next(), when to short-circuit, and how to verify route matching.",
-            "slug": "hono-cannot-read-c-req-param-after-a-middleware-forgets-next"
+            "slug": "hono-cannot-read-c-req-param-after-a-middleware-forgets-next",
+            "draftedAt": "2026-08-10T22:29:33.348Z"
         },
         {
             "cell": "next-image-loader-host-undefined::nextjs::remote-image-config",
@@ -69,7 +145,8 @@
                 "react"
             ],
             "angle": "Explain how next/image validates remote URLs before optimization and why an unlisted hostname or protocol causes the request to fail. Cover the difference between images.domains and images.remotePatterns, when the optimizer runs, and how the image request is rewritten through the Next.js loader. Show the exact config shape needed for subdomains, query strings, and development versus production hosts.",
-            "slug": "next-js-cannot-optimize-images-from-an-unconfigured-remote-host"
+            "slug": "next-js-cannot-optimize-images-from-an-unconfigured-remote-host",
+            "draftedAt": "2026-08-11T22:34:22.719Z"
         },
         {
             "cell": "pages-functions-env-undefined::cloudflare-pages::runtime-secrets",
@@ -83,24 +160,8 @@
                 "edge"
             ],
             "angle": "Explain that Pages Functions read bindings from the runtime env object, not from Node-style process.env. Cover how the Pages deployment model injects vars and secrets, why missing bindings or mismatched names return undefined, and how local development with wrangler pages dev can differ from production. Show how to declare vars in the Pages project, access them through context.env or the handler env, and confirm the binding name matches exactly.",
-            "slug": "cloudflare-pages-functions-read-undefined-environment-variables-at-runtime"
-        }
-    ],
-    "drafted": [
-        {
-            "cell": "typescript-exports-sdk::typescript::multi-entry-package-design",
-            "title": "Design a TypeScript SDK with Multiple Entry Points Without Breaking Imports",
-            "description": "How to publish a typed SDK with subpath exports, preserved types, and stable import paths for ESM and CommonJS.",
-            "tags": [
-                "typescript",
-                "sdk",
-                "package-exports",
-                "esm",
-                "commonjs"
-            ],
-            "angle": "This should be a build and packaging reference, not an error fix. Cover export maps, separate runtime and type entry points, .d.ts generation, and how subpath exports keep tree-shaking and deep imports predictable across bundlers and Node.",
-            "slug": "design-a-typescript-sdk-with-multiple-entry-points-without-breaking-imports",
-            "draftedAt": "2026-08-07T08:16:15.321Z"
+            "slug": "cloudflare-pages-functions-read-undefined-environment-variables-at-runtime",
+            "draftedAt": "2026-08-12T22:33:02.861Z"
         }
     ]
 }

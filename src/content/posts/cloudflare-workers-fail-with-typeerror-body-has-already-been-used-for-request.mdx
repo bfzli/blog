@@ -1,0 +1,351 @@
+---
+title: "Cloudflare Workers Fail with TypeError: Body has already been used for Request"
+description: "Understand why a consumed Request body cannot be read twice in Workers and how to clone or buffer it safely."
+tags: ["cloudflare-workers", "fetch", "request-body", "streams", "javascript"]
+date: Aug 10, 2026
+cell: "workers-request-stream-used-after-consume::cloudflare-workers::body-reuse"
+---
+
+A Cloudflare Workers `fetch` handler breaks when code reads a `Request` body and then forwards the same `Request`, producing `TypeError: Body has already been used for Request`.
+
+## Why the error occurs
+
+In the Fetch API, a `Request` body is a stream, not a reusable buffer. A stream can be consumed once unless it is explicitly cloned or buffered first.
+
+Cloudflare Workers follows the standard Fetch body model. Methods such as `request.json()`, `request.text()`, `request.arrayBuffer()`, and `request.formData()` consume the body. After one of those reads completes, the body is marked as used. Any later attempt to read the same body, directly or indirectly, fails.
+
+That is why code like this throws:
+
+```ts
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const data = await request.json();
+
+    // This fails because request.json() already consumed the body.
+    return fetch("https://example.com/api", request);
+  },
+};
+```
+
+The failure is not specific to `request.json()`. Any body-reading method has the same effect. The underlying `ReadableStream` is drained, and the `Request` object now points to a body that cannot be read again.
+
+## Where the `TypeError` comes from
+
+The exact error text comes from the Fetch implementation enforcing body-use rules. In Workers, the runtime throws `TypeError: Body has already been used for Request` when code tries to read or forward a `Request` whose body has been consumed.
+
+This usually happens in one of these patterns:
+
+- `await request.json()` followed by `fetch(url, request)`
+- `await request.text()` followed by `request.clone()`
+- `await request.formData()` followed by another body read
+- middleware that logs or inspects the body and then passes the same `Request` onward
+
+Forwarding a `Request` counts as reusing the body because the target fetch can consume it. If the source body is already used, the runtime rejects it.
+
+## The Fetch body model in Workers
+
+A `Request` in Workers is a wrapper around method, headers, URL, and body. The body is backed by a stream. Streams are intentionally one-way.
+
+The important properties are:
+
+- The body can be read once.
+- Reading consumes the stream.
+- `request.bodyUsed` becomes `true` after a read.
+- A consumed body cannot be handed to another consumer.
+
+This design is standard Fetch behavior, not a Workers-only quirk. Workers just exposes it directly.
+
+You can check the state before and after reading:
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    console.log(request.bodyUsed); // false
+
+    const text = await request.text();
+
+    console.log(request.bodyUsed); // true
+    return new Response(text);
+  },
+};
+```
+
+The important consequence is that code must choose one of two approaches:
+
+- consume the body once and reuse the parsed result
+- clone or buffer the body before multiple consumers need it
+
+## Why `request.json()` and forwarding the same `Request` fails
+
+`request.json()` reads the entire body stream and parses it as JSON. Once that finishes, the body is gone.
+
+Forwarding the same `Request` to another origin or another internal handler asks the runtime to send the request body again. Since the body was already consumed, the runtime throws.
+
+This is a typical broken example:
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const payload = await request.json();
+
+    if (payload.debug) {
+      console.log("debug mode");
+    }
+
+    return fetch("https://api.example.com/ingest", request);
+  },
+};
+```
+
+The `payload` variable is not the problem. The problem is that `request` itself no longer has a readable body.
+
+The same issue appears with headers-only changes if the original request object is reused:
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    await request.text();
+
+    const forwarded = new Request(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+    });
+
+    return fetch(forwarded);
+  },
+};
+```
+
+Here `request.body` is already consumed, so the new `Request` inherits a dead stream.
+
+## Fix 1: use `Request.clone()` before consumption
+
+If you need to read the body in one place and forward the request in another, clone the request before consuming it. `Request.clone()` tees the body stream so two consumers can read independent copies.
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const clone = request.clone();
+
+    const data = await request.json();
+
+    console.log("parsed payload", data);
+
+    return fetch("https://example.com/api", clone);
+  },
+};
+```
+
+`clone` has a separate body stream, so `request.json()` can consume one copy while `fetch()` consumes the other.
+
+### How cloning works
+
+Cloning does not magically make the original body reusable. It creates another `Request` whose body reads from a duplicated stream. The runtime buffers and tees the stream under the hood.
+
+That has consequences:
+
+- both copies still consume memory and runtime resources
+- large request bodies may increase memory pressure
+- cloning late is worse than cloning early, because the original may already be consumed
+
+If you know you need to inspect and forward the same payload, clone before any read happens.
+
+### Example: inspect and forward with a modified header
+
+A common pattern is to inspect the body, log a field, and forward the request with an added header:
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const cloned = request.clone();
+    const body = await request.json();
+
+    const upstream = new Request(cloned, {
+      headers: new Headers({
+        ...Object.fromEntries(cloned.headers),
+        "x-request-source": "workers",
+      }),
+    });
+
+    return fetch("https://api.example.com/ingest", upstream);
+  },
+};
+```
+
+If only the headers need to change, `new Request(cloned, init)` is safer than reconstructing from `request` after it has been read.
+
+## Fix 2: buffer the body once with `await request.text()`
+
+If the payload needs to be read multiple times in your own code, buffer it once into a string or `ArrayBuffer`. Then parse or reuse that buffer as needed.
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const rawBody = await request.text();
+
+    const parsed = JSON.parse(rawBody) as { id: string; debug?: boolean };
+    if (parsed.debug) {
+      console.log(`debug request ${parsed.id}`);
+    }
+
+    const forwarded = new Request("https://api.example.com/ingest", {
+      method: request.method,
+      headers: request.headers,
+      body: rawBody,
+    });
+
+    return fetch(forwarded);
+  },
+};
+```
+
+This reads the body once, stores it in memory, and then reuses the buffered value.
+
+### When buffering is better than cloning
+
+Buffering is useful when:
+
+- you need to parse the body and also forward it
+- you need to log the exact raw payload
+- multiple internal functions need the same data
+- you want to normalize the body before sending it onward
+
+It avoids the complexity of passing around a live stream. It also makes the code easier to reason about.
+
+### When to use `await request.arrayBuffer()`
+
+Use `arrayBuffer()` when the body is binary or you need exact bytes.
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const bytes = await request.arrayBuffer();
+
+    const forwarded = new Request(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: bytes,
+    });
+
+    return fetch(forwarded);
+  },
+};
+```
+
+For form submissions and JSON APIs, `text()` is often enough. For file uploads and opaque payloads, `arrayBuffer()` preserves byte-for-byte content.
+
+## Fix 3: read once and reuse the parsed data
+
+If downstream code only needs the parsed fields, do not forward the original body at all. Parse once, then pass the data object through your own functions.
+
+```ts
+type EventPayload = {
+  userId: string;
+  action: string;
+};
+
+function processEvent(payload: EventPayload): string {
+  return `${payload.userId}:${payload.action}`;
+}
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const payload = (await request.json()) as EventPayload;
+    const result = processEvent(payload);
+
+    return new Response(result, {
+      headers: { "content-type": "text/plain" },
+    });
+  },
+};
+```
+
+This is the cleanest solution when the request body is only needed for application logic inside Workers.
+
+Do not force a second body read just to satisfy code structure. If the body has already been parsed into JSON, pass the parsed object to helper functions instead of passing the `Request`.
+
+## What `Request.clone()` cannot solve
+
+Cloning has limits. The clone still represents a streamed body, and the runtime still has to duplicate it.
+
+Important limitations:
+
+- cloning large uploads can increase memory use
+- cloning does not help after the body has already been consumed
+- cloning is unnecessary if only one consumer needs the body
+- cloning a request multiple times multiplies stream handling overhead
+
+For small JSON payloads, cloning is fine. For large file uploads, buffering or cloning may be expensive.
+
+If the request body is large enough that duplicating it is undesirable, the safer pattern is often to avoid body reuse entirely:
+
+- read once
+- extract only the fields you need
+- forward the original request only if you have not consumed it yet
+- otherwise construct a new `Request` from buffered data
+
+## A safe forwarding pattern
+
+If a Worker needs to authenticate, inspect, and then forward a request, the body handling needs to be explicit.
+
+A robust pattern looks like this:
+
+```ts
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const contentType = request.headers.get("content-type") ?? "";
+
+    if (contentType.includes("application/json")) {
+      const cloned = request.clone();
+      const payload = await request.json() as { token?: string };
+
+      if (!payload.token) {
+        return new Response("missing token", { status: 400 });
+      }
+
+      return fetch("https://api.example.com/endpoint", cloned);
+    }
+
+    return fetch("https://api.example.com/endpoint", request);
+  },
+};
+```
+
+This works because the read happens on the clone, not on the request that is forwarded.
+
+If the code must modify the body, buffer it first and build a new `Request` from the buffered data.
+
+## How to detect accidental reuse
+
+The `bodyUsed` property is a direct check.
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    console.log(`before: ${request.bodyUsed}`);
+
+    await request.text();
+
+    console.log(`after: ${request.bodyUsed}`);
+
+    if (request.bodyUsed) {
+      // Do not attempt another body read here.
+    }
+
+    return new Response("ok");
+  },
+};
+```
+
+This is useful when a larger middleware stack makes reuse hard to see. If one layer logs the body and another layer parses it, the second layer will fail unless the request was cloned first.
+
+## Practical guidance
+
+Use `Request.clone()` when two consumers need the same streamed body and the payload is reasonably small.
+
+Use `await request.text()` or `await request.arrayBuffer()` when you need to inspect, parse, and reuse the content yourself. Rebuild a fresh `Request` from the buffered value if you must forward it.
+
+Read once and pass the parsed object through application code when the downstream logic does not need the raw body. That avoids stream reuse entirely and is the most efficient option.
+
+The safest default is simple: if you are going to call `request.json()`, `request.text()`, `request.arrayBuffer()`, or `request.formData()`, do not forward the same `Request` afterward unless you cloned it first. For large bodies, prefer a single read and reuse the parsed data instead of cloning the stream.

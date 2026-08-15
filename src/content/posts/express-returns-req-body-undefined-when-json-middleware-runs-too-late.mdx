@@ -1,0 +1,363 @@
+---
+title: "Express Returns req.body Undefined When JSON Middleware Runs Too Late"
+description: "Fix req.body staying undefined in Express by placing JSON parsing middleware before your route handlers."
+tags: ["express", "body-parser", "middleware", "json", "http"]
+date: Aug 9, 2026
+cell: "express-bodyparser-req-body-undefined::express::middleware-order"
+---
+
+A `POST` handler in Express receives `req.body === undefined`, and any code that reads it throws errors such as `Cannot read properties of undefined (reading 'name')` or `TypeError: req.body is undefined`.
+
+## Why `req.body` starts out undefined
+
+Express does not parse incoming request bodies by default. A request body arrives as a raw byte stream on `IncomingMessage`, and Express leaves it untouched unless body-parsing middleware runs first.
+
+That means `req.body` is not a built-in guarantee. It is populated by middleware such as `express.json()` or `express.urlencoded()`. Without one of those parsers, route handlers see no parsed body object.
+
+The result is simple:
+
+- no parser, no `req.body`
+- parser after the route, still no usable `req.body` inside that route
+- parser before the route, `req.body` is available when the handler runs
+
+This is why middleware order matters in Express.
+
+## The minimal broken setup
+
+A common failing arrangement registers the route before the parser:
+
+```ts
+import express, { Request, Response } from 'express';
+
+const app = express();
+
+app.post('/users', (req: Request, res: Response) => {
+  const name = req.body.name;
+  res.json({ name });
+});
+
+app.use(express.json());
+
+app.listen(3000);
+```
+
+A JSON request such as this:
+
+```bash
+curl -i \
+  -X POST http://localhost:3000/users \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Ada"}'
+```
+
+can fail with:
+
+```text
+TypeError: Cannot read properties of undefined (reading 'name')
+```
+
+The route runs before `express.json()` has had a chance to read and parse the body. By the time the middleware is registered, the request has already passed the point where that route handler executed.
+
+Express middleware is executed in registration order. Once a matching route handler sends a response or completes, later middleware does not retroactively affect that earlier handler.
+
+## How Express middleware order works
+
+Express processes middleware and routes from top to bottom. For each request, it evaluates the stack in the order you registered it.
+
+A body parser like `express.json()` reads the request stream, parses the payload, and attaches the result to `req.body`. If the parser sits before your route, the route sees parsed data. If it sits after, the route sees whatever was there before, which is usually `undefined`.
+
+The important detail is that request bodies are a one-time stream. They are not stored as a reusable object unless middleware reads them and assigns the parsed value. If some earlier middleware or route consumes the stream, later body parsers cannot go back and read it again.
+
+For that reason, the parser must be mounted before any handler that needs `req.body`.
+
+## The correct arrangement
+
+Use `express.json()` before the routes that need JSON, and `express.urlencoded()` before routes that need form submissions.
+
+```ts
+import express, { Request, Response } from 'express';
+
+const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+app.post('/users', (req: Request, res: Response) => {
+  const { name } = req.body as { name?: string };
+  res.json({ name });
+});
+
+app.listen(3000);
+```
+
+With this setup, the same request works:
+
+```bash
+curl -i \
+  -X POST http://localhost:3000/users \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Ada"}'
+```
+
+The handler receives:
+
+```ts
+req.body // { name: 'Ada' }
+```
+
+`express.json()` handles JSON payloads. `express.urlencoded()` handles `application/x-www-form-urlencoded` payloads, which is what HTML forms send by default.
+
+## What `express.json()` actually does
+
+`express.json()` is middleware from Express itself, implemented using the `body-parser` package internally in modern Express versions. It checks the request `Content-Type`, reads the body stream, parses JSON text, and assigns the resulting object to `req.body`.
+
+It only parses requests with a compatible content type. By default, that means `application/json` and related JSON media types.
+
+This matters because a request can contain a body and still not be parsed if the content type does not match. For example:
+
+```bash
+curl -i \
+  -X POST http://localhost:3000/users \
+  -H 'Content-Type: text/plain' \
+  -d '{"name":"Ada"}'
+```
+
+With `express.json()`, that request is not treated as JSON. `req.body` remains `undefined` unless another middleware handles `text/plain`.
+
+If the client sends valid JSON but labels it with the wrong `Content-Type`, parsing does not happen. Express uses the header to decide which parser should run.
+
+## What `express.urlencoded()` does
+
+`express.urlencoded()` parses form-encoded data such as:
+
+```text
+name=Ada&role=admin
+```
+
+This format is commonly produced by browser forms with `method="post"` and no `enctype` override.
+
+Example:
+
+```ts
+import express, { Request, Response } from 'express';
+
+const app = express();
+
+app.use(express.urlencoded({ extended: false }));
+
+app.post('/profile', (req: Request, res: Response) => {
+  res.json({
+    name: req.body.name,
+    role: req.body.role,
+  });
+});
+
+app.listen(3000);
+```
+
+Request:
+
+```bash
+curl -i \
+  -X POST http://localhost:3000/profile \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'name=Ada&role=admin'
+```
+
+`extended: false` uses the built-in `querystring` parser for simple key-value pairs. `extended: true` uses the `qs` package, which supports nested objects and arrays. If you need nested form data such as `user[name]=Ada`, use `extended: true`.
+
+## Why the `Content-Type` header controls parsing
+
+The parser middleware inspects `req.headers['content-type']`. It does not try every parser on every request. That would be wasteful and ambiguous.
+
+Examples:
+
+- `application/json` -> `express.json()`
+- `application/x-www-form-urlencoded` -> `express.urlencoded()`
+- `multipart/form-data` -> not handled by either one; use `multer`, `busboy`, or a similar multipart parser
+- `text/plain` -> not handled by default JSON or URL-encoded middleware
+
+This is why a request can be syntactically valid but still leave `req.body` undefined. The body parser selected by your middleware stack does not match the request’s content type.
+
+A route that expects JSON should also require clients to send the matching header:
+
+```bash
+-H 'Content-Type: application/json'
+```
+
+Without it, `express.json()` may skip the request.
+
+## A minimal working JSON example
+
+This is the smallest useful arrangement for JSON POST requests.
+
+```ts
+import express, { Request, Response } from 'express';
+
+const app = express();
+
+app.use(express.json());
+
+app.post('/users', (req: Request, res: Response) => {
+  const body = req.body as { name?: string; email?: string };
+
+  if (typeof body.name !== 'string') {
+    return res.status(400).json({ error: 'name is required' });
+  }
+
+  res.status(201).json({
+    name: body.name,
+    email: body.email ?? null,
+  });
+});
+
+app.listen(3000, () => {
+  console.log('Listening on port 3000');
+});
+```
+
+Run it with:
+
+```bash
+npm install express
+npm install --save-dev typescript @types/express @types/node tsx
+npx tsx server.ts
+```
+
+Test it with:
+
+```bash
+curl -i \
+  -X POST http://localhost:3000/users \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Ada","email":"ada@example.com"}'
+```
+
+The response should be a `201` with the parsed data.
+
+## Common failure modes
+
+### Middleware registered after routes
+
+This is the most common cause. The parser needs to be above the route declaration.
+
+```ts
+app.post('/users', handler);
+app.use(express.json());
+```
+
+This does not work for `req.body` inside `handler`.
+
+### Missing `Content-Type`
+
+If the client sends JSON without `Content-Type: application/json`, the parser may not run.
+
+```bash
+curl -X POST http://localhost:3000/users -d '{"name":"Ada"}'
+```
+
+Depending on the client, `curl` may default to `application/x-www-form-urlencoded` or another type unless you set the header explicitly.
+
+### Using the wrong parser
+
+`express.urlencoded()` does not parse JSON. `express.json()` does not parse form-encoded bodies. Each middleware handles a different wire format.
+
+### Multipart form uploads
+
+Neither built-in parser handles `multipart/form-data`. File uploads and mixed form fields need a multipart parser.
+
+### Empty body on `GET` or `HEAD`
+
+`GET` requests usually do not include a body, and many clients or proxies ignore one. If you are expecting input, use `POST`, `PUT`, or `PATCH`.
+
+## Parsing limits and options
+
+`express.json()` and `express.urlencoded()` accept options that affect behavior.
+
+JSON parser example:
+
+```ts
+app.use(express.json({
+  limit: '1mb',
+  strict: true,
+}));
+```
+
+`limit` protects the server from oversized bodies. `strict: true` accepts only arrays and objects, not primitive JSON values such as `"hello"` or `123`.
+
+URL-encoded parser example:
+
+```ts
+app.use(express.urlencoded({
+  extended: true,
+  limit: '1mb',
+}));
+```
+
+If requests are large and suddenly stop parsing, the `limit` may be too low. In that case, Express can return a `413 Payload Too Large`.
+
+## Error handling when the JSON is invalid
+
+When `express.json()` sees invalid JSON, it does not set `req.body`. Instead, it triggers an error that Express forwards to error-handling middleware or a default error response.
+
+Example invalid request:
+
+```bash
+curl -i \
+  -X POST http://localhost:3000/users \
+  -H 'Content-Type: application/json' \
+  -d '{"name":}'
+```
+
+The parser typically reports a `SyntaxError` such as:
+
+```text
+SyntaxError: Unexpected token } in JSON at position 8
+```
+
+That is a different problem from `req.body` being undefined. In this case, the parser ran, but parsing failed.
+
+## Verifying the request pipeline
+
+If `req.body` is still undefined, check these items in order:
+
+1. `app.use(express.json())` appears before the route.
+2. The request uses `Content-Type: application/json`.
+3. The payload is valid JSON.
+4. The route uses `POST`, `PUT`, or `PATCH`, not `GET` for a body-dependent operation.
+5. No earlier middleware ends the response before the body parser runs.
+6. No custom middleware consumes the stream before `express.json()`.
+
+A simple debugging route can confirm what the server sees:
+
+```ts
+app.post('/debug', (req, res) => {
+  res.json({
+    contentType: req.headers['content-type'],
+    body: req.body,
+  });
+});
+```
+
+If `contentType` is not JSON, the parser may be skipping the request. If the content type is correct but `body` is still undefined, check middleware order.
+
+## Practical fix
+
+Prefer this arrangement:
+
+```ts
+import express from 'express';
+
+const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+app.post('/users', (req, res) => {
+  res.json(req.body);
+});
+
+app.listen(3000);
+```
+
+Place body-parsing middleware before all routes that depend on `req.body`. Use `express.json()` for JSON requests and `express.urlencoded()` for form submissions. Make sure clients send the matching `Content-Type` header. That keeps `req.body` populated and avoids the `undefined` errors that appear when Express receives unparsed request data.

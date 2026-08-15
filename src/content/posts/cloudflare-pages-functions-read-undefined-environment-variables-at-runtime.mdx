@@ -1,0 +1,321 @@
+---
+title: "Cloudflare Pages Functions Read undefined Environment Variables at Runtime"
+description: "Make Cloudflare Pages Functions see bound secrets and vars instead of undefined values."
+tags: ["cloudflare-pages", "functions", "environment-variables", "wrangler", "edge"]
+date: Aug 13, 2026
+cell: "pages-functions-env-undefined::cloudflare-pages::runtime-secrets"
+---
+
+Pages Functions return `undefined` for environment bindings at runtime, and code such as `console.log(process.env.MY_SECRET)` or `process.env.API_URL` does not produce the bound value.
+
+## Why this happens
+
+Cloudflare Pages Functions do not use Node.js `process.env` as the source of runtime configuration. The runtime injects bindings into the request context, and those bindings are read from the `env` object that Cloudflare passes to the handler.
+
+That means a Pages Function can see secrets and variables only if:
+
+- the binding exists in the Pages project configuration
+- the binding name matches exactly
+- the code reads from the runtime `env` object, not from `process.env`
+
+When `process.env.MY_SECRET` is `undefined`, the cause is usually not that the value is missing from the deployment. It is that the value was never exposed through the Node-style environment interface in the first place.
+
+Cloudflare’s Pages deployment model is different from a traditional Node process. Pages builds your site, then serves Functions in the Cloudflare runtime. During request handling, the platform provides the function with a per-request environment object that contains:
+
+- variables declared in the Pages project
+- secrets added in the dashboard or with the CLI
+- service bindings and other runtime bindings
+
+That runtime model is why code that works in a local Node script can fail in a Pages Function.
+
+## The runtime binding model
+
+Pages Functions receive a handler `env` object through the function signature or through `context.env`. The value is not read from a global process environment.
+
+A typical Function looks like this:
+
+```ts
+export const onRequestGet: PagesFunction = async (context) => {
+  const apiUrl = context.env.API_URL;
+  const secret = context.env.MY_SECRET;
+
+  return new Response(JSON.stringify({ apiUrl, secret }), {
+    headers: { "content-type": "application/json" },
+  });
+};
+```
+
+In this model, `API_URL` and `MY_SECRET` are binding names. They must match the names configured in the Pages project.
+
+If you write this instead:
+
+```ts
+export const onRequestGet: PagesFunction = async () => {
+  const apiUrl = process.env.API_URL;
+  const secret = process.env.MY_SECRET;
+
+  return new Response(JSON.stringify({ apiUrl, secret }), {
+    headers: { "content-type": "application/json" },
+  });
+};
+```
+
+the values are usually `undefined` in Pages Functions, even when the same variables are configured in the project.
+
+The reason is simple: the Pages Function runtime is not a normal Node server process with a populated `process.env`. The values are injected into the function context for each request.
+
+## What to configure in the Pages project
+
+Pages variables and secrets must be declared in the Pages project, not only in your shell and not only in a local `.env` file.
+
+You can set them in the Cloudflare dashboard under the Pages project settings, or with the Wrangler CLI.
+
+For example, to add a variable with Wrangler:
+
+```bash
+wrangler pages deployment secret put MY_SECRET --project-name my-pages-app
+```
+
+For non-secret variables, use the Pages variables UI in the dashboard or the equivalent Wrangler Pages command for your setup. The important point is that the binding name becomes part of the runtime contract.
+
+If the project defines `API_URL`, but the code reads `api_url` or `APIURL`, the runtime returns `undefined`. Binding names are exact and case-sensitive.
+
+This also applies to secrets. A secret named `DATABASE_URL` is not the same as `database_url`.
+
+## How to read bindings in a Pages Function
+
+Prefer the function `env` argument or `context.env` in all Pages Functions.
+
+A standard TypeScript example:
+
+```ts
+export const onRequestGet: PagesFunction = async (context) => {
+  const { API_URL, MY_SECRET } = context.env;
+
+  if (!API_URL) {
+    return new Response("Missing API_URL", { status: 500 });
+  }
+
+  return new Response(`API_URL=${API_URL}; secret=${MY_SECRET ? "set" : "unset"}`);
+};
+```
+
+If you want to keep the handler signature explicit, you can destructure `env` from the context object:
+
+```ts
+type Env = {
+  API_URL: string;
+  MY_SECRET: string;
+};
+
+export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+  return new Response(env.API_URL);
+};
+```
+
+This is the cleanest pattern because it keeps the runtime dependency visible. It also helps TypeScript catch missing or misspelled references if you define the `Env` type accurately.
+
+## Why `process.env` behaves differently
+
+In Node.js applications, `process.env` is a process-wide object populated by the operating system and the runtime process launcher. A server started with `node server.js` can read `process.env.API_URL` because Node owns that process environment.
+
+Pages Functions run in the Cloudflare edge runtime, not in a long-lived Node process. The platform isolates requests and injects the bindings required for that invocation. The function gets what Cloudflare exposes in the handler context.
+
+That difference matters because `process.env` is not the canonical binding source in the Pages Functions runtime. Some compatibility layers may expose limited Node-like APIs, but the binding contract for Pages remains the handler `env` object.
+
+If code depends on `process.env`, it couples the function to local Node conventions instead of the platform’s runtime contract.
+
+## Missing bindings return `undefined`
+
+If a binding is absent from the Pages project, the handler still runs. The property simply resolves to `undefined`.
+
+For example:
+
+```ts
+export const onRequestGet: PagesFunction = async ({ env }) => {
+  const token = env.GITHUB_TOKEN;
+
+  return new Response(token ?? "undefined");
+};
+```
+
+If `GITHUB_TOKEN` is not configured for that Pages deployment, the response will be `undefined`.
+
+The same result appears when:
+
+- the binding exists in one environment, such as Preview, but not in Production
+- the binding was added under a different name
+- the code reads from the wrong namespace or object
+- local development uses a different env file than the deployed project
+
+Because missing values usually do not throw immediately, the failure can appear downstream. A fetch to a third-party API may fail with `401 Unauthorized`, `403 Forbidden`, or `TypeError: fetch failed` after it constructs a request with an empty token.
+
+That is why validating the binding early is useful.
+
+```ts
+export const onRequestGet: PagesFunction = async ({ env }) => {
+  if (!env.API_URL) {
+    throw new Error("Missing required binding: API_URL");
+  }
+
+  const response = await fetch(env.API_URL);
+  return response;
+};
+```
+
+Failing fast makes the problem easier to attribute to configuration rather than to the downstream service.
+
+## Exact name matching
+
+Binding names are case-sensitive and must match exactly between configuration and code.
+
+These are different bindings:
+
+- `API_URL`
+- `Api_Url`
+- `api_url`
+
+If the Pages project contains `API_URL` and the code uses `env.Api_Url`, the result is `undefined`.
+
+The same rule applies when you derive values from environment-like names in helper functions. Keep the binding names in one place if possible.
+
+```ts
+const bindingNames = {
+  apiUrl: "API_URL",
+  secret: "MY_SECRET",
+} as const;
+
+export const onRequestGet: PagesFunction = async ({ env }) => {
+  const apiUrl = env[bindingNames.apiUrl];
+  const secret = env[bindingNames.secret];
+
+  return new Response(JSON.stringify({ apiUrl, hasSecret: Boolean(secret) }));
+};
+```
+
+Using a shared constant avoids typos and makes renames explicit.
+
+## Production versus local development
+
+`wrangler pages dev` can differ from production in how bindings are supplied.
+
+Local development commonly reads values from local configuration files or from a development environment file, while production reads the bindings configured in the Pages project. If those two sources are not aligned, local output can disagree with deployed output.
+
+For example, you might run:
+
+```bash
+wrangler pages dev ./dist
+```
+
+and the function reads values from local settings, but the production deployment uses a different set of bindings in the Pages project dashboard.
+
+When debugging, verify both environments separately:
+
+- local dev through `wrangler pages dev`
+- deployed production or preview deployment in the Pages dashboard
+
+If local values work and production values are `undefined`, the issue is usually in Pages project configuration, not in the function code.
+
+If production works and local dev is `undefined`, the local environment probably is not loading the same bindings that production has.
+
+A common pattern is to keep a local `.dev.vars` file or equivalent development configuration for Wrangler, but that file does not automatically sync with the Pages project’s deployment bindings. Treat local configuration as a separate input.
+
+## Confirm the binding is available at runtime
+
+To confirm that the runtime is receiving the binding, log the relevant keys, not the secret values.
+
+```ts
+export const onRequestGet: PagesFunction = async ({ env }) => {
+  const keys = Object.keys(env).sort();
+  return new Response(JSON.stringify(keys, null, 2), {
+    headers: { "content-type": "application/json" },
+  });
+};
+```
+
+This returns the binding names visible to the function. It helps verify whether a variable is present at all.
+
+Do not log secret values in production logs. Checking for presence is enough.
+
+If a required binding is missing from the key list, the Pages project configuration is incomplete or the wrong environment is being checked.
+
+## Using TypeScript to catch mistakes
+
+TypeScript can reduce binding-name errors, but only if the `Env` type is defined correctly.
+
+```ts
+interface Env {
+  API_URL: string;
+  MY_SECRET: string;
+}
+
+export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+  const url = new URL(env.API_URL);
+  const auth = env.MY_SECRET;
+
+  return new Response(JSON.stringify({ host: url.host, hasAuth: Boolean(auth) }));
+};
+```
+
+This helps in two ways:
+
+- `env.API_URL` and `env.MY_SECRET` are available in autocomplete
+- misspelled property names are compile-time errors
+
+TypeScript cannot prove that the Pages project actually contains the binding, so runtime checks are still necessary. It can only validate the code against the declared type.
+
+For required values, keep both the static type and a runtime guard.
+
+```ts
+function requireBinding(value: string | undefined, name: string): string {
+  if (!value) {
+    throw new Error(`Missing required binding: ${name}`);
+  }
+  return value;
+}
+
+export const onRequestGet: PagesFunction = async ({ env }) => {
+  const apiUrl = requireBinding(env.API_URL, "API_URL");
+  return new Response(apiUrl);
+};
+```
+
+## Common failure modes
+
+The most common reasons for `undefined` bindings in Pages Functions are:
+
+- reading from `process.env` instead of `context.env`
+- configuring the variable in the wrong Pages environment, such as Preview instead of Production
+- misspelling the binding name
+- expecting a local `.env` file to exist in production
+- assuming a secret added in one project is available in another project
+- using a helper function that reads from the wrong object
+
+Each one produces the same symptom: the value is absent when the handler runs.
+
+To debug systematically, check the binding in the Pages dashboard, confirm the exact casing, and inspect the runtime `env` object in the function.
+
+## Recommended pattern
+
+Use the handler `env` object for every Pages Function binding, declare bindings in the Pages project, and validate required values on startup or at the top of the handler.
+
+A minimal production-safe version looks like this:
+
+```ts
+interface Env {
+  API_URL: string;
+}
+
+export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+  if (!env.API_URL) {
+    return new Response("Missing API_URL", { status: 500 });
+  }
+
+  const data = await fetch(env.API_URL);
+  return data;
+};
+```
+
+For local development, make sure `wrangler pages dev` is pointed at the same kind of bindings you expect in production. For deployed code, verify the Pages project settings first, because the runtime only exposes what the deployment has been configured to inject.
+
+The practical fix is to read bindings from `context.env` or the handler `env` object, not from `process.env`, and to keep the binding name identical in Pages configuration and code. That pattern matches Cloudflare Pages’ runtime model and prevents `undefined` values from appearing when the function runs.
