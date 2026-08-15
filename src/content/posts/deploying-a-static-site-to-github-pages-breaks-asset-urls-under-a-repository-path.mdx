@@ -1,0 +1,405 @@
+---
+title: "Deploying a Static Site to GitHub Pages Breaks Asset URLs Under a Repository Path"
+description: "Why a site works locally but 404s on GitHub Pages when assets resolve from the domain root instead of the repo path."
+tags: ["github-pages", "static-site", "deploy", "asset-paths", "base-path"]
+date: Aug 8, 2026
+cell: "static-site-deploy-base-path::github-pages::asset-resolution"
+---
+
+GitHub Pages deployment breaks CSS, JS, and image links under a repository subpath, and the browser console shows `GET https://username.github.io/style.css 404 (Not Found)` or `GET https://username.github.io/assets/app.js 404 (Not Found)` while the site itself loads from `https://username.github.io/repo-name/`.
+
+## What is failing
+
+The page document is reachable, but asset requests go to the wrong URL.
+
+A site hosted at `https://username.github.io/repo-name/` is not served from `/`. On GitHub Pages, the repository name is often part of the public path. That means an asset referenced as `/assets/app.js` is requested from `https://username.github.io/assets/app.js`, not from `https://username.github.io/repo-name/assets/app.js`.
+
+The result is usually one of these browser errors:
+
+- `GET https://username.github.io/assets/app.css 404 (Not Found)`
+- `GET https://username.github.io/static/logo.svg 404 (Not Found)`
+- `Failed to load module script: The server responded with a MIME type of "text/html" for a module script`
+- `Refused to apply style from 'https://username.github.io/assets/app.css' because its MIME type ('text/html') is not a supported stylesheet MIME type`
+
+The exact text varies depending on the asset type. The root cause is the same: the generated HTML points at `/`, but the site is served from a subpath.
+
+## Why GitHub Pages uses a subpath
+
+GitHub Pages has two common publication modes:
+
+- a user or organization site at `https://username.github.io/`
+- a project site at `https://username.github.io/repo-name/`
+
+The second case is the problem here. The repository is mounted under `/repo-name/`, not `/`. Every absolute URL that starts with `/` is resolved against the domain root, not the repository path.
+
+That matters for:
+
+- `<link rel="stylesheet" href="/assets/app.css">`
+- `<script src="/assets/app.js">`
+- `<img src="/images/logo.png">`
+- CSS `url(/fonts/inter.woff2)`
+- dynamic imports such as `import('/chunks/vendor.js')`
+
+If build output embeds those root-relative URLs, the browser will request the wrong location after deployment.
+
+## Relative URLs versus absolute URLs
+
+There are three URL styles that matter in static sites.
+
+A relative URL like `assets/app.css` is resolved relative to the current page URL. On `https://username.github.io/repo-name/index.html`, the browser requests `https://username.github.io/repo-name/assets/app.css`.
+
+A root-relative URL like `/assets/app.css` is resolved from the domain root. On GitHub Pages project sites, that becomes `https://username.github.io/assets/app.css`, which is usually wrong.
+
+An absolute URL like `https://username.github.io/repo-name/assets/app.css` works, but it is less portable and often unsuitable for a repo name that changes between environments.
+
+For GitHub Pages project sites, the generated files usually need a base prefix such as `/repo-name/`.
+
+## The HTML base path is part of the build output
+
+The browser does not infer the repository path from GitHub Pages. The build system must bake it into the emitted HTML and any generated asset URLs.
+
+For a static site, the relevant output may include:
+
+- `index.html`
+- CSS files with `url(...)` references
+- JavaScript bundles that import chunks or assets
+- manifest files such as `manifest.webmanifest`
+- SVG references from `use`, `img`, or `background-image`
+
+If the HTML says `/assets/app.css`, the browser will never guess `/repo-name/assets/app.css`. The build has to emit the correct prefix up front.
+
+## Example of the broken output
+
+A typical broken generated `index.html` looks like this:
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/assets/index.css" />
+    <script type="module" src="/assets/index.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+```
+
+This works when the site is served from `http://localhost:4173/` or from a domain root, but not from a GitHub Pages project URL.
+
+When deployed at `https://username.github.io/repo-name/`, the browser still requests `/assets/index.css` and `/assets/index.js`.
+
+## The correct shape of asset URLs
+
+The same file should be emitted with the repository path embedded:
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/repo-name/assets/index.css" />
+    <script type="module" src="/repo-name/assets/index.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+```
+
+If the site is deployed to a nested path, every emitted root-relative URL needs that prefix.
+
+The exact mechanism differs by framework and bundler.
+
+## Framework and bundler base-path settings
+
+Most modern tools have a specific setting for the public base path.
+
+### Vite
+
+Vite uses the `base` option in `vite.config.ts`.
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  base: '/repo-name/',
+})
+```
+
+That setting affects:
+
+- generated asset URLs in `index.html`
+- imported assets in JavaScript and CSS
+- chunk loading paths for dynamic imports
+- URLs in the production build output
+
+Build with:
+
+```sh
+npm run build
+```
+
+If you need local development to use `/` but production to use the repository path, set `base` conditionally:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  base: process.env.NODE_ENV === 'production' ? '/repo-name/' : '/',
+})
+```
+
+For Vite, the simplest and most reliable setup is usually to set `base: '/repo-name/'` directly if the repository name is fixed.
+
+### React Router with Vite
+
+If client-side routing is used, the router also needs the same base path.
+
+```tsx
+import { BrowserRouter } from 'react-router-dom'
+
+export function App() {
+  return (
+    <BrowserRouter basename="/repo-name">
+      <Main />
+    </BrowserRouter>
+  )
+}
+```
+
+Without `basename`, navigation may work on the first page load but fail on refresh or deep links.
+
+### Create React App
+
+Create React App uses the `homepage` field in `package.json`.
+
+```json
+{
+  "homepage": "https://username.github.io/repo-name/",
+  "scripts": {
+    "build": "react-scripts build"
+  }
+}
+```
+
+That causes `react-scripts build` to embed the correct prefix into generated asset paths.
+
+### Next.js static export
+
+Next.js needs both `basePath` and `assetPrefix` for GitHub Pages project sites when exporting static assets.
+
+```js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'export',
+  basePath: '/repo-name',
+  assetPrefix: '/repo-name/',
+}
+
+module.exports = nextConfig
+```
+
+A mismatch here often produces working HTML with broken CSS and chunk loads.
+
+### Astro
+
+Astro uses the `site` and `base` configuration values.
+
+```ts
+import { defineConfig } from 'astro/config'
+
+export default defineConfig({
+  site: 'https://username.github.io',
+  base: '/repo-name',
+})
+```
+
+`site` helps with canonical URLs and `base` controls the deployed path.
+
+### Eleventy
+
+Eleventy can emit paths using a configured path prefix.
+
+```js
+module.exports = function (eleventyConfig) {
+  return {
+    pathPrefix: '/repo-name/',
+  }
+}
+```
+
+Template references then need to use that prefix when generating links.
+
+## Why relative asset URLs can still fail
+
+Relative URLs help only if they are actually relative to the right page location.
+
+For example:
+
+```html
+<link rel="stylesheet" href="assets/app.css" />
+```
+
+This is resolved relative to the current document URL. It works if the page is at `https://username.github.io/repo-name/`, but it can break if the app is served from a different nested route such as `https://username.github.io/repo-name/docs/guide/`.
+
+That is why many frameworks prefer a configured base path rather than ad hoc relative links. The build tool can rewrite all asset references consistently.
+
+Relative URLs also interact badly with client-side routing if the app uses nested routes. A path such as `/repo-name/about/` may cause a relative `assets/app.css` reference to resolve to `/repo-name/about/assets/app.css`, which is wrong. Root-relative URLs avoid that specific problem, but they must still include the repository prefix.
+
+## CSS `url(...)` and JavaScript imports are affected too
+
+The problem is not limited to HTML tags.
+
+A CSS file may contain:
+
+```css
+.hero {
+  background-image: url('/images/hero.png');
+}
+```
+
+On a GitHub Pages project site, that requests `https://username.github.io/images/hero.png`, not `https://username.github.io/repo-name/images/hero.png`.
+
+Likewise, JavaScript can trigger broken requests:
+
+```ts
+const modulePath = '/chunks/chart.js'
+await import(modulePath)
+```
+
+If the bundler does not rewrite that path, the browser fetches from the domain root.
+
+Many bundlers rewrite imported assets only when the asset is referenced through the bundler pipeline, not when a literal string is assembled by hand. For example, in Vite, `new URL('./image.png', import.meta.url)` is handled during build, while a hard-coded `'/image.png'` is not automatically adjusted.
+
+## Correct and incorrect asset references
+
+The following patterns are usually safe when the build is configured for the subpath:
+
+```html
+<link rel="stylesheet" href="/repo-name/assets/app.css" />
+<script type="module" src="/repo-name/assets/app.js"></script>
+<img src="/repo-name/images/logo.svg" alt="Logo" />
+```
+
+The following patterns usually break on project pages unless rewritten by the build:
+
+```html
+<link rel="stylesheet" href="/assets/app.css" />
+<script type="module" src="/assets/app.js"></script>
+<img src="/images/logo.svg" alt="Logo" />
+```
+
+The following patterns are safe only if the current page location is exactly what the path expects:
+
+```html
+<link rel="stylesheet" href="assets/app.css" />
+<img src="images/logo.svg" alt="Logo" />
+```
+
+## Verifying the deployment path
+
+You can confirm the problem directly in browser devtools.
+
+Open the Network tab and reload the page. If the site is deployed under a repository path and the asset URLs are wrong, the requests will show paths like:
+
+- `https://username.github.io/assets/app.css`
+- `https://username.github.io/assets/app.js`
+
+When the page URL is `https://username.github.io/repo-name/`, those requests are missing `/repo-name/`.
+
+You can also inspect the generated HTML in the deployed site and search for `href="/` or `src="/`. Any asset reference that starts at the domain root is a candidate for failure on project pages.
+
+A quick command-line check can help too:
+
+```sh
+curl -s https://username.github.io/repo-name/ | grep -E 'href="/|src="/'
+```
+
+If the output shows root-relative asset URLs, the build is not embedding the repository prefix.
+
+## GitHub Pages configuration details
+
+For project sites, the repository is often published from a branch such as `gh-pages` or from a `/docs` directory using GitHub Pages settings.
+
+The hosting method does not change the URL structure. A site published from `gh-pages` can still be served at `https://username.github.io/repo-name/`. That means the same base-path problem applies.
+
+If you use GitHub Actions, the deployment workflow typically uploads the built static files to Pages. The workflow does not rewrite asset URLs unless your build tool already did so.
+
+A typical Vite deployment workflow looks like this:
+
+```yaml
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+The workflow is not the fix. The build configuration is.
+
+## Avoiding recurrence
+
+The safest approach is to centralize the public base path in the build tool and make the router use the same value when applicable.
+
+For a GitHub Pages project site:
+
+- set the bundler base path to `'/repo-name/'`
+- set the router `basename` or equivalent to `'/repo-name'`
+- avoid hard-coded root-relative asset URLs such as `/assets/...`
+- let the bundler emit asset URLs instead of hand-writing them
+- verify the built `index.html` and CSS output before deployment
+
+If the repository name can change or the same code is deployed to multiple environments, parameterize the base path with an environment variable and set it per target.
+
+For Vite, that can look like this:
+
+```ts
+import { defineConfig } from 'vite'
+
+const base = process.env.VITE_BASE_PATH ?? '/repo-name/'
+
+export default defineConfig({
+  base,
+})
+```
+
+Then build with:
+
+```sh
+VITE_BASE_PATH=/repo-name/ npm run build
+```
+
+## Practical takeaway
+
+Prefer a framework or bundler base-path setting over manual URL edits. It ensures the build output, chunk loader, CSS `url(...)` references, and HTML asset links all use the same prefix. That is the stable fix for GitHub Pages project sites, because the browser needs the repository subpath embedded in the generated files, not inferred at runtime.
