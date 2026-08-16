@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-16T20:09:02.322Z",
     "ideas": [
         {
-            "cell": "custom-domain-misconfigured::cloudflare-pages::dns-and-hostname",
-            "title": "Point a Custom Domain at Cloudflare Pages Without Leaving the Site on the Default Subdomain",
-            "description": "Cloudflare Pages stays on the generated pages.dev hostname until DNS and the Pages custom domain are configured together.",
-            "tags": [
-                "cloudflare-pages",
-                "dns",
-                "custom-domain",
-                "ssl",
-                "deployment"
-            ],
-            "angle": "Describe how Cloudflare Pages binds hostnames and why DNS alone does not attach a custom domain to a project. Explain the required steps in Pages and the DNS record setup, including apex and www handling, so the reader can verify the hostname, certificate, and route are all aligned.",
-            "slug": "point-a-custom-domain-at-cloudflare-pages-without-leaving-the-site-on-the-default-subdomain"
-        },
-        {
             "cell": "metro-transformer-crash::react-native::syntax-in-shared-module",
             "title": "React Native Fails to Bundle When a Shared Module Imports Node Built-ins",
             "description": "Metro stops bundling when shared code pulls in fs, path, or crypto that the React Native runtime cannot provide.",
@@ -130,19 +116,19 @@
     ],
     "drafted": [
         {
-            "cell": "document-is-not-defined::sveltekit::ssr-component-access",
-            "title": "SvelteKit Throws ReferenceError: document is not defined During Server-Side Rendering",
-            "description": "SvelteKit SSR crashes when a component touches document before the browser runs it; isolate browser-only code and gate it behind client checks.",
+            "cell": "custom-domain-misconfigured::cloudflare-pages::dns-and-hostname",
+            "title": "Point a Custom Domain at Cloudflare Pages Without Leaving the Site on the Default Subdomain",
+            "description": "Cloudflare Pages stays on the generated pages.dev hostname until DNS and the Pages custom domain are configured together.",
             "tags": [
-                "sveltekit",
-                "ssr",
-                "document",
-                "browser-api",
-                "javascript"
+                "cloudflare-pages",
+                "dns",
+                "custom-domain",
+                "ssl",
+                "deployment"
             ],
-            "angle": "Explain that SvelteKit renders components on the server first, so any top-level reference to document fails before hydration. Cover the mechanisms that trigger it, such as module initialization, load functions, and shared utilities, then show the correct fixes: onMount, browser guards, and moving DOM access into client-only code.",
-            "slug": "sveltekit-throws-referenceerror-document-is-not-defined-during-server-side-rendering",
-            "draftedAt": "2026-08-15T22:13:40.716Z"
+            "angle": "Describe how Cloudflare Pages binds hostnames and why DNS alone does not attach a custom domain to a project. Explain the required steps in Pages and the DNS record setup, including apex and www handling, so the reader can verify the hostname, certificate, and route are all aligned.",
+            "slug": "point-a-custom-domain-at-cloudflare-pages-without-leaving-the-site-on-the-default-subdomain",
+            "draftedAt": "2026-08-16T22:13:18.986Z"
         }
     ]
 }
