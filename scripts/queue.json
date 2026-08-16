@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-08-09T20:18:26.399Z",
+    "generatedAt": "2026-08-16T20:09:02.322Z",
     "ideas": [
         {
             "cell": "custom-domain-misconfigured::cloudflare-pages::dns-and-hostname",
@@ -56,6 +56,76 @@
             ],
             "angle": "Explain how path aliases and workspace links can bypass the package entry point that bundlers expect. Cover why the build resolves differently from TypeScript, how that affects exports, and how to fix it with package.json exports, Vite alias rules, or narrower tsconfig paths.",
             "slug": "vite-resolves-the-wrong-package-in-a-pnpm-workspace-because-tsconfig-paths-leak-into-build-imports"
+        },
+        {
+            "cell": "asset-manifest-404::vite::preview-build-paths",
+            "title": "Vite Serves 404s for Assets After a Production Build Because the Base Path Is Wrong",
+            "description": "Built assets 404 in production when Vite emits URLs for the wrong base path.",
+            "tags": [
+                "vite",
+                "assets",
+                "build",
+                "deployment",
+                "base-path"
+            ],
+            "angle": "Cover how Vite rewrites asset URLs from `base` during build and why a root-relative app breaks under a subpath or CDN prefix. Show how to inspect the generated `dist/index.html`, set `base` correctly, and verify chunk and CSS URLs in preview and production.",
+            "slug": "vite-serves-404s-for-assets-after-a-production-build-because-the-base-path-is-wrong"
+        },
+        {
+            "cell": "ssr-window-referenceerror::astro::client-only-module-import",
+            "title": "Astro Throws ReferenceError: window is not defined When a Browser-Only Import Runs on the Server",
+            "description": "Astro SSR crashes when a module touches `window` during server rendering.",
+            "tags": [
+                "astro",
+                "ssr",
+                "window",
+                "browser-only",
+                "islands"
+            ],
+            "angle": "Describe why Astro executes frontmatter and imported modules in Node during SSR, and how any top-level `window` access fails before hydration. Show the difference between server-only code, client directives like `client:load`, and guarding browser APIs inside `onMount`-style or event-driven code.",
+            "slug": "astro-throws-referenceerror-window-is-not-defined-when-a-browser-only-import-runs-on-the-server"
+        },
+        {
+            "cell": "params-null-404::hono::wildcard-route-order",
+            "title": "Hono Cannot Match `c.req.param()` When a Static Route Shadows a Dynamic One",
+            "description": "Route order in Hono can hide dynamic params and make `c.req.param()` return empty values.",
+            "tags": [
+                "hono",
+                "routing",
+                "params",
+                "path-matching",
+                "server"
+            ],
+            "angle": "Cover Hono’s route precedence, how a static path can shadow a parameterized route, and why the handler still runs without the expected params. Explain how to reorder routes, use distinct prefixes, and confirm the matched pattern before reading params.",
+            "slug": "hono-cannot-match-c-req-param-when-a-static-route-shadows-a-dynamic-one"
+        },
+        {
+            "cell": "cli-package-json-not-found::node::binary-entrypoint",
+            "title": "Node.js Fails to Start a Published CLI with Error: Cannot find module '/package.json'",
+            "description": "A packaged CLI crashes because the entrypoint resolves package metadata from the wrong location.",
+            "tags": [
+                "node",
+                "cli",
+                "npm",
+                "packaging",
+                "esm"
+            ],
+            "angle": "Explain how bundled CLIs often read `package.json` through `import.meta.url`, `__dirname`, or a relative path that breaks after publish. Show how the module layout changes in `npm pack`, why the file is missing from the tarball or resolved from CWD, and how to fix the path handling and package files.",
+            "slug": "node-js-fails-to-start-a-published-cli-with-error-cannot-find-module-package-json"
+        },
+        {
+            "cell": "edge-crypto-unsupported::cloudflare-workers::node-crypto-import",
+            "title": "Cloudflare Workers Reject `crypto.createHash()` with `ReferenceError: crypto is not defined`",
+            "description": "A Node crypto API crashes in Workers because the runtime exposes Web Crypto, not `node:crypto` globals.",
+            "tags": [
+                "cloudflare-workers",
+                "crypto",
+                "edge-runtime",
+                "web-crypto",
+                "nodejs"
+            ],
+            "angle": "Cover the runtime mismatch between Node’s `crypto` module and the Web Crypto API available in Workers. Explain why top-level `crypto.createHash()` or `require('crypto')` fails, what APIs are supported instead, and how to replace hashing with `subtle.digest()` or a compatible library.",
+            "slug": "cloudflare-workers-reject-crypto-createhash-with-referenceerror-crypto-is-not-defined"
         }
     ],
     "drafted": [
