@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-16T20:09:02.322Z",
     "ideas": [
         {
-            "cell": "metro-transformer-crash::react-native::syntax-in-shared-module",
-            "title": "React Native Fails to Bundle When a Shared Module Imports Node Built-ins",
-            "description": "Metro stops bundling when shared code pulls in fs, path, or crypto that the React Native runtime cannot provide.",
-            "tags": [
-                "react-native",
-                "metro",
-                "bundling",
-                "node-core-modules",
-                "javascript"
-            ],
-            "angle": "Explain why React Native’s runtime and Metro resolver do not include Node built-ins, even when a dependency works on web or Node. Cover how to spot the offending import, how transitive dependencies trigger the failure, and how to replace or shim the code with platform-specific modules.",
-            "slug": "react-native-fails-to-bundle-when-a-shared-module-imports-node-built-ins"
-        },
-        {
             "cell": "server-component-fetch-cache::nextjs::unexpected-stale-data",
             "title": "Next.js App Router Serves Stale Data Because a Server Component Fetch Is Cached",
             "description": "Next.js can reuse a server component fetch result unless you set the right cache mode or revalidation behavior.",
@@ -116,19 +102,19 @@
     ],
     "drafted": [
         {
-            "cell": "custom-domain-misconfigured::cloudflare-pages::dns-and-hostname",
-            "title": "Point a Custom Domain at Cloudflare Pages Without Leaving the Site on the Default Subdomain",
-            "description": "Cloudflare Pages stays on the generated pages.dev hostname until DNS and the Pages custom domain are configured together.",
+            "cell": "metro-transformer-crash::react-native::syntax-in-shared-module",
+            "title": "React Native Fails to Bundle When a Shared Module Imports Node Built-ins",
+            "description": "Metro stops bundling when shared code pulls in fs, path, or crypto that the React Native runtime cannot provide.",
             "tags": [
-                "cloudflare-pages",
-                "dns",
-                "custom-domain",
-                "ssl",
-                "deployment"
+                "react-native",
+                "metro",
+                "bundling",
+                "node-core-modules",
+                "javascript"
             ],
-            "angle": "Describe how Cloudflare Pages binds hostnames and why DNS alone does not attach a custom domain to a project. Explain the required steps in Pages and the DNS record setup, including apex and www handling, so the reader can verify the hostname, certificate, and route are all aligned.",
-            "slug": "point-a-custom-domain-at-cloudflare-pages-without-leaving-the-site-on-the-default-subdomain",
-            "draftedAt": "2026-08-16T22:13:18.986Z"
+            "angle": "Explain why React Native’s runtime and Metro resolver do not include Node built-ins, even when a dependency works on web or Node. Cover how to spot the offending import, how transitive dependencies trigger the failure, and how to replace or shim the code with platform-specific modules.",
+            "slug": "react-native-fails-to-bundle-when-a-shared-module-imports-node-built-ins",
+            "draftedAt": "2026-08-17T22:17:04.731Z"
         }
     ]
 }
