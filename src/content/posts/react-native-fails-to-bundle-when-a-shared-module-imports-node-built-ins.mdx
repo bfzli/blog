@@ -1,0 +1,389 @@
+---
+title: "React Native Fails to Bundle When a Shared Module Imports Node Built-ins"
+description: "Metro stops bundling when shared code pulls in fs, path, or crypto that the React Native runtime cannot provide."
+tags: ["react-native", "metro", "bundling", "node-core-modules", "javascript"]
+date: Aug 18, 2026
+cell: "metro-transformer-crash::react-native::syntax-in-shared-module"
+---
+
+Metro bundling fails with `Unable to resolve module fs from path/to/shared/module.ts: fs could not be found within the project or in these directories: node_modules` when React Native code imports a Node built-in such as `fs`, `path`, or `crypto`.
+
+## Why this fails in React Native
+
+React Native does not run on Node.js. Its JavaScript executes in the React Native runtime on iOS and Android, backed by Hermes or JavaScriptCore, not by Node’s module system.
+
+That distinction matters because Node built-ins are not ordinary npm packages. `fs`, `path`, `crypto`, `stream`, `net`, `tls`, and similar modules are part of Node’s runtime API. They are not present in a React Native app unless you explicitly add a compatibility layer.
+
+Metro, the bundler used by React Native, resolves imports statically. When it sees:
+
+```ts
+import fs from 'fs';
+```
+
+it tries to resolve `fs` as a module available to the React Native bundle. Since React Native does not ship Node core modules, resolution fails during bundling.
+
+This is different from web bundlers and different from Node itself:
+
+- In Node, `fs` resolves because Node provides it.
+- In many web builds, `fs` may be stubbed out or replaced by a browser polyfill if the toolchain configures one.
+- In React Native, Metro does not inject Node built-ins by default.
+
+The result is a build-time error, not a runtime `undefined` reference. The bundle cannot be produced because Metro cannot complete module resolution.
+
+## The exact failure pattern
+
+The direct import is the simplest case, but the same error appears when the import is transitive through another package.
+
+A typical error looks like this:
+
+```text
+Unable to resolve module fs from /app/packages/shared/src/index.ts: fs could not be found within the project or in these directories:
+  node_modules
+```
+
+Other built-ins fail in the same way:
+
+```text
+Unable to resolve module path from /app/packages/shared/src/path-utils.ts: path could not be found within the project or in these directories:
+  node_modules
+```
+
+```text
+Unable to resolve module crypto from /app/packages/shared/src/hash.ts: crypto could not be found within the project or in these directories:
+  node_modules
+```
+
+The file path in the message is important. It points to the module Metro was processing when resolution failed. That is not always the file that directly breaks things. It may be a shared module, a utility package, or a dependency several layers deep.
+
+## How Metro resolves imports
+
+Metro builds a dependency graph from each entry point. For every `import` and `require`, it asks its resolver to map the specifier to a file.
+
+For package imports, it checks `node_modules`. For relative imports, it follows the path. For platform-specific files, it applies React Native conventions such as:
+
+- `file.ios.ts`
+- `file.android.ts`
+- `file.native.ts`
+- `file.ts`
+
+Node built-ins are not special-cased as available modules. Metro does not ship a built-in `fs` implementation, and React Native does not expose a file system API under the Node namespace. React Native has its own native APIs and third-party libraries such as `react-native-fs` or `expo-file-system`, but those are different modules with different APIs.
+
+That is why a dependency can work on Node or in a browser build and still fail in React Native. The package may assume one of these environments:
+
+- Node core modules are present.
+- The bundler polyfills Node core modules.
+- The package is never executed on the client side.
+
+None of those assumptions hold in a plain React Native bundle.
+
+## How to find the offending import
+
+The file named in the Metro error is the first place to inspect. Open that file and search for imports of Node built-ins.
+
+A direct usage looks like this:
+
+```ts
+import path from 'path';
+
+export function normalizeName(name: string) {
+  return path.basename(name).toLowerCase();
+}
+```
+
+If the import is not obvious, search the workspace and dependencies. These commands are useful:
+
+```sh
+rg -n "from 'fs'|from \"fs\"|require\\('fs'\\)|require\\(\"fs\"\\)" .
+rg -n "from 'path'|from \"path\"|require\\('path'\\)|require\\(\"path\"\\)" .
+rg -n "from 'crypto'|from \"crypto\"|require\\('crypto'\\)|require\\(\"crypto\"\\)" .
+```
+
+If the failing import is inside a package under `node_modules`, inspect that package’s `package.json`. Many libraries publish separate entry points for browser and Node. Some use conditional exports. Some ship a React Native-compatible build under a different path.
+
+Look for fields such as:
+
+- `main`
+- `module`
+- `browser`
+- `react-native`
+- `exports`
+
+A package can depend on Node built-ins only in its default entry point while exposing a React Native-safe entry point elsewhere. If Metro is resolving the wrong file, the package may need an alias or a version upgrade.
+
+## Transitive dependencies are the common source
+
+The import is often not in application code. A shared library or dependency may pull in a Node-only helper indirectly.
+
+Example structure:
+
+```ts
+// packages/shared/src/index.ts
+export * from './format';
+export * from './hash';
+```
+
+```ts
+// packages/shared/src/hash.ts
+import crypto from 'crypto';
+
+export function hashString(input: string) {
+  return crypto.createHash('sha256').update(input).digest('hex');
+}
+```
+
+A React Native app importing `packages/shared` now inherits the `crypto` dependency, even if the app itself never calls `hashString`.
+
+The same pattern appears with packages that seem platform-neutral:
+
+- date libraries that use `path` or `fs` in CLI helpers
+- utility libraries that load files from disk during initialization
+- authentication SDKs that depend on Node `crypto`
+- markdown or source-processing tools that assume a filesystem
+- compression, tracing, and telemetry packages that use `stream`, `buffer`, or `net`
+
+The dependency graph is the problem. If any imported module reachable from the React Native entry point references a Node built-in, bundling fails.
+
+## Why web-compatible code is not automatically React Native-compatible
+
+A package can be valid in the browser, in Node, or in both, while still failing in React Native.
+
+Web bundlers sometimes replace Node built-ins with stubs or browser equivalents. For example, a web build may map `path` to a browser-friendly polyfill or remove code behind dead branches. React Native Metro does not provide the same default polyfill set.
+
+This matters especially when the package uses environment checks like:
+
+```ts
+if (typeof window === 'undefined') {
+  const fs = require('fs');
+}
+```
+
+That pattern is not enough if the module is imported during bundling. Metro still has to parse and resolve the dependency graph. If the `require('fs')` remains in a reachable code path, bundling can fail even if the branch would never execute on device.
+
+Dead-code elimination is not a substitute for correct module boundaries when the resolver cannot locate the module at all.
+
+## Replace Node APIs with platform-specific modules
+
+The preferred fix is to move Node-only behavior out of shared React Native code and replace it with platform-specific implementations.
+
+Use React Native libraries for the actual runtime environment:
+
+- `react-native-fs` for filesystem access
+- `expo-file-system` in Expo projects
+- `react-native-quick-crypto` or a library with a React Native build for cryptographic needs
+- `react-native-path` only if a path utility is truly required and no simpler string logic exists
+
+If the code only needs path joining or file-name extraction, avoid a `path` dependency entirely and use platform-independent logic.
+
+Bad:
+
+```ts
+import path from 'path';
+
+export function getFileName(filePath: string) {
+  return path.basename(filePath);
+}
+```
+
+Better, if only simple slash handling is needed:
+
+```ts
+export function getFileName(filePath: string) {
+  const parts = filePath.split(/[\\/]/);
+  return parts[parts.length - 1] ?? '';
+}
+```
+
+That replacement is not a full `path` polyfill, but it is often enough for UI code that only manipulates URLs or asset-like strings.
+
+For filesystem access, split the code by platform:
+
+```ts
+// shared/readConfig.ts
+export interface ConfigReader {
+  readText(path: string): Promise<string>;
+}
+```
+
+```ts
+// shared/readConfig.native.ts
+import { readAsStringAsync } from 'expo-file-system';
+import type { ConfigReader } from './readConfig';
+
+export const configReader: ConfigReader = {
+  async readText(path: string) {
+    return readAsStringAsync(path);
+  },
+};
+```
+
+```ts
+// shared/readConfig.node.ts
+import { promises as fs } from 'fs';
+import type { ConfigReader } from './readConfig';
+
+export const configReader: ConfigReader = {
+  async readText(path: string) {
+    return fs.readFile(path, 'utf8');
+  },
+};
+```
+
+React Native will pick `readConfig.native.ts`. Node tools can pick `readConfig.node.ts` if that file is used in server-side code or scripts.
+
+## Use platform-specific module names
+
+React Native supports platform resolution through file suffixes. That is the cleanest way to separate incompatible implementations.
+
+Example:
+
+```ts
+// storage.native.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+export async function saveToken(token: string) {
+  await AsyncStorage.setItem('token', token);
+}
+```
+
+```ts
+// storage.node.ts
+import { promises as fs } from 'fs';
+
+export async function saveToken(token: string) {
+  await fs.writeFile('.token', token, 'utf8');
+}
+```
+
+If the shared code imports `./storage`, Metro chooses the native version in React Native. Node tooling can choose the Node version where appropriate.
+
+This works well when the interface stays the same and only the implementation changes.
+
+## If a dependency triggers the failure, replace or isolate it
+
+When the offending import comes from a package, the first option is to use a React Native-compatible package instead of polyfilling Node built-ins.
+
+Examples:
+
+- Replace Node-oriented crypto wrappers with libraries that support React Native.
+- Replace filesystem-dependent storage libraries with `AsyncStorage`, `MMKV`, `expo-file-system`, or a native module.
+- Replace server-side SDK entry points with mobile client SDKs.
+
+If the package has a React Native-specific entry point, use that entry point explicitly. Some packages publish separate files for each environment.
+
+If the package does not support React Native, isolate it so that React Native code never imports it. That may mean moving the dependency into a Node-only package, server endpoint, or build step.
+
+For example, if shared code currently hashes values with Node `crypto`, move the hashing to the server or use a React Native-compatible implementation:
+
+```ts
+// shared/hash.ts
+export async function hashString(input: string): Promise<string> {
+  throw new Error('hashString is not available in React Native');
+}
+```
+
+Then supply environment-specific implementations:
+
+```ts
+// shared/hash.native.ts
+import { sha256 } from 'react-native-quick-crypto';
+
+export async function hashString(input: string) {
+  return sha256(input);
+}
+```
+
+```ts
+// shared/hash.node.ts
+import { createHash } from 'crypto';
+
+export async function hashString(input: string) {
+  return createHash('sha256').update(input).digest('hex');
+}
+```
+
+The key point is that the shared import surface stays stable while the implementation changes by platform.
+
+## Shims are possible, but they should be the last option
+
+A shim can unblock bundling by teaching Metro how to resolve a Node built-in to a substitute module. That is sometimes used for packages that only need a tiny subset of the API.
+
+A Metro config alias can map a module name to a local file:
+
+```js
+// metro.config.js
+const { getDefaultConfig } = require('@react-native/metro-config');
+
+const config = getDefaultConfig(__dirname);
+
+config.resolver.extraNodeModules = {
+  path: require.resolve('./shims/path'),
+};
+
+module.exports = config;
+```
+
+```ts
+// shims/path.ts
+export function basename(input: string) {
+  const parts = input.split(/[\\/]/);
+  return parts[parts.length - 1] ?? '';
+}
+
+export default { basename };
+```
+
+This approach only works when the consumed API surface is small and well understood. It becomes fragile when a package expects a real Node module with many methods or side effects.
+
+Mapping `crypto`, `fs`, or `stream` to a partial shim usually creates a second failure later because the library expects behavior that the shim does not provide. Prefer replacing the library or isolating the code path instead.
+
+## Check package entry points before adding polyfills
+
+Before configuring a shim, inspect whether the package already offers a React Native-safe build.
+
+Some packages publish one of these patterns:
+
+```json
+{
+  "react-native": "dist/react-native.js"
+}
+```
+
+or:
+
+```json
+{
+  "exports": {
+    ".": {
+      "react-native": "./dist/native.js",
+      "default": "./dist/index.js"
+    }
+  }
+}
+```
+
+If so, Metro may need a version update or a package alias to select the right entry point. Upgrading to a package version that explicitly supports React Native is better than forcing a Node build to work in a mobile runtime.
+
+## Keep the problem from returning
+
+The safest structure is to prevent Node-only modules from entering shared React Native code in the first place.
+
+Use these rules:
+
+- Do not import `fs`, `path`, `crypto`, `stream`, `net`, or `tls` from files that are bundled into React Native.
+- Put platform-specific logic in `.native.ts`, `.ios.ts`, `.android.ts`, or `.node.ts` files.
+- Keep shared packages free of environment assumptions.
+- Review transitive dependencies when adding packages to a shared module.
+- Prefer packages that explicitly document React Native support.
+- Run a React Native bundle or test build in CI so unresolved imports fail before merge.
+
+A quick audit command helps catch the issue early:
+
+```sh
+rg -n "from ['\"](fs|path|crypto|stream|net|tls)['\"]|require\\(['\"](fs|path|crypto|stream|net|tls)['\"]\\)" packages apps
+```
+
+That search will not find every transitive dependency, but it does catch direct imports in shared code.
+
+## Practical takeaway
+
+Prefer replacing the Node-dependent code with a React Native-specific implementation and separating it with platform files. That fixes the root cause: React Native cannot provide Node built-ins, and Metro cannot bundle modules that depend on them. Use shims only for small, well-defined API surfaces, and only when no React Native-compatible package or platform split is available.
