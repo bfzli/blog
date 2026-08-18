@@ -1,0 +1,339 @@
+---
+title: "Next.js App Router Serves Stale Data Because a Server Component Fetch Is Cached"
+description: "Next.js can reuse a server component fetch result unless you set the right cache mode or revalidation behavior."
+tags: ["nextjs", "app-router", "fetch", "cache", "server-components"]
+date: Aug 19, 2026
+cell: "server-component-fetch-cache::nextjs::unexpected-stale-data"
+---
+
+`app/page.tsx` in a Next.js App Router app serves old data after a data change, while the browser request succeeds, and there is no runtime error text.
+
+## Why this happens
+
+In the App Router, server components can be rendered in a way that lets Next.js reuse `fetch()` results. That reuse is intentional. It reduces duplicate requests during a render and allows static rendering to cache output.
+
+The problem appears when the fetched data is expected to change between requests, but the component is using the default caching behavior. In that case, Next.js may return a previously cached response instead of contacting the origin again.
+
+The key point is that there are two different layers of reuse:
+
+1. **Request memoization** inside a single render pass.
+2. **Persistent caching** across requests when a route is treated as static or when `fetch()` is cached.
+
+Those layers solve performance problems, but they can also hide fresh data.
+
+## The default behavior in server components
+
+In a server component, `fetch()` does not always behave like a plain Node.js `fetch()`. Next.js wraps it with caching and deduplication logic.
+
+A typical example looks like this:
+
+```tsx
+// app/posts/page.tsx
+type Post = {
+  id: string;
+  title: string;
+};
+
+export default async function PostsPage() {
+  const res = await fetch('https://example.com/api/posts');
+  if (!res.ok) {
+    throw new Error(`Failed to load posts: ${res.status}`);
+  }
+
+  const posts = (await res.json()) as Post[];
+
+  return (
+    <main>
+      <h1>Posts</h1>
+      <ul>
+        {posts.map((post) => (
+          <li key={post.id}>{post.title}</li>
+        ))}
+      </ul>
+    </main>
+  );
+}
+```
+
+If this route is statically rendered, the `fetch()` result can be cached and reused. That means the HTML and data may remain unchanged until the route is revalidated or rebuilt.
+
+If the data source updates between requests, the page can keep showing the previous response.
+
+## Request memoization is not the same as stale data
+
+Next.js memoizes identical `fetch()` calls during a single server render. If the same request is made more than once in the same render tree, Next.js can collapse them into one network call.
+
+That behavior is useful and usually invisible. For example:
+
+```tsx
+async function getUser() {
+  const res = await fetch('https://example.com/api/me');
+  return res.json();
+}
+
+export default async function Page() {
+  const userA = await getUser();
+  const userB = await getUser();
+
+  return (
+    <pre>{JSON.stringify({ userA, userB }, null, 2)}</pre>
+  );
+}
+```
+
+Here, the second call can reuse the first result during the same render. That is request memoization.
+
+Memoization alone does not explain stale content across requests. Stale content comes from caching that survives beyond one render, which happens when the route is static or the `fetch()` response is cacheable.
+
+## Static rendering makes the cache persistent
+
+A route in the App Router can be statically rendered if Next.js decides it has no request-specific data. Static rendering means the server can generate output ahead of time and serve the same result later.
+
+When a server component `fetch()` uses the default cache behavior inside a static route, Next.js may store the fetched response as part of the static work. The same cached response can then be reused on later requests.
+
+That is why a data source that changes frequently can appear stuck.
+
+This is not a bug in `fetch()`. It is a consequence of the rendering strategy. Next.js treats the fetch as cacheable unless you tell it otherwise.
+
+## `cache: 'no-store'` for per-request freshness
+
+If you need each request to see the latest data, use `cache: 'no-store'`.
+
+```tsx
+// app/posts/page.tsx
+type Post = {
+  id: string;
+  title: string;
+};
+
+export default async function PostsPage() {
+  const res = await fetch('https://example.com/api/posts', {
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to load posts: ${res.status}`);
+  }
+
+  const posts = (await res.json()) as Post[];
+
+  return (
+    <main>
+      <h1>Posts</h1>
+      <ul>
+        {posts.map((post) => (
+          <li key={post.id}>{post.title}</li>
+        ))}
+      </ul>
+    </main>
+  );
+}
+```
+
+`cache: 'no-store'` tells Next.js not to cache the response. The request is made on every render, so the page sees current data as long as the origin returns current data.
+
+Use this when the page is:
+
+- user-specific,
+- highly dynamic,
+- time-sensitive,
+- or expected to reflect external changes immediately.
+
+This setting also pushes the route toward dynamic rendering because the data can no longer be treated as static.
+
+## `revalidate` for controlled regeneration
+
+If you do not need per-request freshness, but you do need updates on a schedule, use revalidation.
+
+`fetch()` supports `next: { revalidate }` in the App Router:
+
+```tsx
+// app/news/page.tsx
+type Story = {
+  id: string;
+  headline: string;
+};
+
+export default async function NewsPage() {
+  const res = await fetch('https://example.com/api/news', {
+    next: { revalidate: 60 },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to load news: ${res.status}`);
+  }
+
+  const stories = (await res.json()) as Story[];
+
+  return (
+    <main>
+      <h1>News</h1>
+      <ul>
+        {stories.map((story) => (
+          <li key={story.id}>{story.headline}</li>
+        ))}
+      </ul>
+    </main>
+  );
+}
+```
+
+With `revalidate: 60`, Next.js can reuse the cached response for up to 60 seconds. After that window, the next request can trigger regeneration. The stale response may still be served while regeneration happens, depending on the route and caching path.
+
+This is the right choice when:
+
+- the data changes often, but not every second,
+- stale data for a short window is acceptable,
+- and you want to reduce origin traffic.
+
+The mechanism is time-based invalidation, not immediate freshness.
+
+## Route-level revalidation and segment config
+
+You can also set route-level revalidation in the segment file.
+
+```tsx
+// app/news/page.tsx
+export const revalidate = 60;
+
+export default async function NewsPage() {
+  const res = await fetch('https://example.com/api/news');
+  const stories = await res.json();
+
+  return <pre>{JSON.stringify(stories, null, 2)}</pre>;
+}
+```
+
+This applies a default revalidation policy for the route segment. It is useful when multiple `fetch()` calls in the same page should share the same regeneration window.
+
+The important distinction is:
+
+- `cache: 'no-store'` means every request is fresh.
+- `revalidate: 60` means cached data is acceptable for 60 seconds.
+- the default behavior may be static and therefore much longer-lived than expected.
+
+## How Next.js decides whether a route is static
+
+Next.js uses static analysis and runtime signals to decide whether a route can be cached. A route becomes dynamic when it uses request-specific APIs or uncached data access patterns.
+
+Examples include:
+
+- `cookies()`
+- `headers()`
+- `fetch()` with `cache: 'no-store'`
+- `fetch()` with a short revalidation strategy in a dynamic context
+- route handlers or server actions that opt out of caching behavior
+
+If none of those appear, Next.js may infer static rendering. In that case, a plain `fetch()` inside a server component can be cached longer than expected.
+
+This is why the same code can behave differently depending on surrounding code. One `cookies()` call in the tree can change rendering mode for the route.
+
+## Diagnosing stale data
+
+Start by checking whether the route is static.
+
+Run the production build:
+
+```bash
+npm run build
+```
+
+Next.js prints route output in the build summary. Static routes and dynamic routes are listed differently. If the page is static, a cached `fetch()` is a likely cause of stale data.
+
+You can also inspect whether the data path is being cached at the fetch level. If a server component uses plain `fetch()` with no options, Next.js may cache the response by default.
+
+Check these questions:
+
+- Does the page need current data on every request?
+- Is the data shared across users?
+- Is a delay in freshness acceptable?
+- Is the route being statically rendered?
+- Is there a `revalidate` policy set already?
+
+If the answer to the first question is yes, `cache: 'no-store'` is usually the correct fix.
+
+## Common patterns and their correct options
+
+### User dashboard
+
+A dashboard often depends on the signed-in user and should be fresh per request.
+
+```tsx
+export default async function DashboardPage() {
+  const res = await fetch('https://example.com/api/dashboard', {
+    cache: 'no-store',
+  });
+
+  const data = await res.json();
+  return <pre>{JSON.stringify(data, null, 2)}</pre>;
+}
+```
+
+Use `cache: 'no-store'` because the data is request-specific.
+
+### Content page with periodic updates
+
+An editorial page can tolerate a short delay.
+
+```tsx
+export const revalidate = 300;
+
+export default async function ArticlesPage() {
+  const res = await fetch('https://example.com/api/articles', {
+    next: { revalidate: 300 },
+  });
+
+  const articles = await res.json();
+  return <pre>{JSON.stringify(articles, null, 2)}</pre>;
+}
+```
+
+Use a five-minute revalidation window if the data changes periodically and controlled regeneration is enough.
+
+### Truly static reference data
+
+If the data rarely changes, default caching can be fine.
+
+```tsx
+export default async function CountriesPage() {
+  const res = await fetch('https://example.com/api/countries');
+  const countries = await res.json();
+
+  return <pre>{JSON.stringify(countries, null, 2)}</pre>;
+}
+```
+
+This is acceptable only if stale data is not a problem or if the route is intended to be static.
+
+## When `no-store` is not enough
+
+If you still see old data after setting `cache: 'no-store'`, check the data source and intermediate caches.
+
+Possible causes include:
+
+- CDN caching in front of the origin,
+- an API route that sets cache headers,
+- browser caching on client-side requests,
+- or data returned from a separate server-side cache.
+
+`cache: 'no-store'` only controls Next.js `fetch()` caching behavior. It does not bypass every cache in the request path.
+
+If the origin itself serves cached content, add the appropriate cache-control behavior there too.
+
+## Choosing the right option
+
+Use the following rule:
+
+- Choose `cache: 'no-store'` when freshness matters on every request.
+- Choose `next: { revalidate: n }` or `export const revalidate = n` when controlled freshness is enough.
+- Leave the default only when static caching is acceptable.
+
+That decision should be driven by data semantics, not by implementation convenience.
+
+A user profile, authorization state, or live metrics page should not depend on a cache that can survive across requests. A documentation page, catalog page, or news listing often can.
+
+## Practical takeaway
+
+For App Router server components, plain `fetch()` can be cached by default and reused across requests when the route is static. That is what produces stale data.
+
+Prefer `cache: 'no-store'` for per-request freshness. Prefer `revalidate` when a bounded staleness window is acceptable and you want controlled regeneration. Use the default only when static reuse is the intended behavior.
