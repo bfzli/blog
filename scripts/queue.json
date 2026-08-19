@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-16T20:09:02.322Z",
     "ideas": [
         {
-            "cell": "pnpm-workspace-tsconfig::vite::wrong-package-resolution",
-            "title": "Vite Resolves the Wrong Package in a pnpm Workspace Because tsconfig Paths Leak Into Build Imports",
-            "description": "A pnpm monorepo can resolve a local source file instead of the published package entry point and break the build.",
-            "tags": [
-                "vite",
-                "pnpm",
-                "monorepo",
-                "tsconfig",
-                "module-resolution"
-            ],
-            "angle": "Explain how path aliases and workspace links can bypass the package entry point that bundlers expect. Cover why the build resolves differently from TypeScript, how that affects exports, and how to fix it with package.json exports, Vite alias rules, or narrower tsconfig paths.",
-            "slug": "vite-resolves-the-wrong-package-in-a-pnpm-workspace-because-tsconfig-paths-leak-into-build-imports"
-        },
-        {
             "cell": "asset-manifest-404::vite::preview-build-paths",
             "title": "Vite Serves 404s for Assets After a Production Build Because the Base Path Is Wrong",
             "description": "Built assets 404 in production when Vite emits URLs for the wrong base path.",
@@ -88,19 +74,19 @@
     ],
     "drafted": [
         {
-            "cell": "server-component-fetch-cache::nextjs::unexpected-stale-data",
-            "title": "Next.js App Router Serves Stale Data Because a Server Component Fetch Is Cached",
-            "description": "Next.js can reuse a server component fetch result unless you set the right cache mode or revalidation behavior.",
+            "cell": "pnpm-workspace-tsconfig::vite::wrong-package-resolution",
+            "title": "Vite Resolves the Wrong Package in a pnpm Workspace Because tsconfig Paths Leak Into Build Imports",
+            "description": "A pnpm monorepo can resolve a local source file instead of the published package entry point and break the build.",
             "tags": [
-                "nextjs",
-                "app-router",
-                "fetch",
-                "cache",
-                "server-components"
+                "vite",
+                "pnpm",
+                "monorepo",
+                "tsconfig",
+                "module-resolution"
             ],
-            "angle": "Explain how the App Router caches fetch calls in server components by default and why that can return old data. Cover request memoization, static rendering, revalidate, and cache: 'no-store', then show how to choose the right option for per-request freshness or controlled regeneration.",
-            "slug": "next-js-app-router-serves-stale-data-because-a-server-component-fetch-is-cached",
-            "draftedAt": "2026-08-18T22:15:21.781Z"
+            "angle": "Explain how path aliases and workspace links can bypass the package entry point that bundlers expect. Cover why the build resolves differently from TypeScript, how that affects exports, and how to fix it with package.json exports, Vite alias rules, or narrower tsconfig paths.",
+            "slug": "vite-resolves-the-wrong-package-in-a-pnpm-workspace-because-tsconfig-paths-leak-into-build-imports",
+            "draftedAt": "2026-08-19T22:17:40.182Z"
         }
     ]
 }
