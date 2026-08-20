@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-16T20:09:02.322Z",
     "ideas": [
         {
-            "cell": "asset-manifest-404::vite::preview-build-paths",
-            "title": "Vite Serves 404s for Assets After a Production Build Because the Base Path Is Wrong",
-            "description": "Built assets 404 in production when Vite emits URLs for the wrong base path.",
-            "tags": [
-                "vite",
-                "assets",
-                "build",
-                "deployment",
-                "base-path"
-            ],
-            "angle": "Cover how Vite rewrites asset URLs from `base` during build and why a root-relative app breaks under a subpath or CDN prefix. Show how to inspect the generated `dist/index.html`, set `base` correctly, and verify chunk and CSS URLs in preview and production.",
-            "slug": "vite-serves-404s-for-assets-after-a-production-build-because-the-base-path-is-wrong"
-        },
-        {
             "cell": "ssr-window-referenceerror::astro::client-only-module-import",
             "title": "Astro Throws ReferenceError: window is not defined When a Browser-Only Import Runs on the Server",
             "description": "Astro SSR crashes when a module touches `window` during server rendering.",
@@ -74,19 +60,19 @@
     ],
     "drafted": [
         {
-            "cell": "pnpm-workspace-tsconfig::vite::wrong-package-resolution",
-            "title": "Vite Resolves the Wrong Package in a pnpm Workspace Because tsconfig Paths Leak Into Build Imports",
-            "description": "A pnpm monorepo can resolve a local source file instead of the published package entry point and break the build.",
+            "cell": "asset-manifest-404::vite::preview-build-paths",
+            "title": "Vite Serves 404s for Assets After a Production Build Because the Base Path Is Wrong",
+            "description": "Built assets 404 in production when Vite emits URLs for the wrong base path.",
             "tags": [
                 "vite",
-                "pnpm",
-                "monorepo",
-                "tsconfig",
-                "module-resolution"
+                "assets",
+                "build",
+                "deployment",
+                "base-path"
             ],
-            "angle": "Explain how path aliases and workspace links can bypass the package entry point that bundlers expect. Cover why the build resolves differently from TypeScript, how that affects exports, and how to fix it with package.json exports, Vite alias rules, or narrower tsconfig paths.",
-            "slug": "vite-resolves-the-wrong-package-in-a-pnpm-workspace-because-tsconfig-paths-leak-into-build-imports",
-            "draftedAt": "2026-08-19T22:17:40.182Z"
+            "angle": "Cover how Vite rewrites asset URLs from `base` during build and why a root-relative app breaks under a subpath or CDN prefix. Show how to inspect the generated `dist/index.html`, set `base` correctly, and verify chunk and CSS URLs in preview and production.",
+            "slug": "vite-serves-404s-for-assets-after-a-production-build-because-the-base-path-is-wrong",
+            "draftedAt": "2026-08-20T22:19:10.408Z"
         }
     ]
 }
