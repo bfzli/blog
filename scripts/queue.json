@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-16T20:09:02.322Z",
     "ideas": [
         {
-            "cell": "ssr-window-referenceerror::astro::client-only-module-import",
-            "title": "Astro Throws ReferenceError: window is not defined When a Browser-Only Import Runs on the Server",
-            "description": "Astro SSR crashes when a module touches `window` during server rendering.",
-            "tags": [
-                "astro",
-                "ssr",
-                "window",
-                "browser-only",
-                "islands"
-            ],
-            "angle": "Describe why Astro executes frontmatter and imported modules in Node during SSR, and how any top-level `window` access fails before hydration. Show the difference between server-only code, client directives like `client:load`, and guarding browser APIs inside `onMount`-style or event-driven code.",
-            "slug": "astro-throws-referenceerror-window-is-not-defined-when-a-browser-only-import-runs-on-the-server"
-        },
-        {
             "cell": "params-null-404::hono::wildcard-route-order",
             "title": "Hono Cannot Match `c.req.param()` When a Static Route Shadows a Dynamic One",
             "description": "Route order in Hono can hide dynamic params and make `c.req.param()` return empty values.",
@@ -60,19 +46,19 @@
     ],
     "drafted": [
         {
-            "cell": "asset-manifest-404::vite::preview-build-paths",
-            "title": "Vite Serves 404s for Assets After a Production Build Because the Base Path Is Wrong",
-            "description": "Built assets 404 in production when Vite emits URLs for the wrong base path.",
+            "cell": "ssr-window-referenceerror::astro::client-only-module-import",
+            "title": "Astro Throws ReferenceError: window is not defined When a Browser-Only Import Runs on the Server",
+            "description": "Astro SSR crashes when a module touches `window` during server rendering.",
             "tags": [
-                "vite",
-                "assets",
-                "build",
-                "deployment",
-                "base-path"
+                "astro",
+                "ssr",
+                "window",
+                "browser-only",
+                "islands"
             ],
-            "angle": "Cover how Vite rewrites asset URLs from `base` during build and why a root-relative app breaks under a subpath or CDN prefix. Show how to inspect the generated `dist/index.html`, set `base` correctly, and verify chunk and CSS URLs in preview and production.",
-            "slug": "vite-serves-404s-for-assets-after-a-production-build-because-the-base-path-is-wrong",
-            "draftedAt": "2026-08-20T22:19:10.408Z"
+            "angle": "Describe why Astro executes frontmatter and imported modules in Node during SSR, and how any top-level `window` access fails before hydration. Show the difference between server-only code, client directives like `client:load`, and guarding browser APIs inside `onMount`-style or event-driven code.",
+            "slug": "astro-throws-referenceerror-window-is-not-defined-when-a-browser-only-import-runs-on-the-server",
+            "draftedAt": "2026-08-21T22:16:26.120Z"
         }
     ]
 }
