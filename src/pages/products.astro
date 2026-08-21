@@ -4,9 +4,12 @@ import { ProductList } from '@/components'
 import { ventures, vibeCoding } from '@/data/products'
 import { staticPages } from '@/data/pages'
 
+const withRef = (url: string) =>
+    `${url}${url.includes('?') ? '&' : '?'}ref=bfzli.com`
+
 const productItems = [...ventures, ...vibeCoding].map((product) => ({
     ...product,
-    href: product.url,
+    href: withRef(product.url),
     external: true
 }))
 const meta = staticPages.products
