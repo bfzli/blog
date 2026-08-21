@@ -1,0 +1,384 @@
+---
+title: "Astro Throws ReferenceError: window is not defined When a Browser-Only Import Runs on the Server"
+description: "Astro SSR crashes when a module touches `window` during server rendering."
+tags: ["astro", "ssr", "window", "browser-only", "islands"]
+date: Aug 22, 2026
+cell: "ssr-window-referenceerror::astro::client-only-module-import"
+---
+
+Astro SSR crashes when a module touches `window` during server rendering with `ReferenceError: window is not defined`.
+
+## Why this happens in Astro SSR
+
+Astro renders `.astro` files on the server first. During that server render, Astro evaluates component frontmatter and any imported modules in a Node.js environment unless the code is explicitly moved to the browser.
+
+That means browser globals such as `window`, `document`, `localStorage`, `navigator`, and `matchMedia` are unavailable at the time the module is loaded. If a top-level statement reads `window` before hydration, Node throws `ReferenceError: window is not defined` immediately.
+
+The important detail is timing. The crash does not require user interaction. It happens before the page reaches the browser if the access occurs during:
+
+- frontmatter execution in `.astro`
+- module initialization in an imported file
+- top-level constants or helper calls that evaluate on import
+
+Astro can only hydrate browser code after the server output has already been generated. Hydration does not protect code that runs earlier on the server.
+
+## What counts as top-level browser access
+
+Any browser API read that runs while the module is being imported can fail.
+
+```ts
+// src/lib/theme.ts
+const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+export function getTheme() {
+  return prefersDark ? 'dark' : 'light';
+}
+```
+
+If `src/lib/theme.ts` is imported by an Astro component or another server-side module, Node evaluates `window.matchMedia(...)` during import. There is no `window` in Node, so the import crashes.
+
+The same failure happens with patterns like these:
+
+```ts
+const width = window.innerWidth;
+const stored = localStorage.getItem('theme');
+const ua = navigator.userAgent;
+```
+
+The problem is not the syntax. The problem is evaluation at import time.
+
+## Why frontmatter is part of the server path
+
+Astro frontmatter is server-side JavaScript. A file like this runs on the server during render:
+
+```astro
+---
+import { getTheme } from '../lib/theme';
+
+const theme = getTheme();
+---
+<html>
+  <body>{theme}</body>
+</html>
+```
+
+Even though the output becomes HTML sent to the browser, the frontmatter itself runs in Node. If `getTheme()` depends on `window`, the render fails before HTML is produced.
+
+This also applies to imported modules used by frontmatter. Importing a module is not passive. Any top-level expressions inside that module execute when it is loaded.
+
+## Server-only code and browser-only code are different execution environments
+
+Astro supports both server-side rendering and client-side hydration, but the same file can participate in both stages.
+
+Server-only code includes:
+
+- frontmatter in `.astro`
+- imported utility modules used by frontmatter
+- `server` endpoints and build-time data loaders
+
+Browser-only code includes:
+
+- event handlers attached in hydrated components
+- code inside browser lifecycle hooks
+- code inside `client:*` hydrated framework components after mount
+
+A bug appears when browser-only APIs are used in server-only execution.
+
+## Fix the import boundary first
+
+If a module touches browser APIs, keep that module out of the server path or make its browser access lazy.
+
+Bad:
+
+```ts
+// src/lib/storage.ts
+const theme = localStorage.getItem('theme');
+
+export function readTheme() {
+  return theme ?? 'system';
+}
+```
+
+Good:
+
+```ts
+// src/lib/storage.ts
+export function readTheme() {
+  if (typeof window === 'undefined') {
+    return 'system';
+  }
+
+  return localStorage.getItem('theme') ?? 'system';
+}
+```
+
+This version still allows the module to be imported on the server. The browser API is only read after a runtime guard confirms that `window` exists.
+
+If the code must run only in the browser, move the import into browser-only code instead of importing it at module scope in server code.
+
+```ts
+export async function initTheme() {
+  if (typeof window === 'undefined') return;
+
+  const { setupTheme } = await import('../lib/theme-client');
+  setupTheme();
+}
+```
+
+Dynamic import defers module evaluation until the function runs. That avoids server import-time crashes, provided the function itself is not called during SSR.
+
+## Use `client:*` directives for framework components that need the browser
+
+Astro’s `client:*` directives tell Astro to render a framework component on the server, then hydrate it in the browser.
+
+Example:
+
+```astro
+---
+import Counter from '../components/Counter.tsx';
+---
+
+<Counter client:load />
+```
+
+This does not mean every line inside `Counter.tsx` is safe to run at import time. The module still has to be imported during server render. Only browser-specific logic inside the component’s runtime behavior is deferred until hydration.
+
+That distinction matters. `client:load` helps when the browser API usage happens after component mount, in event handlers, or in lifecycle hooks. It does not help if the component file has top-level `window` access.
+
+Bad:
+
+```tsx
+// src/components/Counter.tsx
+const width = window.innerWidth;
+
+export default function Counter() {
+  return <p>{width}</p>;
+}
+```
+
+Even with `<Counter client:load />`, the import itself crashes on the server because `window.innerWidth` runs at module scope.
+
+Good:
+
+```tsx
+import { useEffect, useState } from 'react';
+
+export default function Counter() {
+  const [width, setWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    setWidth(window.innerWidth);
+  }, []);
+
+  return <p>{width ?? 'loading'}</p>;
+}
+```
+
+Here `window` is accessed inside `useEffect`, which runs only in the browser after hydration.
+
+## Guard browser APIs inside lifecycle hooks or event handlers
+
+The safe pattern is to read browser globals only when code is guaranteed to run in the browser.
+
+### React example
+
+```tsx
+import { useEffect, useState } from 'react';
+
+export default function ThemeLabel() {
+  const [theme, setTheme] = useState('system');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) setTheme(saved);
+  }, []);
+
+  return <span>{theme}</span>;
+}
+```
+
+`useEffect` does not run on the server. The `localStorage` read is therefore deferred until the client hydrates the component.
+
+### Vanilla script example
+
+```astro
+<button id="theme-toggle">Toggle theme</button>
+
+<script>
+  const button = document.getElementById('theme-toggle');
+
+  button?.addEventListener('click', () => {
+    const current = localStorage.getItem('theme') ?? 'system';
+    localStorage.setItem('theme', current === 'dark' ? 'light' : 'dark');
+  });
+</script>
+```
+
+In Astro `<script>` blocks, the script is bundled for the browser. Event handlers execute only after the page loads in the client, so `localStorage` is safe there.
+
+### Guarding inline access
+
+Sometimes a browser API must be referenced in a shared utility. Use a runtime guard before any access.
+
+```ts
+export function getViewportWidth(): number | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.innerWidth;
+}
+```
+
+`typeof window === 'undefined'` is safe because `typeof` does not throw for missing identifiers. Avoid `window && ...` because `window` is evaluated first and still fails in Node.
+
+## Why `if (window)` is wrong
+
+This is a common mistake:
+
+```ts
+if (window) {
+  console.log(window.innerWidth);
+}
+```
+
+It still throws in Node because the interpreter must resolve `window` to evaluate the condition. The correct guard is always `typeof window !== 'undefined'`.
+
+The same applies to `document`, `navigator`, and `localStorage`.
+
+```ts
+if (typeof document !== 'undefined') {
+  document.title = 'Ready';
+}
+```
+
+## When to prefer server-only code
+
+If the value can be derived from request data, environment variables, or build-time inputs, keep it server-side instead of reading it from the browser.
+
+For example, if you only need a theme default, derive it from the request or a cookie in Astro frontmatter:
+
+```astro
+---
+const theme = Astro.cookies.get('theme')?.value ?? 'system';
+---
+<p>{theme}</p>
+```
+
+This avoids browser APIs entirely. It is also more reliable because SSR already has access to request state.
+
+Server-only code is the better fit when:
+
+- the data is available from the request
+- the value must exist before HTML is sent
+- the result should not depend on client device state
+
+Browser APIs are only necessary when the value is truly client-specific.
+
+## When `client:load` is the right tool
+
+Use `client:load` when the component needs browser interaction immediately after the page loads.
+
+Examples include:
+
+- reading `window.innerWidth`
+- attaching interactive event listeners
+- accessing `localStorage`
+- observing `matchMedia`
+- using `ResizeObserver` or `IntersectionObserver`
+
+```astro
+---
+import SearchBox from '../components/SearchBox.tsx';
+---
+
+<SearchBox client:load />
+```
+
+This is appropriate if the component itself is interactive. It is not a fix for an imported module that executes `window` at top level.
+
+If the module crashes during import, the component never gets a chance to hydrate.
+
+## How imported modules trigger the error
+
+A module is executed once when it is imported. That includes transitive imports.
+
+```ts
+// src/lib/index.ts
+export { readTheme } from './storage';
+```
+
+```astro
+---
+import { readTheme } from '../lib';
+const theme = readTheme();
+---
+```
+
+Even if `storage.ts` is not named directly in the `.astro` file, the top-level code in `storage.ts` still runs through the import chain. The fix has to be applied at the exact module that touches browser APIs.
+
+This is why a stack trace often points at an indirect dependency instead of the component you expected.
+
+## A safe refactor pattern
+
+If browser access is mixed into a utility, split the pure logic from the environment-specific code.
+
+Unsafe:
+
+```ts
+export const currentTheme = localStorage.getItem('theme') ?? 'system';
+
+export function themeClass(theme = currentTheme) {
+  return theme === 'dark' ? 'dark' : '';
+}
+```
+
+Safe:
+
+```ts
+export function themeClass(theme: string) {
+  return theme === 'dark' ? 'dark' : '';
+}
+
+export function readStoredTheme(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('theme');
+}
+```
+
+Then call `readStoredTheme()` only from browser code. This keeps the class-mapping logic reusable on both server and client.
+
+## Debugging the failure
+
+If Astro throws `ReferenceError: window is not defined`, inspect the first stack frame that points into your codebase.
+
+Look for:
+
+- top-level `window`, `document`, `localStorage`, or `navigator`
+- `new Date()` is fine, but `window.innerWidth` is not
+- helper functions called from frontmatter that read browser globals
+- imports that run side effects on load
+
+A fast search usually reveals the issue:
+
+```sh
+rg -n "window|document|localStorage|navigator|matchMedia" src
+```
+
+If the offending code is in a dependency, check whether that package exposes a browser-safe entrypoint or an SSR-compatible mode. Some packages ship separate bundles for browser and Node. Importing the wrong entrypoint can cause the same error.
+
+## Practical decision tree
+
+If code needs a browser API, ask where it runs.
+
+If it runs in frontmatter or any module imported by frontmatter, move the browser access out of top level.
+
+If it runs in a hydrated component, place the access inside `useEffect`, `onMount`, a click handler, or another browser-only callback.
+
+If the value can be derived from the request, prefer Astro server code instead of the browser.
+
+If the code is a shared helper, add `typeof window !== 'undefined'` guards and return a server-safe fallback.
+
+## Closing guidance
+
+Prefer the narrowest fix that matches the runtime. Use server code for request data, `client:*` hydration for interactive UI, and `typeof window !== 'undefined'` guards for shared helpers that must be imported on both sides. That combination prevents `ReferenceError: window is not defined` from recurring because it keeps browser-only APIs out of server evaluation and limits them to code that actually runs in the browser.
