@@ -8,17 +8,21 @@ const { profile } = constants
 ---
 
 <div data-reveal-group>
-    <Image
-        src={avatar}
-        alt='Benjamin'
-        width={96}
-        height={96}
-        class='mb-6 h-24 w-24 select-none rounded-full'
-        loading='eager'
-        fetchpriority='high'
-        data-skeleton
-        draggable={false}
-    />
+    <header class='mb-6 flex items-center justify-between'>
+        <Image
+            src={avatar}
+            alt='Benjamin'
+            width={96}
+            height={96}
+            class='h-24 w-24 select-none rounded-full'
+            loading='eager'
+            fetchpriority='high'
+            data-skeleton
+            draggable={false}
+        />
+
+        <slot />
+    </header>
 
     <h1 class='mb-2 mt-4 text-4xl font-bold leading-[1.2]'>
         <Greeting />, I'm Benjamin <span class='wave'>👋</span>

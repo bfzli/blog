@@ -4,11 +4,13 @@ import dreampix from '@/assets/experiences/dreampix.webp'
 import modulify from '@/assets/experiences/modulify.webp'
 import nun from '@/assets/experiences/nun.webp'
 import trokit from '@/assets/experiences/trokit.webp'
+import betterfiletransfer from '@/assets/projects/betterfiletransfer.webp'
 import cloudagents from '@/assets/projects/cloudagents.webp'
 import envless from '@/assets/projects/envless.webp'
 import focux from '@/assets/projects/focux.webp'
 import ip2geo from '@/assets/projects/ip2geo.webp'
 import launchdock from '@/assets/projects/launchdock.webp'
+import loveEnvelope from '@/assets/projects/love-envelope.webp'
 import muslimTab from '@/assets/projects/muslim-tab.webp'
 import pikegjaku from '@/assets/projects/pikegjaku.webp'
 import uebfaqe from '@/assets/projects/uebfaqe.webp'
@@ -24,11 +26,13 @@ export {
     modulify,
     nun,
     trokit,
+    betterfiletransfer,
     cloudagents,
     envless,
     focux,
     ip2geo,
     launchdock,
+    loveEnvelope,
     muslimTab,
     pikegjaku,
     uebfaqe,

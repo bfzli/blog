@@ -1,10 +1,12 @@
 import type { Venture, VibeCoding } from '@/types'
 
 import {
+    betterfiletransfer,
     envless,
     ip2geo,
     wallpapppers,
     launchdock,
+    loveEnvelope,
     cloudagents,
     uebfaqe,
     pikegjaku,
@@ -54,6 +56,18 @@ export const ventures: Venture[] = [
         description: 'Dhuro gjak — sot për dikë, nesër për ty.',
         icon: pikegjaku,
         url: 'https://pikegjaku.com'
+    },
+    {
+        name: 'BetterFileTransfer',
+        description: 'Send anything to anyone, anywhere, safely.',
+        icon: betterfiletransfer,
+        url: 'https://betterfiletransfer.com'
+    },
+    {
+        name: 'Love Envelope',
+        description: 'Make a love invitation worth opening.',
+        icon: loveEnvelope,
+        url: 'https://envelope.love'
     }
 ]
 
