@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-16T20:09:02.322Z",
     "ideas": [
         {
-            "cell": "params-null-404::hono::wildcard-route-order",
-            "title": "Hono Cannot Match `c.req.param()` When a Static Route Shadows a Dynamic One",
-            "description": "Route order in Hono can hide dynamic params and make `c.req.param()` return empty values.",
-            "tags": [
-                "hono",
-                "routing",
-                "params",
-                "path-matching",
-                "server"
-            ],
-            "angle": "Cover Hono’s route precedence, how a static path can shadow a parameterized route, and why the handler still runs without the expected params. Explain how to reorder routes, use distinct prefixes, and confirm the matched pattern before reading params.",
-            "slug": "hono-cannot-match-c-req-param-when-a-static-route-shadows-a-dynamic-one"
-        },
-        {
             "cell": "cli-package-json-not-found::node::binary-entrypoint",
             "title": "Node.js Fails to Start a Published CLI with Error: Cannot find module '/package.json'",
             "description": "A packaged CLI crashes because the entrypoint resolves package metadata from the wrong location.",
@@ -46,19 +32,19 @@
     ],
     "drafted": [
         {
-            "cell": "ssr-window-referenceerror::astro::client-only-module-import",
-            "title": "Astro Throws ReferenceError: window is not defined When a Browser-Only Import Runs on the Server",
-            "description": "Astro SSR crashes when a module touches `window` during server rendering.",
+            "cell": "params-null-404::hono::wildcard-route-order",
+            "title": "Hono Cannot Match `c.req.param()` When a Static Route Shadows a Dynamic One",
+            "description": "Route order in Hono can hide dynamic params and make `c.req.param()` return empty values.",
             "tags": [
-                "astro",
-                "ssr",
-                "window",
-                "browser-only",
-                "islands"
+                "hono",
+                "routing",
+                "params",
+                "path-matching",
+                "server"
             ],
-            "angle": "Describe why Astro executes frontmatter and imported modules in Node during SSR, and how any top-level `window` access fails before hydration. Show the difference between server-only code, client directives like `client:load`, and guarding browser APIs inside `onMount`-style or event-driven code.",
-            "slug": "astro-throws-referenceerror-window-is-not-defined-when-a-browser-only-import-runs-on-the-server",
-            "draftedAt": "2026-08-21T22:16:26.120Z"
+            "angle": "Cover Hono’s route precedence, how a static path can shadow a parameterized route, and why the handler still runs without the expected params. Explain how to reorder routes, use distinct prefixes, and confirm the matched pattern before reading params.",
+            "slug": "hono-cannot-match-c-req-param-when-a-static-route-shadows-a-dynamic-one",
+            "draftedAt": "2026-08-22T22:14:17.506Z"
         }
     ]
 }
