@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-23T20:09:45.652Z",
     "ideas": [
         {
-            "cell": "cli-package-json-not-found::node::binary-entrypoint",
-            "title": "Node.js Fails to Start a Published CLI with Error: Cannot find module '/package.json'",
-            "description": "A packaged CLI crashes because the entrypoint resolves package metadata from the wrong location.",
-            "tags": [
-                "node",
-                "cli",
-                "npm",
-                "packaging",
-                "esm"
-            ],
-            "angle": "Explain how bundled CLIs often read `package.json` through `import.meta.url`, `__dirname`, or a relative path that breaks after publish. Show how the module layout changes in `npm pack`, why the file is missing from the tarball or resolved from CWD, and how to fix the path handling and package files.",
-            "slug": "node-js-fails-to-start-a-published-cli-with-error-cannot-find-module-package-json"
-        },
-        {
             "cell": "edge-crypto-unsupported::cloudflare-workers::node-crypto-import",
             "title": "Cloudflare Workers Reject `crypto.createHash()` with `ReferenceError: crypto is not defined`",
             "description": "A Node crypto API crashes in Workers because the runtime exposes Web Crypto, not `node:crypto` globals.",
@@ -130,19 +116,19 @@
     ],
     "drafted": [
         {
-            "cell": "params-null-404::hono::wildcard-route-order",
-            "title": "Hono Cannot Match `c.req.param()` When a Static Route Shadows a Dynamic One",
-            "description": "Route order in Hono can hide dynamic params and make `c.req.param()` return empty values.",
+            "cell": "cli-package-json-not-found::node::binary-entrypoint",
+            "title": "Node.js Fails to Start a Published CLI with Error: Cannot find module '/package.json'",
+            "description": "A packaged CLI crashes because the entrypoint resolves package metadata from the wrong location.",
             "tags": [
-                "hono",
-                "routing",
-                "params",
-                "path-matching",
-                "server"
+                "node",
+                "cli",
+                "npm",
+                "packaging",
+                "esm"
             ],
-            "angle": "Cover Hono’s route precedence, how a static path can shadow a parameterized route, and why the handler still runs without the expected params. Explain how to reorder routes, use distinct prefixes, and confirm the matched pattern before reading params.",
-            "slug": "hono-cannot-match-c-req-param-when-a-static-route-shadows-a-dynamic-one",
-            "draftedAt": "2026-08-22T22:14:17.506Z"
+            "angle": "Explain how bundled CLIs often read `package.json` through `import.meta.url`, `__dirname`, or a relative path that breaks after publish. Show how the module layout changes in `npm pack`, why the file is missing from the tarball or resolved from CWD, and how to fix the path handling and package files.",
+            "slug": "node-js-fails-to-start-a-published-cli-with-error-cannot-find-module-package-json",
+            "draftedAt": "2026-08-23T22:14:19.912Z"
         }
     ]
 }
