@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-08-16T20:09:02.322Z",
+    "generatedAt": "2026-08-23T20:09:45.652Z",
     "ideas": [
         {
             "cell": "cli-package-json-not-found::node::binary-entrypoint",
@@ -28,6 +28,104 @@
             ],
             "angle": "Cover the runtime mismatch between Node’s `crypto` module and the Web Crypto API available in Workers. Explain why top-level `crypto.createHash()` or `require('crypto')` fails, what APIs are supported instead, and how to replace hashing with `subtle.digest()` or a compatible library.",
             "slug": "cloudflare-workers-reject-crypto-createhash-with-referenceerror-crypto-is-not-defined"
+        },
+        {
+            "cell": "route-handler-404::astro::src-endpoint-misroute",
+            "title": "Astro Returns 404 When a Route Endpoint Lives in the Wrong Folder",
+            "description": "Astro 404s on an endpoint when the file is placed outside the route convention or named incorrectly.",
+            "tags": [
+                "astro",
+                "routing",
+                "endpoints",
+                "404",
+                "filesystem"
+            ],
+            "angle": "Explain how Astro maps files in `src/pages` and `src/routes` to URLs, and why a valid-looking endpoint still returns 404 when the pathname does not match the file convention. Cover the exact folder and filename rules for `.ts`, `.js`, `.json`, and `[param]` routes, plus how to confirm the generated route is where the request expects it to be.",
+            "slug": "astro-returns-404-when-a-route-endpoint-lives-in-the-wrong-folder"
+        },
+        {
+            "cell": "bun-sqlite-transaction-lock::bun::concurrent-write-lock",
+            "title": "Bun Locks SQLite During Overlapping Writes with `SQLITE_BUSY`",
+            "description": "Concurrent writes in Bun can stall or fail when SQLite holds a transaction lock too long.",
+            "tags": [
+                "bun",
+                "sqlite",
+                "transactions",
+                "locking",
+                "database"
+            ],
+            "angle": "Explain the lock model behind SQLite and why Bun code that opens multiple write paths can collide on the same database file. Show how to reduce lock contention with shorter transactions, serialized writes, WAL mode, or a single writer queue, and make clear when the fix belongs in application structure instead of a retry loop.",
+            "slug": "bun-locks-sqlite-during-overlapping-writes-with-sqlite-busy"
+        },
+        {
+            "cell": "navigation-failure::nextjs::client-router-refresh",
+            "title": "Next.js Client Navigation Stays Stuck on a Stale Page After `router.refresh()`",
+            "description": "`router.refresh()` does not update a page when client state or caching keeps the old UI alive.",
+            "tags": [
+                "nextjs",
+                "app-router",
+                "navigation",
+                "cache",
+                "react"
+            ],
+            "angle": "Cover what `router.refresh()` actually invalidates in the App Router and why client component state, memoized data, or a cached fetch can keep stale output visible. Explain which parts rerender, which do not, and how to combine server invalidation, cache tags, or state resets so the page truly updates.",
+            "slug": "next-js-client-navigation-stays-stuck-on-a-stale-page-after-router-refresh"
+        },
+        {
+            "cell": "loader-boundary-mismatch::remix::wrong-error-route",
+            "title": "Remix Sends Errors to the Wrong Boundary When a Loader Throws Outside Its Route",
+            "description": "A thrown loader error can skip the expected boundary when the route hierarchy does not match the failing segment.",
+            "tags": [
+                "remix",
+                "loaders",
+                "error-boundary",
+                "routing",
+                "server-rendering"
+            ],
+            "angle": "Explain how Remix chooses the nearest `ErrorBoundary` and why a thrown `Response` or exception lands in a parent route when the child route does not define one. Cover the difference between route module boundaries, nested layouts, and thrown responses, then show how to place boundaries so the failure is handled at the right level.",
+            "slug": "remix-sends-errors-to-the-wrong-boundary-when-a-loader-throws-outside-its-route"
+        },
+        {
+            "cell": "preload-bridge-types::electron::context-isolation-api",
+            "title": "Electron Exposes `ipcRenderer` as `undefined` When Context Isolation Blocks the Preload Bridge",
+            "description": "A renderer cannot access Electron APIs directly when context isolation removes the preload bridge.",
+            "tags": [
+                "electron",
+                "preload",
+                "context-isolation",
+                "ipc",
+                "security"
+            ],
+            "angle": "Explain how `contextIsolation: true` and `nodeIntegration: false` separate the renderer from Electron internals, and why direct `require('electron')` calls fail or return `undefined`. Show the correct preload bridge with `contextBridge.exposeInMainWorld`, the IPC channel shape, and the security reason the bridge must stay narrow.",
+            "slug": "electron-exposes-ipcrenderer-as-undefined-when-context-isolation-blocks-the-preload-bridge"
+        },
+        {
+            "cell": "package-exports-resolution::node::dual-entrypoint-build",
+            "title": "Node Resolves the Wrong File from `package.json` `exports` When the Default Condition Is Missing",
+            "description": "A package can load the wrong build target if `exports` does not declare the condition Node is using.",
+            "tags": [
+                "node",
+                "package-json",
+                "exports",
+                "esm",
+                "commonjs"
+            ],
+            "angle": "Explain Node’s conditional exports resolution and how it picks between `import`, `require`, `default`, and custom conditions. Show why a package can appear published correctly but still load the wrong file or fail to resolve in one runtime, and cover the exact `exports` shape that keeps ESM and CommonJS entry points aligned.",
+            "slug": "node-resolves-the-wrong-file-from-package-json-exports-when-the-default-condition-is-missing"
+        },
+        {
+            "cell": "websocket-handshake::cloudflare-workers::upgrade-response",
+            "title": "Cloudflare Workers Reject a WebSocket Upgrade Because the Response Is Not a 101 Switching Protocols Handshake",
+            "description": "A WebSocket route fails when the Worker returns the wrong upgrade response shape.",
+            "tags": [
+                "cloudflare-workers",
+                "websocket",
+                "upgrade",
+                "http",
+                "edge"
+            ],
+            "angle": "Explain the handshake requirements for WebSocket upgrades in Workers and why a normal `Response` cannot satisfy an `Upgrade: websocket` request. Cover the `WebSocketPair` flow, the required status code and headers, and the exact response shape the platform expects so the connection opens instead of failing the upgrade.",
+            "slug": "cloudflare-workers-reject-a-websocket-upgrade-because-the-response-is-not-a-101-switching-protocols-handshake"
         }
     ],
     "drafted": [
