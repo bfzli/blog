@@ -1,0 +1,332 @@
+---
+title: "Cloudflare Workers Reject `crypto.createHash()` with `ReferenceError: crypto is not defined`"
+description: "A Node crypto API crashes in Workers because the runtime exposes Web Crypto, not `node:crypto` globals."
+tags: ["cloudflare-workers", "crypto", "edge-runtime", "web-crypto", "nodejs"]
+date: Aug 25, 2026
+cell: "edge-crypto-unsupported::cloudflare-workers::node-crypto-import"
+---
+
+`crypto.createHash()` fails in Cloudflare Workers with `ReferenceError: crypto is not defined`.
+
+That error means the code is trying to use Node.js’s `crypto` runtime API in an environment that does not provide it as a global. Cloudflare Workers expose the Web Crypto API through `globalThis.crypto`, but they do not expose Node’s `crypto` module globals the same way a Node process does. Code that assumes `crypto.createHash()` exists at top level will crash before any hashing work starts.
+
+## What the error means
+
+In Node.js, `crypto` can refer to two different things:
+
+- the built-in module imported with `require('crypto')` or `import { createHash } from 'node:crypto'`
+- the global `crypto` object in newer Node versions, which is not the same surface as the `node:crypto` module
+
+In Cloudflare Workers, the runtime is based on the web platform. The available cryptography surface is the Web Crypto API, accessed as `crypto.subtle` and `crypto.getRandomValues()`. That means this works:
+
+```ts
+const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('hello'));
+```
+
+But this does not:
+
+```ts
+import { createHash } from 'crypto';
+
+const hash = createHash('sha256').update('hello').digest('hex');
+```
+
+Workers do not provide the Node built-in `crypto` module in the same way a Node process does. If your bundle references `require('crypto')` or imports `node:crypto` APIs that are not supported by the Workers compatibility layer, the code fails at runtime or build time depending on how it is packaged.
+
+## Why top-level `crypto.createHash()` fails
+
+The failure usually comes from one of these patterns:
+
+```ts
+const hash = crypto.createHash('sha256');
+```
+
+or:
+
+```ts
+import crypto from 'crypto';
+
+const hash = crypto.createHash('sha256');
+```
+
+or:
+
+```ts
+const { createHash } = require('crypto');
+```
+
+In a Node environment, these work because the module loader resolves the built-in package and injects the correct implementation. In a Worker, there is no CommonJS module loader and no Node-style built-in `crypto` module at the top level unless you are in a compatibility mode that explicitly adds limited Node support.
+
+The exact error text `ReferenceError: crypto is not defined` usually means the code is referencing a variable named `crypto` that was never declared in that module scope. This can happen when code expects a global `crypto` object like the browser Web Crypto API but then calls Node-specific methods such as `createHash()` on it. Web Crypto does not implement `createHash()`.
+
+The important distinction is:
+
+- Node `crypto.createHash()` is a streaming hash API
+- Web Crypto `crypto.subtle.digest()` is a one-shot digest API
+
+They solve the same general problem, but their shape is different.
+
+## What Cloudflare Workers support instead
+
+The supported cryptography surface in Workers is the Web Crypto API:
+
+- `crypto.subtle.digest()`
+- `crypto.subtle.importKey()`
+- `crypto.subtle.sign()`
+- `crypto.subtle.verify()`
+- `crypto.subtle.encrypt()`
+- `crypto.subtle.decrypt()`
+- `crypto.getRandomValues()`
+
+For hashing, `crypto.subtle.digest()` is the direct replacement for simple digests like SHA-256, SHA-384, and SHA-512.
+
+Example:
+
+```ts
+const data = new TextEncoder().encode('hello');
+
+const digest = await crypto.subtle.digest('SHA-256', data);
+const bytes = new Uint8Array(digest);
+
+const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+console.log(hex);
+```
+
+That produces the SHA-256 hash in hex form, similar to `createHash('sha256').update('hello').digest('hex')` in Node.
+
+## Why `subtle.digest()` is not a drop-in replacement
+
+Node’s `createHash()` supports incremental updates:
+
+```ts
+import { createHash } from 'node:crypto';
+
+const hash = createHash('sha256');
+hash.update('hello');
+hash.update(' ');
+hash.update('world');
+const hex = hash.digest('hex');
+```
+
+Web Crypto’s `digest()` API does not stream. It takes all bytes at once and returns a Promise for the final digest. That means you must already have the full input in memory.
+
+For typical request payloads, strings, or moderate-size buffers, that is fine. For large streams, you need a different design:
+
+- collect the bytes before hashing
+- hash an already materialized `ArrayBuffer` or `Uint8Array`
+- use a library that implements incremental hashing in JavaScript if streaming is required
+
+If the code relies on `update()` calls throughout a pipeline, a direct `subtle.digest()` replacement may require refactoring.
+
+## Replacing `crypto.createHash()` with `subtle.digest()`
+
+A common Node pattern:
+
+```ts
+import { createHash } from 'node:crypto';
+
+export function sha256Hex(input: string): string {
+  return createHash('sha256').update(input).digest('hex');
+}
+```
+
+Worker-compatible replacement:
+
+```ts
+export async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+```
+
+If the input is already bytes, skip the encoding step:
+
+```ts
+export async function sha256HexBytes(input: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', input);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+```
+
+If you need Base64 instead of hex:
+
+```ts
+export async function sha256Base64(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+
+  let binary = '';
+  const view = new Uint8Array(digest);
+  for (const byte of view) binary += String.fromCharCode(byte);
+
+  return btoa(binary);
+}
+```
+
+The output format matters because Node’s `digest('hex')` and `digest('base64')` are convenience encodings that Web Crypto does not provide directly.
+
+## Avoiding `require('crypto')` in Workers
+
+Workers use ESM by default. CommonJS `require()` is not part of the normal execution model. A bundle that includes code like this is a red flag:
+
+```ts
+const crypto = require('crypto');
+```
+
+or:
+
+```ts
+const { createHash } = require('crypto');
+```
+
+Even if bundling transforms some CommonJS usage, the Worker runtime still will not magically supply Node-only APIs that the bundle expects. The compatible path is to use ESM imports and web-native APIs.
+
+If you need to audit code for this issue, search for:
+
+- `require('crypto')`
+- `import ... from 'crypto'`
+- `import ... from 'node:crypto'`
+- `.createHash(`
+- `.createHmac(`
+- `.pbkdf2(`
+- `.randomBytes(`
+
+Some of those APIs have Web Crypto equivalents, but not all of them map one-to-one.
+
+## Hashing streams and large inputs
+
+Web Crypto `digest()` does not accept a `ReadableStream`. It expects an `ArrayBuffer`, `TypedArray`, or `DataView`. If you need to hash a body in a Worker, the usual approach is to collect the bytes first.
+
+Example with a request body:
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const body = new Uint8Array(await request.arrayBuffer());
+    const digest = await crypto.subtle.digest('SHA-256', body);
+
+    const hex = [...new Uint8Array(digest)]
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    return new Response(hex, { headers: { 'content-type': 'text/plain' } });
+  },
+};
+```
+
+This works for moderate payload sizes. For large streams, buffering may be unacceptable. In that case, a streaming hash library is the better fit.
+
+## Using a compatible hashing library
+
+If the codebase depends on incremental hashing, choose a library that runs in Workers without Node built-ins.
+
+A common option is `@noble/hashes`, which is pure JavaScript and compatible with web runtimes.
+
+Install it:
+
+```bash
+npm install @noble/hashes
+```
+
+Example SHA-256 hash:
+
+```ts
+import { sha256 } from '@noble/hashes/sha256';
+
+export function sha256Hex(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  const digest = sha256(bytes);
+  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+```
+
+That gives you a synchronous API similar in shape to Node’s digest workflow, while staying within Worker-compatible JavaScript.
+
+If the project needs HMAC, PBKDF2, or streaming behavior, check the library’s Workers compatibility and whether the package is pure ESM or ships Node fallbacks. The goal is to avoid transitive imports of `node:crypto`.
+
+## When `node:crypto` can still be used
+
+Cloudflare Workers have some Node compatibility features, but they are not equivalent to running in Node. Code should not assume that every Node built-in is available. Even when compatibility flags are enabled, the safest rule is to treat `node:crypto` as unsupported unless the specific runtime and compatibility documentation say otherwise.
+
+If a dependency only works because it imports `node:crypto`, the dependency may still fail after bundling, minification, or deployment to a different Worker environment. That is why direct use of Web Crypto or a proven Worker-compatible library is the stable path.
+
+## Common replacement patterns
+
+### SHA-256 hex of a string
+
+Node:
+
+```ts
+import { createHash } from 'node:crypto';
+
+export const hash = createHash('sha256').update('abc').digest('hex');
+```
+
+Worker:
+
+```ts
+export async function hash(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+```
+
+### Hashing a request body
+
+Node often uses streams and `update()` calls. In a Worker, read the body first:
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const payload = new Uint8Array(await request.arrayBuffer());
+    const digest = await crypto.subtle.digest('SHA-256', payload);
+
+    return new Response(
+      [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+    );
+  },
+};
+```
+
+### Using a pure library
+
+```ts
+import { sha256 } from '@noble/hashes/sha256';
+
+export function hash(input: Uint8Array): string {
+  const digest = sha256(input);
+  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+```
+
+## How to prevent the error from returning
+
+The safest approach is to make runtime expectations explicit.
+
+If code is meant for Workers, prefer:
+
+- `crypto.subtle.digest()` for hashes
+- `crypto.getRandomValues()` for random bytes
+- `TextEncoder` and `TextDecoder` for string conversion
+- pure ESM packages with no `node:crypto` dependency
+
+Avoid:
+
+- `require('crypto')`
+- `import { createHash } from 'crypto'`
+- direct calls to `crypto.createHash()`
+- libraries that hide Node-only crypto behind a convenience wrapper
+
+When a package is selected, check its runtime support before it reaches production. A dependency can appear to work in local Node tests and still fail when deployed to a Worker because the runtime surface is different.
+
+## Practical takeaway
+
+Prefer `crypto.subtle.digest()` for straightforward hashing in Cloudflare Workers. It matches the platform, avoids Node compatibility assumptions, and keeps the code portable across web runtimes. If the code needs incremental hashing or a Node-style API, use a Worker-compatible pure JS library such as `@noble/hashes` instead of `node:crypto`. The key is to align the implementation with the runtime’s Web Crypto model, not the Node module model.
