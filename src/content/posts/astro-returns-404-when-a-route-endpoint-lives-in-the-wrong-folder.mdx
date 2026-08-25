@@ -1,0 +1,364 @@
+---
+title: "Astro Returns 404 When a Route Endpoint Lives in the Wrong Folder"
+description: "Astro 404s on an endpoint when the file is placed outside the route convention or named incorrectly."
+tags: ["astro", "routing", "endpoints", "404", "filesystem"]
+date: Aug 26, 2026
+cell: "route-handler-404::astro::src-endpoint-misroute"
+---
+
+Astro returns `404: Not Found` for a route endpoint when the file is placed outside the route convention or named incorrectly.
+
+## How Astro turns files into URLs
+
+Astro maps files under `src/pages` and `src/routes` to request paths by convention. The pathname is derived from the file location, not from the contents of the file.
+
+A file like `src/pages/api/health.ts` becomes `/api/health`. A file like `src/routes/api/health.ts` becomes the same URL if the project is configured to use `src/routes` as the routing directory. If the file is not in one of those route roots, Astro does not register it as a page or endpoint.
+
+Astro’s file-based routing is strict. The server can only match a request if the file path, file extension, and dynamic segment syntax line up with the route it generates at build or dev time. A file that looks like a valid endpoint can still produce `404: Not Found` if it is not in the folder Astro scans for routes.
+
+Endpoints are not special because they export `GET`, `POST`, or other HTTP methods. They are special because they live in a route directory and follow the filename conventions Astro expects.
+
+## The folders Astro scans
+
+Astro recognizes route files in `src/pages` by default.
+
+Some setups also use `src/routes`, but only if the project is configured for it or a starter template uses that structure. The important point is that Astro scans a specific route root and ignores everything outside it.
+
+A file in any of these locations is not a route unless your project config says it is:
+
+- `src/api/health.ts`
+- `src/server/health.ts`
+- `src/lib/routes/health.ts`
+
+Even if the module exports `GET`, the request will still 404 because Astro never registered it.
+
+If your project uses `src/pages`, keep every URL-bearing file there. If it uses `src/routes`, keep every URL-bearing file there. Do not mix the route root with a normal source folder unless the project explicitly supports both.
+
+## Exact filename rules for `.ts`, `.js`, and `.json`
+
+Astro treats these files as route modules when they are placed in the route directory:
+
+- `.ts` for TypeScript endpoints or pages
+- `.js` for JavaScript endpoints or pages
+- `.json` for JSON routes in supported Astro versions and project setups
+
+The filename without the extension becomes the URL segment.
+
+Examples:
+
+```text
+src/pages/api/health.ts      -> /api/health
+src/pages/api/health.js      -> /api/health
+src/pages/status.json        -> /status
+```
+
+For endpoint files, export one or more HTTP method handlers:
+
+```ts
+// src/pages/api/health.ts
+import type { APIRoute } from 'astro';
+
+export const GET: APIRoute = () => {
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: {
+      'content-type': 'application/json'
+    }
+  });
+};
+```
+
+Astro will route `GET /api/health` to this file only if the file is inside the route root.
+
+A common source of 404s is assuming that any `health.ts` file is enough. It is not. Astro does not scan arbitrary directories for endpoints.
+
+### File extension matters
+
+The extension must be one Astro recognizes in the route directory.
+
+A file named `health.tsx` is not an endpoint file in the same way as `health.ts`. A file named `health.test.ts` is ignored as a route, because it is a test file, not a route module.
+
+Keep route modules named exactly as route modules. If the file is intended to answer requests, it belongs in the route folder with a route-friendly extension.
+
+### Index files map to directory roots
+
+`index` files map to the directory URL:
+
+```text
+src/pages/api/index.ts   -> /api
+src/pages/index.ts       -> /
+```
+
+If a request is going to `/api` and only `src/pages/api/health.ts` exists, `/api` still returns 404. Astro does not treat `health.ts` as the parent directory route.
+
+## Dynamic `[param]` routes
+
+Astro uses bracket syntax for dynamic segments.
+
+A file named `src/pages/users/[id].ts` matches `/users/123`, `/users/alice`, and any single segment in that position. The `id` value is available through `Astro.params.id` in a page or the route parameters passed to an endpoint.
+
+Example endpoint:
+
+```ts
+// src/pages/users/[id].ts
+import type { APIRoute } from 'astro';
+
+export const GET: APIRoute = ({ params }) => {
+  return new Response(`user ${params.id}`, {
+    headers: {
+      'content-type': 'text/plain; charset=utf-8'
+    }
+  });
+};
+```
+
+Requests like these match:
+
+- `/users/42`
+- `/users/abc`
+
+Requests like these do not match:
+
+- `/users`
+- `/users/42/profile`
+
+A dynamic segment only covers one path segment. If the request path has more or fewer segments than the route file represents, Astro returns 404.
+
+### Catch-all routes use spread syntax
+
+For multiple segments, Astro uses a spread-style filename such as `[...slug]`.
+
+```text
+src/pages/docs/[...slug].ts -> /docs/*
+```
+
+That route can match nested paths such as `/docs/a`, `/docs/a/b`, and `/docs/a/b/c`.
+
+If you place a catch-all file in the wrong directory, it still won’t register. The syntax can be correct and the pathname can still 404 because the route root is wrong.
+
+## Why a valid-looking endpoint still returns 404
+
+Astro builds a route manifest from the filesystem. That manifest contains only files that match the routing rules.
+
+A request returns 404 when one of these is true:
+
+- the file is outside the configured route root
+- the filename does not follow Astro’s route syntax
+- the extension is not one Astro treats as a route file
+- the request path does not match the generated URL
+- the route was moved but the client is still calling the old pathname
+
+The most common failure is the mismatch between the request URL and the generated URL. For example, this file:
+
+```text
+src/pages/api/users/[userId].ts
+```
+
+matches:
+
+```text
+GET /api/users/123
+```
+
+It does not match:
+
+```text
+GET /api/user/123
+GET /api/users
+GET /api/users/123/profile
+```
+
+A file can also look correct while being invisible to Astro because it is in the wrong tree:
+
+```text
+src/server/api/users/[userId].ts
+```
+
+That file is just a TypeScript module unless your project explicitly routes from `src/server`, which Astro does not do by default.
+
+## Confirm where Astro generated the route
+
+You can confirm the generated route in a few direct ways.
+
+### Check the file path against the URL
+
+Start with the file location and translate it mechanically.
+
+```text
+src/pages/api/health.ts -> /api/health
+src/pages/api/index.ts   -> /api
+src/pages/blog/[slug].ts -> /blog/:slug
+src/pages/docs/[...slug].ts -> /docs/*
+```
+
+If the request path doesn’t match that translation, the 404 is expected.
+
+### Run Astro and inspect the route in dev mode
+
+Use the project’s script:
+
+```bash
+npm run dev
+```
+
+or directly:
+
+```bash
+npx astro dev
+```
+
+Then request the route:
+
+```bash
+curl -i http://localhost:4321/api/health
+```
+
+If the route exists, you should get a `200` response and the content from the handler. If the file is not registered, you get `404: Not Found`.
+
+The dev server usually exposes route behavior immediately. A missing file in the route root will not suddenly become visible at runtime.
+
+### Use build output to verify registration
+
+Build the project:
+
+```bash
+npm run build
+```
+
+or:
+
+```bash
+npx astro build
+```
+
+Astro prints the routes it has discovered during the build process. If the file is not listed there, Astro did not register it as a route.
+
+If you want a stronger check, inspect the generated build artifacts in the output directory configured by `outDir` in `astro.config.mjs`. A registered route should appear as part of the generated output. A file outside the route root will not.
+
+### Check `astro.config.mjs` for custom routing
+
+If the project uses `src/routes` instead of `src/pages`, confirm that the config actually points Astro there.
+
+A typical config looks like this:
+
+```js
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  // Defaults to src/pages in standard setups
+});
+```
+
+If a project uses a nonstandard directory layout, the routing configuration must reflect it. Otherwise, Astro will continue scanning the default route location and ignore the file you added elsewhere.
+
+## Common mismatches that produce 404
+
+A few patterns show up repeatedly.
+
+### Putting the endpoint in a utility folder
+
+```text
+src/lib/api/health.ts
+```
+
+This is not a route. Move it to:
+
+```text
+src/pages/api/health.ts
+```
+
+or the configured route root.
+
+### Using the wrong segment name
+
+```text
+src/pages/api/user/[id].ts
+```
+
+This matches `/api/user/123`, not `/api/users/123`.
+
+If the folder name is singular but the request is plural, the generated URL won’t match.
+
+### Omitting `index.ts` for directory roots
+
+```text
+src/pages/api/status.ts
+```
+
+This maps to `/api/status`, not `/api/status/`.
+
+If the request is to `/api/status/` and your setup treats that as a distinct path, make sure the server behavior matches the route you created. Directory root requests should usually use `index.ts`:
+
+```text
+src/pages/api/status/index.ts -> /api/status
+```
+
+### Using a file name that is close but not exact
+
+```text
+src/pages/api/health.route.ts
+src/pages/api/health.handler.ts
+src/pages/api/health.test.ts
+```
+
+These are not route filenames in Astro. A file must have the route extension directly on the filename, such as `.ts`, `.js`, or `.json`, and it must sit in the route root.
+
+## A minimal working endpoint layout
+
+For a plain JSON endpoint in a default Astro project, use this structure:
+
+```text
+src/pages/api/health.ts
+```
+
+```ts
+// src/pages/api/health.ts
+import type { APIRoute } from 'astro';
+
+export const GET: APIRoute = () =>
+  new Response(JSON.stringify({ ok: true }), {
+    headers: { 'content-type': 'application/json' }
+  });
+```
+
+Then verify it with:
+
+```bash
+curl -i http://localhost:4321/api/health
+```
+
+For a dynamic route:
+
+```text
+src/pages/api/users/[id].ts
+```
+
+```ts
+// src/pages/api/users/[id].ts
+import type { APIRoute } from 'astro';
+
+export const GET: APIRoute = ({ params }) =>
+  new Response(JSON.stringify({ id: params.id }), {
+    headers: { 'content-type': 'application/json' }
+  });
+```
+
+Then test:
+
+```bash
+curl -i http://localhost:4321/api/users/123
+```
+
+If the endpoint 404s, compare the file path to the requested URL segment by segment.
+
+## Preventing the problem from coming back
+
+Keep route files in the configured route root only. Use exact Astro filename conventions. For static endpoints, prefer explicit names like `index.ts`, `health.ts`, or `status.json`. For dynamic routes, keep the bracket segment aligned with the exact pathname the client will call.
+
+When a route 404s, verify three things in order:
+
+1. The file is in `src/pages` or the configured `src/routes`.
+2. The filename maps to the request path exactly, including `[param]` or `[...slug]`.
+3. The route appears in `astro build` output or responds in `astro dev`.
+
+The reliable fix is to move the endpoint into the correct route folder and rename it to match Astro’s convention. That avoids hidden 404s caused by files that look like endpoints but were never registered as routes.
