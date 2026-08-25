@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-23T20:09:45.652Z",
     "ideas": [
         {
-            "cell": "route-handler-404::astro::src-endpoint-misroute",
-            "title": "Astro Returns 404 When a Route Endpoint Lives in the Wrong Folder",
-            "description": "Astro 404s on an endpoint when the file is placed outside the route convention or named incorrectly.",
-            "tags": [
-                "astro",
-                "routing",
-                "endpoints",
-                "404",
-                "filesystem"
-            ],
-            "angle": "Explain how Astro maps files in `src/pages` and `src/routes` to URLs, and why a valid-looking endpoint still returns 404 when the pathname does not match the file convention. Cover the exact folder and filename rules for `.ts`, `.js`, `.json`, and `[param]` routes, plus how to confirm the generated route is where the request expects it to be.",
-            "slug": "astro-returns-404-when-a-route-endpoint-lives-in-the-wrong-folder"
-        },
-        {
             "cell": "bun-sqlite-transaction-lock::bun::concurrent-write-lock",
             "title": "Bun Locks SQLite During Overlapping Writes with `SQLITE_BUSY`",
             "description": "Concurrent writes in Bun can stall or fail when SQLite holds a transaction lock too long.",
@@ -102,19 +88,19 @@
     ],
     "drafted": [
         {
-            "cell": "edge-crypto-unsupported::cloudflare-workers::node-crypto-import",
-            "title": "Cloudflare Workers Reject `crypto.createHash()` with `ReferenceError: crypto is not defined`",
-            "description": "A Node crypto API crashes in Workers because the runtime exposes Web Crypto, not `node:crypto` globals.",
+            "cell": "route-handler-404::astro::src-endpoint-misroute",
+            "title": "Astro Returns 404 When a Route Endpoint Lives in the Wrong Folder",
+            "description": "Astro 404s on an endpoint when the file is placed outside the route convention or named incorrectly.",
             "tags": [
-                "cloudflare-workers",
-                "crypto",
-                "edge-runtime",
-                "web-crypto",
-                "nodejs"
+                "astro",
+                "routing",
+                "endpoints",
+                "404",
+                "filesystem"
             ],
-            "angle": "Cover the runtime mismatch between Node’s `crypto` module and the Web Crypto API available in Workers. Explain why top-level `crypto.createHash()` or `require('crypto')` fails, what APIs are supported instead, and how to replace hashing with `subtle.digest()` or a compatible library.",
-            "slug": "cloudflare-workers-reject-crypto-createhash-with-referenceerror-crypto-is-not-defined",
-            "draftedAt": "2026-08-24T22:18:13.298Z"
+            "angle": "Explain how Astro maps files in `src/pages` and `src/routes` to URLs, and why a valid-looking endpoint still returns 404 when the pathname does not match the file convention. Cover the exact folder and filename rules for `.ts`, `.js`, `.json`, and `[param]` routes, plus how to confirm the generated route is where the request expects it to be.",
+            "slug": "astro-returns-404-when-a-route-endpoint-lives-in-the-wrong-folder",
+            "draftedAt": "2026-08-25T22:18:56.783Z"
         }
     ]
 }
