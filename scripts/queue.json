@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-23T20:09:45.652Z",
     "ideas": [
         {
-            "cell": "bun-sqlite-transaction-lock::bun::concurrent-write-lock",
-            "title": "Bun Locks SQLite During Overlapping Writes with `SQLITE_BUSY`",
-            "description": "Concurrent writes in Bun can stall or fail when SQLite holds a transaction lock too long.",
-            "tags": [
-                "bun",
-                "sqlite",
-                "transactions",
-                "locking",
-                "database"
-            ],
-            "angle": "Explain the lock model behind SQLite and why Bun code that opens multiple write paths can collide on the same database file. Show how to reduce lock contention with shorter transactions, serialized writes, WAL mode, or a single writer queue, and make clear when the fix belongs in application structure instead of a retry loop.",
-            "slug": "bun-locks-sqlite-during-overlapping-writes-with-sqlite-busy"
-        },
-        {
             "cell": "navigation-failure::nextjs::client-router-refresh",
             "title": "Next.js Client Navigation Stays Stuck on a Stale Page After `router.refresh()`",
             "description": "`router.refresh()` does not update a page when client state or caching keeps the old UI alive.",
@@ -88,19 +74,19 @@
     ],
     "drafted": [
         {
-            "cell": "route-handler-404::astro::src-endpoint-misroute",
-            "title": "Astro Returns 404 When a Route Endpoint Lives in the Wrong Folder",
-            "description": "Astro 404s on an endpoint when the file is placed outside the route convention or named incorrectly.",
+            "cell": "bun-sqlite-transaction-lock::bun::concurrent-write-lock",
+            "title": "Bun Locks SQLite During Overlapping Writes with `SQLITE_BUSY`",
+            "description": "Concurrent writes in Bun can stall or fail when SQLite holds a transaction lock too long.",
             "tags": [
-                "astro",
-                "routing",
-                "endpoints",
-                "404",
-                "filesystem"
+                "bun",
+                "sqlite",
+                "transactions",
+                "locking",
+                "database"
             ],
-            "angle": "Explain how Astro maps files in `src/pages` and `src/routes` to URLs, and why a valid-looking endpoint still returns 404 when the pathname does not match the file convention. Cover the exact folder and filename rules for `.ts`, `.js`, `.json`, and `[param]` routes, plus how to confirm the generated route is where the request expects it to be.",
-            "slug": "astro-returns-404-when-a-route-endpoint-lives-in-the-wrong-folder",
-            "draftedAt": "2026-08-25T22:18:56.783Z"
+            "angle": "Explain the lock model behind SQLite and why Bun code that opens multiple write paths can collide on the same database file. Show how to reduce lock contention with shorter transactions, serialized writes, WAL mode, or a single writer queue, and make clear when the fix belongs in application structure instead of a retry loop.",
+            "slug": "bun-locks-sqlite-during-overlapping-writes-with-sqlite-busy",
+            "draftedAt": "2026-08-27T02:29:09.478Z"
         }
     ]
 }
