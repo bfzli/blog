@@ -1,0 +1,385 @@
+---
+title: "Bun Locks SQLite During Overlapping Writes with `SQLITE_BUSY`"
+description: "Concurrent writes in Bun can stall or fail when SQLite holds a transaction lock too long."
+tags: ["bun", "sqlite", "transactions", "locking", "database"]
+date: Aug 27, 2026
+cell: "bun-sqlite-transaction-lock::bun::concurrent-write-lock"
+---
+
+Concurrent writes to the same SQLite database file in Bun fail or stall with `SQLITE_BUSY: database is locked`.
+
+## What the error means
+
+`SQLITE_BUSY` is SQLite’s lock-contention signal. It means one connection tried to read or write a database page while another connection still held a lock that prevents the requested operation.
+
+In Bun, this usually appears when multiple write paths touch the same `.db` file at the same time, or when a transaction stays open long enough for other work to overlap it. The error text is often one of these forms:
+
+- `SQLITE_BUSY: database is locked`
+- `database is locked`
+- `SQLITE_BUSY`
+- `SQLITE_BUSY: database is locked (5)`
+
+The exact text depends on the SQLite build and the Bun API surface, but the mechanism is the same: SQLite could not acquire the lock it needed before the busy timeout expired.
+
+## Why SQLite locks happen
+
+SQLite is not a server. It is an embedded database engine that stores the entire database in a single file, plus temporary journal or WAL files.
+
+That file model drives the locking behavior:
+
+- multiple readers can usually coexist
+- writes need exclusive coordination
+- a transaction holds locks for the duration of the transaction
+- only one writer can commit to a given database file at a time
+
+With the default rollback-journal mode, a writer typically escalates through lock states and eventually blocks other access while it updates pages and commits. With WAL mode, readers and writers can overlap better, but there is still only one writer at a time, and commit/flush behavior can still create contention.
+
+The important point is this: SQLite does not turn overlapping writes into parallel disk activity. It serializes them with locks.
+
+## Why Bun code collides on the same file
+
+Bun applications often make it easy to create several write paths:
+
+- multiple request handlers each open their own SQLite connection
+- background jobs and HTTP handlers write to the same file
+- code uses `Promise.all()` around several inserts or updates
+- a transaction encloses network calls or other slow work
+- a retry loop retries immediately and keeps pressure on the file
+
+Bun’s SQLite access is still SQLite. If different parts of the application talk to the same database file concurrently, each write competes for the same writer lock.
+
+This is especially visible when each operation opens its own connection or starts its own transaction. Independent connections do not mean independent writers. They still converge on the same lock file and the same database file.
+
+## A minimal example of conflicting writes
+
+The following example uses Bun’s SQLite support and two write paths that overlap.
+
+```ts
+import { Database } from "bun:sqlite";
+
+const db = new Database("app.db");
+db.run(`CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL
+)`);
+
+function insertEvent(name: string) {
+  db.run("INSERT INTO events (name) VALUES (?)", name);
+}
+
+await Promise.all([
+  insertEvent("a"),
+  insertEvent("b"),
+  insertEvent("c"),
+  insertEvent("d"),
+]);
+```
+
+This can succeed on a quiet machine, but it is not a safe design for concurrent write pressure. If each write path does more work, or if separate connections are used, overlapping writes can trigger `SQLITE_BUSY`.
+
+A more realistic failure pattern is a transaction that holds the writer lock longer than necessary:
+
+```ts
+import { Database } from "bun:sqlite";
+
+const db = new Database("app.db");
+
+db.run(`CREATE TABLE IF NOT EXISTS jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  status TEXT NOT NULL
+)`);
+
+async function doWork() {
+  db.run("BEGIN");
+  try {
+    db.run("INSERT INTO jobs (status) VALUES ('started')");
+
+    // Slow non-database work while the transaction remains open.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    db.run("UPDATE jobs SET status = 'done' WHERE id = last_insert_rowid()");
+    db.run("COMMIT");
+  } catch (err) {
+    db.run("ROLLBACK");
+    throw err;
+  }
+}
+```
+
+The database lock is held across the `await`. That gives other writes a chance to collide with the transaction.
+
+## The lock model behind the problem
+
+SQLite’s locking is file-level coordination, not row-level coordination in the way many client-server databases work.
+
+For write activity, the database needs to protect:
+
+- the file format
+- the rollback journal or WAL index
+- page updates and commit boundaries
+
+A write transaction prevents another writer from making incompatible changes at the same time. That is true even if the two writes target different rows. The unit of contention is the database file, not the logical record.
+
+This is why application structure matters. If the application allows several code paths to start write transactions independently, the database will serialize them whether or not the code intended to.
+
+## Shorten the transaction
+
+The first fix is usually to reduce the amount of time the database stays locked.
+
+Keep transactions limited to the exact SQL work that must be atomic. Do not keep a transaction open while waiting on:
+
+- network requests
+- file I/O
+- CPU-heavy processing
+- message bus calls
+- unrelated application logic
+
+Use this pattern instead:
+
+```ts
+import { Database } from "bun:sqlite";
+
+const db = new Database("app.db");
+
+async function processJob(payload: string) {
+  // Do slow work before the transaction.
+  const normalized = payload.trim().toLowerCase();
+
+  db.run("BEGIN");
+  try {
+    db.run("INSERT INTO jobs (status) VALUES (?)", normalized);
+    db.run("COMMIT");
+  } catch (err) {
+    db.run("ROLLBACK");
+    throw err;
+  }
+}
+```
+
+If the operation requires multiple database statements, keep them adjacent and synchronous with respect to the transaction. The shorter the lock window, the lower the chance of collision.
+
+## Serialize writes in application code
+
+If the application has many write sources, serialize them before they reach SQLite. This is often the most reliable fix when write volume is modest but concurrency is high.
+
+A simple in-process queue works well when one Bun process owns the database file:
+
+```ts
+import { Database } from "bun:sqlite";
+
+const db = new Database("app.db");
+
+class WriteQueue {
+  private tail: Promise<void> = Promise.resolve();
+
+  enqueue<T>(fn: () => Promise<T> | T): Promise<T> {
+    const next = this.tail.then(fn, fn);
+    this.tail = next.then(() => undefined, () => undefined);
+    return next;
+  }
+}
+
+const writes = new WriteQueue();
+
+export function addEvent(name: string) {
+  return writes.enqueue(() => {
+    db.run("INSERT INTO events (name) VALUES (?)", name);
+  });
+}
+```
+
+This changes the shape of the problem. Instead of many overlapping writers competing for SQLite’s lock, the application feeds one writer at a time.
+
+Use this when:
+
+- the database is local to one process
+- write latency matters more than raw parallelism
+- the application can tolerate queued writes
+
+This is usually better than letting many handlers race and then trying to recover with retries.
+
+## Use WAL mode to reduce reader-writer blocking
+
+Write-ahead logging improves concurrency for many workloads. In WAL mode, readers can continue while a writer appends changes to the WAL file.
+
+Enable it with:
+
+```ts
+import { Database } from "bun:sqlite";
+
+const db = new Database("app.db");
+db.run("PRAGMA journal_mode = WAL");
+db.run("PRAGMA synchronous = NORMAL");
+```
+
+WAL mode is not a cure for overlapping writes. It mainly reduces contention between readers and writers. Only one writer still holds the writer lock at a time, so two concurrent write transactions can still collide with `SQLITE_BUSY`.
+
+That makes WAL mode a good default for mixed read/write applications, but not a replacement for write serialization.
+
+If you use WAL, also consider:
+
+- `PRAGMA busy_timeout = 5000`
+- `PRAGMA wal_autocheckpoint` tuning for write-heavy workloads
+- proper checkpoint behavior during shutdown or maintenance
+
+The busy timeout gives SQLite time to wait for a lock instead of failing immediately.
+
+```ts
+db.run("PRAGMA busy_timeout = 5000");
+```
+
+That can smooth over brief contention, but it does not fix a design that routinely starts overlapping writes.
+
+## Do not use retries as the main fix
+
+A retry loop can help with transient lock conflicts, but it should not be the first-line solution.
+
+A naive retry looks like this:
+
+```ts
+import { Database } from "bun:sqlite";
+
+const db = new Database("app.db");
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runWithRetry(sql: string, params: unknown[] = []) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      return db.run(sql, ...params);
+    } catch (err) {
+      if (!(err instanceof Error) || !err.message.includes("database is locked")) {
+        throw err;
+      }
+      await sleep(20 * 2 ** attempt);
+    }
+  }
+  throw new Error("write failed after retries");
+}
+```
+
+This can hide short bursts of contention, but it does not reduce contention. If the application keeps starting overlapping writes, retries just postpone the failure and increase tail latency.
+
+Retries belong at the edge of a system that already has:
+
+- short transactions
+- serialized write paths
+- reasonable lock timeouts
+- WAL mode where appropriate
+
+If the lock is caused by application structure, the application structure should change.
+
+## When the fix belongs in application structure
+
+Structural changes are the right fix when the root cause is one of these:
+
+- multiple request handlers write directly to the same database
+- background jobs and web traffic share the file
+- transactions wrap unrelated work
+- code fires concurrent writes with `Promise.all()`
+- many connections are opened to the same file from the same process
+
+In those cases, the database is doing exactly what it is supposed to do. The problem is that the application is asking it to do incompatible write work at the same time.
+
+A single writer queue, a dedicated write service, or a task scheduler that batches writes is more robust than sprinkling retries across call sites.
+
+## Connection settings that can help
+
+Several settings are useful when you want SQLite to wait briefly instead of failing fast.
+
+### `busy_timeout`
+
+Set a busy timeout so SQLite waits for a lock to clear:
+
+```ts
+db.run("PRAGMA busy_timeout = 5000");
+```
+
+This is helpful for short conflicts. It is not a solution for long-running transactions.
+
+### `journal_mode = WAL`
+
+Use WAL to improve read concurrency:
+
+```ts
+db.run("PRAGMA journal_mode = WAL");
+```
+
+This reduces reader blocking, but concurrent writers still serialize.
+
+### `synchronous = NORMAL`
+
+In WAL mode, `PRAGMA synchronous = NORMAL` is often used to trade a small amount of durability margin for better throughput. That is a workload decision, not a lock fix.
+
+```ts
+db.run("PRAGMA synchronous = NORMAL");
+```
+
+### One connection per process, not per write
+
+Open a connection once and reuse it. Reopening connections for every write increases overhead and can worsen contention patterns. It does not remove the single-writer rule.
+
+## A safer structure for Bun apps
+
+A practical design for a Bun service is:
+
+- one database file
+- one long-lived connection per process
+- WAL mode enabled
+- `busy_timeout` set
+- one serialized write queue
+- transactions that contain only SQL
+- no `await` inside a transaction unless the awaited work happens before the transaction begins or after it ends
+
+Example:
+
+```ts
+import { Database } from "bun:sqlite";
+
+const db = new Database("app.db");
+db.run("PRAGMA journal_mode = WAL");
+db.run("PRAGMA busy_timeout = 5000");
+
+db.run(`CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`);
+
+class Writer {
+  private tail: Promise<void> = Promise.resolve();
+
+  enqueue<T>(fn: () => Promise<T> | T): Promise<T> {
+    const next = this.tail.then(fn, fn);
+    this.tail = next.then(() => undefined, () => undefined);
+    return next;
+  }
+}
+
+const writer = new Writer();
+
+export function writeAudit(message: string) {
+  return writer.enqueue(() => {
+    db.run("BEGIN");
+    try {
+      db.run(
+        "INSERT INTO audit_log (message, created_at) VALUES (?, ?)",
+        message,
+        Date.now()
+      );
+      db.run("COMMIT");
+    } catch (err) {
+      db.run("ROLLBACK");
+      throw err;
+    }
+  });
+}
+```
+
+This keeps the write path deterministic and makes lock contention much less likely.
+
+## Practical takeaway
+
+Prefer structural fixes first: shorten transactions, serialize writes, and enable WAL mode with a sensible `busy_timeout`. Use a retry loop only as a fallback for brief lock collisions, not as the main strategy. If the application opens multiple write paths to the same SQLite file, the safest fix is to funnel them through one writer instead of letting Bun code race on the database lock.
