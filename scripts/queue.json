@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-23T20:09:45.652Z",
     "ideas": [
         {
-            "cell": "navigation-failure::nextjs::client-router-refresh",
-            "title": "Next.js Client Navigation Stays Stuck on a Stale Page After `router.refresh()`",
-            "description": "`router.refresh()` does not update a page when client state or caching keeps the old UI alive.",
-            "tags": [
-                "nextjs",
-                "app-router",
-                "navigation",
-                "cache",
-                "react"
-            ],
-            "angle": "Cover what `router.refresh()` actually invalidates in the App Router and why client component state, memoized data, or a cached fetch can keep stale output visible. Explain which parts rerender, which do not, and how to combine server invalidation, cache tags, or state resets so the page truly updates.",
-            "slug": "next-js-client-navigation-stays-stuck-on-a-stale-page-after-router-refresh"
-        },
-        {
             "cell": "loader-boundary-mismatch::remix::wrong-error-route",
             "title": "Remix Sends Errors to the Wrong Boundary When a Loader Throws Outside Its Route",
             "description": "A thrown loader error can skip the expected boundary when the route hierarchy does not match the failing segment.",
@@ -74,19 +60,19 @@
     ],
     "drafted": [
         {
-            "cell": "bun-sqlite-transaction-lock::bun::concurrent-write-lock",
-            "title": "Bun Locks SQLite During Overlapping Writes with `SQLITE_BUSY`",
-            "description": "Concurrent writes in Bun can stall or fail when SQLite holds a transaction lock too long.",
+            "cell": "navigation-failure::nextjs::client-router-refresh",
+            "title": "Next.js Client Navigation Stays Stuck on a Stale Page After `router.refresh()`",
+            "description": "`router.refresh()` does not update a page when client state or caching keeps the old UI alive.",
             "tags": [
-                "bun",
-                "sqlite",
-                "transactions",
-                "locking",
-                "database"
+                "nextjs",
+                "app-router",
+                "navigation",
+                "cache",
+                "react"
             ],
-            "angle": "Explain the lock model behind SQLite and why Bun code that opens multiple write paths can collide on the same database file. Show how to reduce lock contention with shorter transactions, serialized writes, WAL mode, or a single writer queue, and make clear when the fix belongs in application structure instead of a retry loop.",
-            "slug": "bun-locks-sqlite-during-overlapping-writes-with-sqlite-busy",
-            "draftedAt": "2026-08-27T02:29:09.478Z"
+            "angle": "Cover what `router.refresh()` actually invalidates in the App Router and why client component state, memoized data, or a cached fetch can keep stale output visible. Explain which parts rerender, which do not, and how to combine server invalidation, cache tags, or state resets so the page truly updates.",
+            "slug": "next-js-client-navigation-stays-stuck-on-a-stale-page-after-router-refresh",
+            "draftedAt": "2026-08-28T05:54:13.077Z"
         }
     ]
 }
