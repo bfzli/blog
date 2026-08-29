@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-23T20:09:45.652Z",
     "ideas": [
         {
-            "cell": "loader-boundary-mismatch::remix::wrong-error-route",
-            "title": "Remix Sends Errors to the Wrong Boundary When a Loader Throws Outside Its Route",
-            "description": "A thrown loader error can skip the expected boundary when the route hierarchy does not match the failing segment.",
-            "tags": [
-                "remix",
-                "loaders",
-                "error-boundary",
-                "routing",
-                "server-rendering"
-            ],
-            "angle": "Explain how Remix chooses the nearest `ErrorBoundary` and why a thrown `Response` or exception lands in a parent route when the child route does not define one. Cover the difference between route module boundaries, nested layouts, and thrown responses, then show how to place boundaries so the failure is handled at the right level.",
-            "slug": "remix-sends-errors-to-the-wrong-boundary-when-a-loader-throws-outside-its-route"
-        },
-        {
             "cell": "preload-bridge-types::electron::context-isolation-api",
             "title": "Electron Exposes `ipcRenderer` as `undefined` When Context Isolation Blocks the Preload Bridge",
             "description": "A renderer cannot access Electron APIs directly when context isolation removes the preload bridge.",
@@ -60,19 +46,19 @@
     ],
     "drafted": [
         {
-            "cell": "navigation-failure::nextjs::client-router-refresh",
-            "title": "Next.js Client Navigation Stays Stuck on a Stale Page After `router.refresh()`",
-            "description": "`router.refresh()` does not update a page when client state or caching keeps the old UI alive.",
+            "cell": "loader-boundary-mismatch::remix::wrong-error-route",
+            "title": "Remix Sends Errors to the Wrong Boundary When a Loader Throws Outside Its Route",
+            "description": "A thrown loader error can skip the expected boundary when the route hierarchy does not match the failing segment.",
             "tags": [
-                "nextjs",
-                "app-router",
-                "navigation",
-                "cache",
-                "react"
+                "remix",
+                "loaders",
+                "error-boundary",
+                "routing",
+                "server-rendering"
             ],
-            "angle": "Cover what `router.refresh()` actually invalidates in the App Router and why client component state, memoized data, or a cached fetch can keep stale output visible. Explain which parts rerender, which do not, and how to combine server invalidation, cache tags, or state resets so the page truly updates.",
-            "slug": "next-js-client-navigation-stays-stuck-on-a-stale-page-after-router-refresh",
-            "draftedAt": "2026-08-28T05:54:13.077Z"
+            "angle": "Explain how Remix chooses the nearest `ErrorBoundary` and why a thrown `Response` or exception lands in a parent route when the child route does not define one. Cover the difference between route module boundaries, nested layouts, and thrown responses, then show how to place boundaries so the failure is handled at the right level.",
+            "slug": "remix-sends-errors-to-the-wrong-boundary-when-a-loader-throws-outside-its-route",
+            "draftedAt": "2026-08-29T03:27:06.123Z"
         }
     ]
 }
