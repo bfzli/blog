@@ -1,0 +1,355 @@
+---
+title: "Remix Sends Errors to the Wrong Boundary When a Loader Throws Outside Its Route"
+description: "A thrown loader error can skip the expected boundary when the route hierarchy does not match the failing segment."
+tags: ["remix", "loaders", "error-boundary", "routing", "server-rendering"]
+date: Aug 29, 2026
+cell: "loader-boundary-mismatch::remix::wrong-error-route"
+---
+
+A loader in a child route breaks the matching route tree, and Remix renders the parent route boundary instead of the child. The thrown text is usually the raw exception message or a `Response` status body such as `404 Not Found`, `401 Unauthorized`, or `Error: Cannot read properties of undefined`.
+
+## How Remix decides which error boundary to render
+
+Remix does not pick an `ErrorBoundary` by file name alone. It walks the matched route hierarchy from the route where the error occurred upward until it finds the nearest route module that exports `ErrorBoundary`.
+
+That means the route that threw the error is only the first candidate. If that route module does not define an `ErrorBoundary`, Remix keeps moving to the parent route, then the parent’s parent, and so on, until it finds one or reaches the root default boundary.
+
+This applies to both:
+
+- uncaught exceptions thrown from loaders, actions, or render code
+- thrown `Response` values created with `throw new Response(...)` or `throw json(...)`
+
+The important detail is that boundaries are route-module scoped. A nested visual layout does not count unless it is also a route module with its own `ErrorBoundary`.
+
+## The route hierarchy determines the fallback target
+
+Consider this route tree:
+
+```txt
+app/
+  routes/
+    _app.tsx
+    _app.users.tsx
+    _app.users.$userId.tsx
+```
+
+If the user detail loader throws, Remix checks `app/routes/_app.users.$userId.tsx` first. If that module does not export `ErrorBoundary`, Remix falls back to `app/routes/_app.users.tsx`. If that one also lacks a boundary, Remix falls back again to `_app.tsx`.
+
+This is why the error seems to land in a parent route. It is not skipping the child route. The child route simply does not provide a boundary, so the parent becomes the nearest available one.
+
+The same rule applies when a thrown `Response` is used for control flow. A `throw new Response("Not Found", { status: 404 })` from a child loader is still an error-like control path from Remix’s perspective. The route that handles it is the nearest ancestor with `ErrorBoundary`.
+
+## Example of a loader error escaping the child route
+
+A minimal example:
+
+```tsx
+// app/routes/_app.users.$userId.tsx
+import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { useLoaderData } from "@remix-run/react";
+
+type LoaderData = {
+  user: {
+    id: string;
+    name: string;
+  };
+};
+
+export async function loader({ params }: LoaderFunctionArgs) {
+  const userId = params.userId;
+
+  if (!userId) {
+    throw new Response("Missing user id", { status: 400 });
+  }
+
+  const user = await findUser(userId);
+
+  if (!user) {
+    throw new Response("User not found", { status: 404 });
+  }
+
+  return json<LoaderData>({ user });
+}
+
+export default function UserRoute() {
+  const data = useLoaderData<typeof loader>();
+
+  return (
+    <main>
+      <h1>{data.user.name}</h1>
+    </main>
+  );
+}
+
+async function findUser(id: string) {
+  return id === "1" ? { id: "1", name: "Ada" } : null;
+}
+```
+
+If this module has no `ErrorBoundary`, then a `404` or `400` thrown here is rendered by the nearest parent boundary.
+
+A parent route might look like this:
+
+```tsx
+// app/routes/_app.users.tsx
+import type { ErrorBoundaryComponent, LoaderFunctionArgs } from "@remix-run/node";
+import { Link, Outlet, isRouteErrorResponse, useRouteError } from "@remix-run/react";
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  return null;
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+
+  if (isRouteErrorResponse(error)) {
+    return (
+      <div>
+        <h1>User section error</h1>
+        <p>{error.status} {error.statusText}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1>User section error</h1>
+      <p>Unexpected error</p>
+    </div>
+  );
+}
+
+export default function UsersLayout() {
+  return (
+    <section>
+      <nav>
+        <Link to="/app/users/1">User 1</Link>
+      </nav>
+      <Outlet />
+    </section>
+  );
+}
+```
+
+This boundary will catch the child route failure because it is the nearest one available.
+
+## Route module boundaries are not the same as layout nesting
+
+A nested layout can make the UI look hierarchical without changing the error boundary behavior. Remix uses route modules, not arbitrary component nesting, to determine boundary inheritance.
+
+For example, this component structure does not create a route boundary:
+
+```tsx
+function UsersShell({ children }: { children: React.ReactNode }) {
+  return (
+    <section>
+      <header>Users</header>
+      {children}
+    </section>
+  );
+}
+```
+
+If `UsersShell` is only a component used inside a route, it cannot intercept loader errors from a child route. Only the route module that exports `ErrorBoundary` participates in the route error resolution chain.
+
+That distinction matters when a parent route defines an `Outlet` but the child route handles a narrower domain. The layout may visually belong to the child, but if the child route file omits `ErrorBoundary`, its errors will surface in the parent route’s boundary.
+
+## Thrown `Response` values and exceptions behave differently in content, not in routing
+
+Remix treats thrown `Response` values as expected route failures. They are common for `404`, `401`, `403`, and validation failures. Exceptions are unexpected failures, such as programming errors or network faults.
+
+The routing behavior is the same:
+
+- `throw new Response("Not Found", { status: 404 })`
+- `throw new Error("Database unavailable")`
+
+Both travel to the nearest boundary.
+
+The rendering behavior inside the boundary can differ because `isRouteErrorResponse(error)` only matches thrown `Response`-like errors. For a plain exception, you handle it as a generic error.
+
+```tsx
+import { isRouteErrorResponse, useRouteError } from "@remix-run/react";
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+
+  if (isRouteErrorResponse(error)) {
+    return (
+      <div>
+        <h2>{error.status}</h2>
+        <p>{error.data}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2>Unexpected error</h2>
+      <p>{error instanceof Error ? error.message : "Unknown error"}</p>
+    </div>
+  );
+}
+```
+
+This is why a boundary on the parent route may show a child route’s `404` body. The boundary is in the parent, but the thrown `Response` still carries the child’s status and payload.
+
+## Why the boundary can look “wrong”
+
+The mismatch usually comes from route shape, not from Remix choosing incorrectly.
+
+Common causes:
+
+1. The child route module does not export `ErrorBoundary`.
+2. The parent route has a boundary, so it becomes the nearest match.
+3. The child route is nested under a shared layout route that handles multiple segments.
+4. The error is thrown during a loader or action, before the child component renders.
+5. A route is split across files in a way that does not match the UI expectation.
+
+A route like `_app.users.$userId.tsx` nested under `_app.users.tsx` often means the user detail boundary should live in the `$userId` module. Without it, the parent `users` route handles both list and detail failures.
+
+## Place boundaries at the same granularity as the failure domain
+
+The simplest fix is to put `ErrorBoundary` in the route module whose data can fail independently.
+
+If a child route loads user details, define a boundary there:
+
+```tsx
+// app/routes/_app.users.$userId.tsx
+import { isRouteErrorResponse, useRouteError } from "@remix-run/react";
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+
+  if (isRouteErrorResponse(error)) {
+    if (error.status === 404) {
+      return <p>User not found.</p>;
+    }
+
+    if (error.status === 401) {
+      return <p>You are not authorized to view this user.</p>;
+    }
+
+    return <p>{error.status} {error.statusText}</p>;
+  }
+
+  return <p>Unable to load user details.</p>;
+}
+```
+
+Now failures from that route stay in that route.
+
+Use parent boundaries only when the parent can meaningfully handle the whole subtree. For example, if all `/app/users/*` routes share the same failure UI, a boundary in `_app.users.tsx` is appropriate. If the detail route needs a different message or fallback than the list route, define both boundaries.
+
+## Error boundaries and `CatchBoundary` are different in older code
+
+Older Remix code used `CatchBoundary` for thrown `Response` values and `ErrorBoundary` for exceptions. In current Remix versions, route modules should generally use `ErrorBoundary`, and thrown responses are surfaced through the route error boundary flow.
+
+If you are reading older examples, verify the package version first.
+
+```bash
+npm ls @remix-run/react @remix-run/node remix
+```
+
+If the project is using a modern Remix release, prefer `ErrorBoundary` and `useRouteError` from `@remix-run/react`.
+
+## A route-level example with proper scoping
+
+This structure keeps detail-page failures local:
+
+```tsx
+// app/routes/_app.tsx
+import { Outlet } from "@remix-run/react";
+
+export default function AppLayout() {
+  return (
+    <div>
+      <header>App</header>
+      <Outlet />
+    </div>
+  );
+}
+
+export function ErrorBoundary() {
+  return <p>App shell failed.</p>;
+}
+```
+
+```tsx
+// app/routes/_app.users.tsx
+import { Link, Outlet } from "@remix-run/react";
+
+export default function UsersLayout() {
+  return (
+    <div>
+      <aside>
+        <Link to="/app/users/1">Ada</Link>
+      </aside>
+      <Outlet />
+    </div>
+  );
+}
+
+export function ErrorBoundary() {
+  return <p>Users section failed.</p>;
+}
+```
+
+```tsx
+// app/routes/_app.users.$userId.tsx
+import { json, type LoaderFunctionArgs } from "@remix-run/node";
+import { useLoaderData, useRouteError, isRouteErrorResponse } from "@remix-run/react";
+
+export async function loader({ params }: LoaderFunctionArgs) {
+  const user = await getUser(params.userId);
+
+  if (!user) {
+    throw new Response("User not found", { status: 404 });
+  }
+
+  return json({ user });
+}
+
+export default function UserDetails() {
+  const { user } = useLoaderData<typeof loader>();
+
+  return <h1>{user.name}</h1>;
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+
+  if (isRouteErrorResponse(error) && error.status === 404) {
+    return <p>This user does not exist.</p>;
+  }
+
+  return <p>Unable to load user details.</p>;
+}
+
+async function getUser(id: string | undefined) {
+  if (!id) return null;
+  return id === "1" ? { id: "1", name: "Ada" } : null;
+}
+```
+
+With this setup:
+
+- `/app/users/1` shows the detail page
+- `/app/users/2` renders the child boundary with the `404` message
+- a broader app failure still uses the app boundary
+
+That is the intended scoping.
+
+## How to avoid the wrong boundary in practice
+
+Define `ErrorBoundary` in every route module that owns independent data loading or action handling. Do not rely on a parent boundary unless the parent is explicitly meant to own the whole subtree.
+
+A useful rule is:
+
+- one boundary per failure domain
+- a child route boundary for child-specific data
+- a parent boundary for shared shell or shared section failures
+
+When a route only renders UI and does not load its own data, a boundary may not be necessary. When the route has its own `loader` or `action`, a boundary is usually warranted if you want the error to stay local.
+
+The practical takeaway is to place `ErrorBoundary` in the same route module as the loader that can fail, or in the nearest parent that truly owns that failure. Prefer the child route boundary when the error is specific to that segment, because it prevents thrown `Response` values and exceptions from being rendered by a broader parent layout.
