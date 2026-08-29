@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-23T20:09:45.652Z",
     "ideas": [
         {
-            "cell": "preload-bridge-types::electron::context-isolation-api",
-            "title": "Electron Exposes `ipcRenderer` as `undefined` When Context Isolation Blocks the Preload Bridge",
-            "description": "A renderer cannot access Electron APIs directly when context isolation removes the preload bridge.",
-            "tags": [
-                "electron",
-                "preload",
-                "context-isolation",
-                "ipc",
-                "security"
-            ],
-            "angle": "Explain how `contextIsolation: true` and `nodeIntegration: false` separate the renderer from Electron internals, and why direct `require('electron')` calls fail or return `undefined`. Show the correct preload bridge with `contextBridge.exposeInMainWorld`, the IPC channel shape, and the security reason the bridge must stay narrow.",
-            "slug": "electron-exposes-ipcrenderer-as-undefined-when-context-isolation-blocks-the-preload-bridge"
-        },
-        {
             "cell": "package-exports-resolution::node::dual-entrypoint-build",
             "title": "Node Resolves the Wrong File from `package.json` `exports` When the Default Condition Is Missing",
             "description": "A package can load the wrong build target if `exports` does not declare the condition Node is using.",
@@ -46,19 +32,19 @@
     ],
     "drafted": [
         {
-            "cell": "loader-boundary-mismatch::remix::wrong-error-route",
-            "title": "Remix Sends Errors to the Wrong Boundary When a Loader Throws Outside Its Route",
-            "description": "A thrown loader error can skip the expected boundary when the route hierarchy does not match the failing segment.",
+            "cell": "preload-bridge-types::electron::context-isolation-api",
+            "title": "Electron Exposes `ipcRenderer` as `undefined` When Context Isolation Blocks the Preload Bridge",
+            "description": "A renderer cannot access Electron APIs directly when context isolation removes the preload bridge.",
             "tags": [
-                "remix",
-                "loaders",
-                "error-boundary",
-                "routing",
-                "server-rendering"
+                "electron",
+                "preload",
+                "context-isolation",
+                "ipc",
+                "security"
             ],
-            "angle": "Explain how Remix chooses the nearest `ErrorBoundary` and why a thrown `Response` or exception lands in a parent route when the child route does not define one. Cover the difference between route module boundaries, nested layouts, and thrown responses, then show how to place boundaries so the failure is handled at the right level.",
-            "slug": "remix-sends-errors-to-the-wrong-boundary-when-a-loader-throws-outside-its-route",
-            "draftedAt": "2026-08-29T03:27:06.123Z"
+            "angle": "Explain how `contextIsolation: true` and `nodeIntegration: false` separate the renderer from Electron internals, and why direct `require('electron')` calls fail or return `undefined`. Show the correct preload bridge with `contextBridge.exposeInMainWorld`, the IPC channel shape, and the security reason the bridge must stay narrow.",
+            "slug": "electron-exposes-ipcrenderer-as-undefined-when-context-isolation-blocks-the-preload-bridge",
+            "draftedAt": "2026-08-29T23:47:11.351Z"
         }
     ]
 }
