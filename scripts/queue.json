@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-08-23T20:09:45.652Z",
+    "generatedAt": "2026-08-30T22:12:23.002Z",
     "ideas": [
         {
             "cell": "package-exports-resolution::node::dual-entrypoint-build",
@@ -28,6 +28,110 @@
             ],
             "angle": "Explain the handshake requirements for WebSocket upgrades in Workers and why a normal `Response` cannot satisfy an `Upgrade: websocket` request. Cover the `WebSocketPair` flow, the required status code and headers, and the exact response shape the platform expects so the connection opens instead of failing the upgrade.",
             "slug": "cloudflare-workers-reject-a-websocket-upgrade-because-the-response-is-not-a-101-switching-protocols-handshake"
+        },
+        {
+            "cell": "cors-header-preflight::hono::custom-response-headers",
+            "title": "Hono Returns a CORS Failure When `Access-Control-Allow-Headers` Omits `Content-Type`",
+            "description": "Fix Hono responses that fail browser preflight because the server does not allow the request headers the client sends.",
+            "tags": [
+                "hono",
+                "cors",
+                "preflight",
+                "headers"
+            ],
+            "angle": "Explain how browser preflight checks compare `Access-Control-Request-Headers` against `Access-Control-Allow-Headers`, and why JSON or auth requests often fail when `Content-Type` or `Authorization` is missing. Show the exact Hono middleware or manual response headers needed, plus how to verify the preflight with `OPTIONS`.",
+            "slug": "hono-returns-a-cors-failure-when-access-control-allow-headers-omits-content-type"
+        },
+        {
+            "cell": "android-gradle-kotlin::react-native::missing-plugin-classpath",
+            "title": "React Native Android Fails with `Plugin [id: 'com.facebook.react'] was not found`",
+            "description": "Resolve the Gradle plugin lookup failure that blocks Android builds after a React Native upgrade or template change.",
+            "tags": [
+                "react-native",
+                "android",
+                "gradle",
+                "kotlin"
+            ],
+            "angle": "Cover why Gradle cannot resolve the React plugin when the settings and root build files are out of sync, especially after template version changes. Explain where the plugin is declared, how the pluginManagement and repositories blocks affect resolution, and what exact files need to match the React Native version.",
+            "slug": "react-native-android-fails-with-plugin-id-com-facebook-react-was-not-found"
+        },
+        {
+            "cell": "deno-network-import::deno::npm-dependency-resolution",
+            "title": "Deno Fails to Run an npm Package Because `npm:` Imports Need an Explicit Permission or Lockfile Entry",
+            "description": "Fix Deno package loading when an npm dependency is blocked, unresolved, or missing from the module graph.",
+            "tags": [
+                "deno",
+                "npm",
+                "imports",
+                "module-resolution"
+            ],
+            "angle": "Explain how Deno resolves npm packages through the module graph, why bare npm dependencies can fail without the right specifier or install step, and how `deno add` or `deno.json` imports map fixes it. Include the difference between remote, npm, and local module resolution so the failure mode is clear.",
+            "slug": "deno-fails-to-run-an-npm-package-because-npm-imports-need-an-explicit-permission-or-lockfile-entry"
+        },
+        {
+            "cell": "express-route-prefix::express::mounted-router-paths",
+            "title": "Express Mounts a Router at the Wrong Path and Every Nested Route Returns `Cannot GET /api/...`",
+            "description": "Fix router mounting mistakes that make Express serve 404s for routes that exist in the child router.",
+            "tags": [
+                "express",
+                "routing",
+                "router",
+                "http"
+            ],
+            "angle": "Describe how `app.use('/api', router)` changes every route inside the router and why leading slashes inside the child router can produce surprising paths. Show how `req.baseUrl`, `req.path`, and `router.use()` interact, and give a concrete file layout and mount path that match.",
+            "slug": "express-mounts-a-router-at-the-wrong-path-and-every-nested-route-returns-cannot-get-api"
+        },
+        {
+            "cell": "remix-streaming-loader::remix::defer-suspense-boundary",
+            "title": "Remix Streams `defer()` Data but the Page Stalls Because No `<Await>` Boundary Wraps It",
+            "description": "Make Remix deferred data render correctly by wiring the loader, suspense boundary, and fallback together.",
+            "tags": [
+                "remix",
+                "streaming",
+                "suspense",
+                "defer"
+            ],
+            "angle": "Explain how `defer()` returns a promise that must be consumed by `<Await>` inside a `Suspense` boundary, and why the HTML can render while the deferred part never resolves visibly. Cover the loader shape, the component structure, and the exact boundary placement required for streamed data.",
+            "slug": "remix-streams-defer-data-but-the-page-stalls-because-no-await-boundary-wraps-it"
+        },
+        {
+            "cell": "node-esm-path::node::import-meta-url-file-url",
+            "title": "Node Imports a Local ESM File as `[ERR_MODULE_NOT_FOUND]` Because the Path Is Not a File URL",
+            "description": "Fix local ESM imports in Node when relative paths or missing extensions stop module resolution.",
+            "tags": [
+                "node",
+                "esm",
+                "imports",
+                "filesystem"
+            ],
+            "angle": "Cover the resolution rules for native ESM in Node, including why `import './module'` can fail when the file extension is omitted. Explain the difference between package resolution and file URL resolution, and show the correct `./module.js` or `fileURLToPath` pattern for local modules.",
+            "slug": "node-imports-a-local-esm-file-as-err-module-not-found-because-the-path-is-not-a-file-url"
+        },
+        {
+            "cell": "docker-compose-healthcheck::docker::dependency-ordering",
+            "title": "Docker Compose Starts an API Before Postgres Is Ready and the App Logs `ECONNREFUSED`",
+            "description": "Use health checks and dependency conditions so Compose waits for Postgres instead of starting the app too early.",
+            "tags": [
+                "docker",
+                "compose",
+                "postgres",
+                "healthcheck"
+            ],
+            "angle": "Explain why `depends_on` only controls container start order and not service readiness, which leaves the app connecting before Postgres accepts connections. Show a healthcheck for Postgres, the correct `depends_on: condition: service_healthy` setup, and the fallback retry behavior the app should still keep.",
+            "slug": "docker-compose-starts-an-api-before-postgres-is-ready-and-the-app-logs-econnrefused"
+        },
+        {
+            "cell": "nginx-websocket-upgrade::nginx::proxy-headers",
+            "title": "Nginx Proxies a WebSocket Endpoint but the Client Fails the Upgrade with `400 Bad Request`",
+            "description": "Fix WebSocket proxying by forwarding the upgrade headers and using the right HTTP version.",
+            "tags": [
+                "nginx",
+                "websocket",
+                "proxy",
+                "headers"
+            ],
+            "angle": "Describe how Nginx strips upgrade semantics unless `proxy_http_version 1.1` and the `Upgrade` and `Connection` headers are forwarded correctly. Explain why the backend sees a normal HTTP request instead of a WebSocket handshake, and include the exact location block needed to preserve the upgrade.",
+            "slug": "nginx-proxies-a-websocket-endpoint-but-the-client-fails-the-upgrade-with-400-bad-request"
         }
     ],
     "drafted": [
