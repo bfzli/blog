@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-30T22:12:23.002Z",
     "ideas": [
         {
-            "cell": "package-exports-resolution::node::dual-entrypoint-build",
-            "title": "Node Resolves the Wrong File from `package.json` `exports` When the Default Condition Is Missing",
-            "description": "A package can load the wrong build target if `exports` does not declare the condition Node is using.",
-            "tags": [
-                "node",
-                "package-json",
-                "exports",
-                "esm",
-                "commonjs"
-            ],
-            "angle": "Explain Node’s conditional exports resolution and how it picks between `import`, `require`, `default`, and custom conditions. Show why a package can appear published correctly but still load the wrong file or fail to resolve in one runtime, and cover the exact `exports` shape that keeps ESM and CommonJS entry points aligned.",
-            "slug": "node-resolves-the-wrong-file-from-package-json-exports-when-the-default-condition-is-missing"
-        },
-        {
             "cell": "websocket-handshake::cloudflare-workers::upgrade-response",
             "title": "Cloudflare Workers Reject a WebSocket Upgrade Because the Response Is Not a 101 Switching Protocols Handshake",
             "description": "A WebSocket route fails when the Worker returns the wrong upgrade response shape.",
@@ -136,19 +122,19 @@
     ],
     "drafted": [
         {
-            "cell": "preload-bridge-types::electron::context-isolation-api",
-            "title": "Electron Exposes `ipcRenderer` as `undefined` When Context Isolation Blocks the Preload Bridge",
-            "description": "A renderer cannot access Electron APIs directly when context isolation removes the preload bridge.",
+            "cell": "package-exports-resolution::node::dual-entrypoint-build",
+            "title": "Node Resolves the Wrong File from `package.json` `exports` When the Default Condition Is Missing",
+            "description": "A package can load the wrong build target if `exports` does not declare the condition Node is using.",
             "tags": [
-                "electron",
-                "preload",
-                "context-isolation",
-                "ipc",
-                "security"
+                "node",
+                "package-json",
+                "exports",
+                "esm",
+                "commonjs"
             ],
-            "angle": "Explain how `contextIsolation: true` and `nodeIntegration: false` separate the renderer from Electron internals, and why direct `require('electron')` calls fail or return `undefined`. Show the correct preload bridge with `contextBridge.exposeInMainWorld`, the IPC channel shape, and the security reason the bridge must stay narrow.",
-            "slug": "electron-exposes-ipcrenderer-as-undefined-when-context-isolation-blocks-the-preload-bridge",
-            "draftedAt": "2026-08-29T23:47:11.351Z"
+            "angle": "Explain Node’s conditional exports resolution and how it picks between `import`, `require`, `default`, and custom conditions. Show why a package can appear published correctly but still load the wrong file or fail to resolve in one runtime, and cover the exact `exports` shape that keeps ESM and CommonJS entry points aligned.",
+            "slug": "node-resolves-the-wrong-file-from-package-json-exports-when-the-default-condition-is-missing",
+            "draftedAt": "2026-08-31T00:05:59.040Z"
         }
     ]
 }
