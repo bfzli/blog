@@ -2,20 +2,6 @@
     "generatedAt": "2026-08-30T22:12:23.002Z",
     "ideas": [
         {
-            "cell": "websocket-handshake::cloudflare-workers::upgrade-response",
-            "title": "Cloudflare Workers Reject a WebSocket Upgrade Because the Response Is Not a 101 Switching Protocols Handshake",
-            "description": "A WebSocket route fails when the Worker returns the wrong upgrade response shape.",
-            "tags": [
-                "cloudflare-workers",
-                "websocket",
-                "upgrade",
-                "http",
-                "edge"
-            ],
-            "angle": "Explain the handshake requirements for WebSocket upgrades in Workers and why a normal `Response` cannot satisfy an `Upgrade: websocket` request. Cover the `WebSocketPair` flow, the required status code and headers, and the exact response shape the platform expects so the connection opens instead of failing the upgrade.",
-            "slug": "cloudflare-workers-reject-a-websocket-upgrade-because-the-response-is-not-a-101-switching-protocols-handshake"
-        },
-        {
             "cell": "cors-header-preflight::hono::custom-response-headers",
             "title": "Hono Returns a CORS Failure When `Access-Control-Allow-Headers` Omits `Content-Type`",
             "description": "Fix Hono responses that fail browser preflight because the server does not allow the request headers the client sends.",
@@ -122,19 +108,19 @@
     ],
     "drafted": [
         {
-            "cell": "package-exports-resolution::node::dual-entrypoint-build",
-            "title": "Node Resolves the Wrong File from `package.json` `exports` When the Default Condition Is Missing",
-            "description": "A package can load the wrong build target if `exports` does not declare the condition Node is using.",
+            "cell": "websocket-handshake::cloudflare-workers::upgrade-response",
+            "title": "Cloudflare Workers Reject a WebSocket Upgrade Because the Response Is Not a 101 Switching Protocols Handshake",
+            "description": "A WebSocket route fails when the Worker returns the wrong upgrade response shape.",
             "tags": [
-                "node",
-                "package-json",
-                "exports",
-                "esm",
-                "commonjs"
+                "cloudflare-workers",
+                "websocket",
+                "upgrade",
+                "http",
+                "edge"
             ],
-            "angle": "Explain Node’s conditional exports resolution and how it picks between `import`, `require`, `default`, and custom conditions. Show why a package can appear published correctly but still load the wrong file or fail to resolve in one runtime, and cover the exact `exports` shape that keeps ESM and CommonJS entry points aligned.",
-            "slug": "node-resolves-the-wrong-file-from-package-json-exports-when-the-default-condition-is-missing",
-            "draftedAt": "2026-08-31T00:05:59.040Z"
+            "angle": "Explain the handshake requirements for WebSocket upgrades in Workers and why a normal `Response` cannot satisfy an `Upgrade: websocket` request. Cover the `WebSocketPair` flow, the required status code and headers, and the exact response shape the platform expects so the connection opens instead of failing the upgrade.",
+            "slug": "cloudflare-workers-reject-a-websocket-upgrade-because-the-response-is-not-a-101-switching-protocols-handshake",
+            "draftedAt": "2026-09-01T00:56:38.331Z"
         }
     ]
 }
