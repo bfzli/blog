@@ -1,0 +1,301 @@
+---
+title: "Hono Returns a CORS Failure When `Access-Control-Allow-Headers` Omits `Content-Type`"
+description: "Fix Hono responses that fail browser preflight because the server does not allow the request headers the client sends."
+tags: ["hono", "cors", "preflight", "headers"]
+date: Sep 2, 2026
+cell: "cors-header-preflight::hono::custom-response-headers"
+---
+
+A browser `fetch()` to a Hono endpoint fails during preflight, and the console shows: `Response to preflight request doesn't pass access control check: Request header field content-type is not allowed by Access-Control-Allow-Headers in preflight response.`
+
+## What the browser is checking
+
+This error comes from CORS preflight, not from the actual API handler.
+
+When a cross-origin request is “non-simple”, the browser sends an `OPTIONS` request first. That preflight includes:
+
+- `Origin`
+- `Access-Control-Request-Method`
+- `Access-Control-Request-Headers` when the client will send non-simple headers
+
+The server must answer with headers that explicitly allow the method and the requested headers. The browser compares the comma-separated values it sent in `Access-Control-Request-Headers` against the server’s `Access-Control-Allow-Headers`.
+
+If the request includes `Content-Type: application/json`, the preflight commonly contains `Access-Control-Request-Headers: content-type`. If the request includes an `Authorization` header, the preflight commonly contains `Access-Control-Request-Headers: authorization`.
+
+If the response omits either header name from `Access-Control-Allow-Headers`, the browser blocks the request before your route code runs.
+
+## Why JSON and auth requests trigger it
+
+A plain form post or a simple `GET` can avoid preflight. JSON and authenticated API requests usually do not.
+
+These request headers often make the browser preflight:
+
+- `Content-Type: application/json`
+- `Authorization: Bearer ...`
+- custom headers such as `X-Request-Id`, `X-API-Key`, or `X-Tenant`
+
+The important detail is that `Content-Type` is only “simple” for a narrow set of values:
+
+- `text/plain`
+- `application/x-www-form-urlencoded`
+- `multipart/form-data`
+
+`application/json` is not on that list, so the browser treats it as a non-simple header and checks it during preflight.
+
+`Authorization` is never a simple header, so any request that sends it will preflight.
+
+## How the mismatch happens
+
+The browser does not guess. It reads the preflight response and requires an explicit match.
+
+For example, if the browser sends:
+
+```http
+OPTIONS /api/login HTTP/1.1
+Origin: https://app.example
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: content-type, authorization
+```
+
+then the response must include something like:
+
+```http
+Access-Control-Allow-Origin: https://app.example
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: content-type, authorization
+```
+
+If `authorization` is missing, the browser rejects the request even if the route would otherwise succeed.
+
+If `content-type` is missing, a `fetch()` with `body: JSON.stringify(...)` fails for the same reason.
+
+The server can return `200`, `204`, or another successful status for `OPTIONS`. The browser still blocks if the allow headers do not cover the request headers.
+
+## Hono middleware that fixes the response
+
+Hono provides CORS support through `@hono/cors`. Install it with Hono itself if it is not already present:
+
+```bash
+npm install hono @hono/cors
+```
+
+A minimal Hono app that allows `Content-Type` and `Authorization` looks like this:
+
+```ts
+import { Hono } from 'hono'
+import { cors } from '@hono/cors'
+
+const app = new Hono()
+
+app.use(
+  '/api/*',
+  cors({
+    origin: 'https://app.example',
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  })
+)
+
+app.post('/api/login', async (c) => {
+  const body = await c.req.json()
+  return c.json({ ok: true, received: body })
+})
+
+export default app
+```
+
+A few details matter here.
+
+`allowHeaders` must include the exact headers the browser will request. Header names are compared case-insensitively, but the name itself must be present.
+
+If the frontend sends `Content-Type: application/json`, then `Content-Type` should be in `allowHeaders`.
+
+If the frontend sends `Authorization: Bearer ...`, then `Authorization` should be in `allowHeaders`.
+
+If the app uses cookies or `fetch(..., { credentials: 'include' })`, `credentials: true` is also needed, and `origin` must be specific. A wildcard `*` cannot be used with credentials.
+
+## Manual headers without middleware
+
+The same behavior can be implemented without `@hono/cors` by handling `OPTIONS` directly and returning the CORS headers yourself.
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.options('/api/*', (c) => {
+  return c.text('', 204, {
+    'Access-Control-Allow-Origin': 'https://app.example',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin',
+  })
+})
+
+app.post('/api/login', async (c) => {
+  const body = await c.req.json()
+  return c.json(
+    { ok: true, received: body },
+    200,
+    {
+      'Access-Control-Allow-Origin': 'https://app.example',
+      'Access-Control-Allow-Credentials': 'true',
+      'Vary': 'Origin',
+    }
+  )
+})
+
+export default app
+```
+
+Manual headers are useful when the CORS policy needs to vary by route or by tenant. They also make the preflight behavior explicit.
+
+The `Vary: Origin` header is important when the server reflects origins or serves multiple allowed origins. Without it, shared caches can reuse a response for the wrong origin.
+
+## Verifying the preflight with `curl`
+
+A browser preflight can be reproduced with `curl` by sending an `OPTIONS` request and the same preflight headers.
+
+For a JSON request:
+
+```bash
+curl -i -X OPTIONS 'https://api.example.com/api/login' \
+  -H 'Origin: https://app.example' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type'
+```
+
+For a request that also uses auth:
+
+```bash
+curl -i -X OPTIONS 'https://api.example.com/api/login' \
+  -H 'Origin: https://app.example' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type, authorization'
+```
+
+A passing response should include at least:
+
+```http
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: https://app.example
+Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization
+```
+
+If the response omits `Access-Control-Allow-Headers`, or includes only `Content-Type` when the request asked for `authorization` too, the browser rejects the actual request.
+
+## A frontend request that triggers the problem
+
+A typical browser request looks like this:
+
+```ts
+await fetch('https://api.example.com/api/login', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer example-token',
+  },
+  body: JSON.stringify({ email: 'user@example.com', password: 'secret' }),
+})
+```
+
+That request causes a preflight because it includes `application/json` and `Authorization`.
+
+If the server only sends:
+
+```http
+Access-Control-Allow-Headers: Content-Type
+```
+
+the browser reports a failure before `POST /api/login` executes.
+
+If the server only allows `Authorization`, JSON still fails because the requested `content-type` header is not allowed.
+
+The same applies to custom headers. For example:
+
+```ts
+await fetch('https://api.example.com/api/items', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Tenant': 'acme',
+  },
+  body: JSON.stringify({ name: 'example' }),
+})
+```
+
+Then `X-Tenant` must also appear in `Access-Control-Allow-Headers`.
+
+## Common Hono configuration mistakes
+
+The first mistake is allowing origins and methods but not headers.
+
+```ts
+cors({
+  origin: 'https://app.example',
+  allowMethods: ['GET', 'POST'],
+})
+```
+
+That looks complete, but it still fails when the browser requests `content-type` or `authorization`, because `allowHeaders` was not set. In that case, the middleware can return a default header list that is too narrow for JSON or auth APIs.
+
+The second mistake is allowing the wrong case or the wrong name. The browser’s preflight uses lowercase header names in `Access-Control-Request-Headers`, but the comparison is case-insensitive. The problem is not casing. The problem is omission.
+
+The third mistake is assuming the actual route response matters more than the preflight response. It does not. The browser must accept the preflight first.
+
+The fourth mistake is sending `Access-Control-Allow-Headers` only on the `POST` response and not on the `OPTIONS` response. The browser evaluates the preflight response, so the `OPTIONS` handler must include the header.
+
+## Matching the request headers exactly
+
+A robust CORS policy allows only the headers the client actually uses.
+
+For a typical JSON API with bearer tokens:
+
+```ts
+import { Hono } from 'hono'
+import { cors } from '@hono/cors'
+
+const app = new Hono()
+
+app.use(
+  '/api/*',
+  cors({
+    origin: 'https://app.example',
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 86400,
+  })
+)
+```
+
+`maxAge` lets the browser cache the preflight result for the specified number of seconds. That reduces repeated `OPTIONS` traffic.
+
+If the frontend sends additional headers, update `allowHeaders` to include them. Do not rely on a wildcard unless the environment and security policy permit it. Browsers expect the server to declare the allowed request headers, and the safest configuration is to list them explicitly.
+
+## Confirming that Hono is actually handling `OPTIONS`
+
+If a reverse proxy or platform intercepts `OPTIONS`, the application may never see the preflight. In that case, verify the deployed edge or proxy configuration as well.
+
+From Hono itself, this route can help confirm handling:
+
+```ts
+app.options('/api/login', (c) => {
+  return c.text('preflight ok', 204, {
+    'Access-Control-Allow-Origin': 'https://app.example',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Vary': 'Origin',
+  })
+})
+```
+
+Run the `curl` command against that endpoint. If the response is not the one expected, the problem may be upstream of Hono.
+
+## The practical fix
+
+For a Hono API that serves browser clients, prefer `@hono/cors` with an explicit `allowHeaders` list that includes `Content-Type` and `Authorization` when those headers are used. That is the cleanest fix because it centralizes the CORS policy, handles preflight responses consistently, and keeps the `OPTIONS` behavior aligned with the actual routes.
+
+Use manual `OPTIONS` handlers only when the policy must differ per route or when the deployment environment makes middleware behavior harder to control. Keep the preflight response explicit, verify it with `curl -X OPTIONS`, and make sure the server answers with the exact headers the browser requests.
