@@ -2,19 +2,6 @@
     "generatedAt": "2026-08-30T22:12:23.002Z",
     "ideas": [
         {
-            "cell": "cors-header-preflight::hono::custom-response-headers",
-            "title": "Hono Returns a CORS Failure When `Access-Control-Allow-Headers` Omits `Content-Type`",
-            "description": "Fix Hono responses that fail browser preflight because the server does not allow the request headers the client sends.",
-            "tags": [
-                "hono",
-                "cors",
-                "preflight",
-                "headers"
-            ],
-            "angle": "Explain how browser preflight checks compare `Access-Control-Request-Headers` against `Access-Control-Allow-Headers`, and why JSON or auth requests often fail when `Content-Type` or `Authorization` is missing. Show the exact Hono middleware or manual response headers needed, plus how to verify the preflight with `OPTIONS`.",
-            "slug": "hono-returns-a-cors-failure-when-access-control-allow-headers-omits-content-type"
-        },
-        {
             "cell": "android-gradle-kotlin::react-native::missing-plugin-classpath",
             "title": "React Native Android Fails with `Plugin [id: 'com.facebook.react'] was not found`",
             "description": "Resolve the Gradle plugin lookup failure that blocks Android builds after a React Native upgrade or template change.",
@@ -108,19 +95,18 @@
     ],
     "drafted": [
         {
-            "cell": "websocket-handshake::cloudflare-workers::upgrade-response",
-            "title": "Cloudflare Workers Reject a WebSocket Upgrade Because the Response Is Not a 101 Switching Protocols Handshake",
-            "description": "A WebSocket route fails when the Worker returns the wrong upgrade response shape.",
+            "cell": "cors-header-preflight::hono::custom-response-headers",
+            "title": "Hono Returns a CORS Failure When `Access-Control-Allow-Headers` Omits `Content-Type`",
+            "description": "Fix Hono responses that fail browser preflight because the server does not allow the request headers the client sends.",
             "tags": [
-                "cloudflare-workers",
-                "websocket",
-                "upgrade",
-                "http",
-                "edge"
+                "hono",
+                "cors",
+                "preflight",
+                "headers"
             ],
-            "angle": "Explain the handshake requirements for WebSocket upgrades in Workers and why a normal `Response` cannot satisfy an `Upgrade: websocket` request. Cover the `WebSocketPair` flow, the required status code and headers, and the exact response shape the platform expects so the connection opens instead of failing the upgrade.",
-            "slug": "cloudflare-workers-reject-a-websocket-upgrade-because-the-response-is-not-a-101-switching-protocols-handshake",
-            "draftedAt": "2026-09-01T00:56:38.331Z"
+            "angle": "Explain how browser preflight checks compare `Access-Control-Request-Headers` against `Access-Control-Allow-Headers`, and why JSON or auth requests often fail when `Content-Type` or `Authorization` is missing. Show the exact Hono middleware or manual response headers needed, plus how to verify the preflight with `OPTIONS`.",
+            "slug": "hono-returns-a-cors-failure-when-access-control-allow-headers-omits-content-type",
+            "draftedAt": "2026-09-01T23:43:19.427Z"
         }
     ]
 }
