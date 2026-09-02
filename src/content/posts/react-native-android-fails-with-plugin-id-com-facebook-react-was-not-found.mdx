@@ -1,0 +1,355 @@
+---
+title: "React Native Android Fails with `Plugin [id: 'com.facebook.react'] was not found`"
+description: "Resolve the Gradle plugin lookup failure that blocks Android builds after a React Native upgrade or template change."
+tags: ["react-native", "android", "gradle", "kotlin"]
+date: Sep 3, 2026
+cell: "android-gradle-kotlin::react-native::missing-plugin-classpath"
+---
+
+Android builds fail during Gradle configuration with `Plugin [id: 'com.facebook.react'] was not found in any of the following sources:`. The error appears in the Android project when Gradle evaluates the root build files, usually before any Java or Kotlin compilation starts.
+
+The failure means the React Native Gradle plugin was requested, but Gradle could not resolve it from the plugin repositories and included build locations configured for the project. In React Native projects, that plugin is not a standard Gradle plugin published to the default plugin portal. It is provided by the React Native package itself and resolved through the settings and root build configuration. When those files are out of sync with the React Native version, plugin lookup fails.
+
+## What Gradle is trying to resolve
+
+Modern React Native Android templates use the Gradle plugins DSL. The Android app applies the React plugin with an ID like `com.facebook.react`, and Gradle resolves that plugin during settings evaluation.
+
+A typical app module contains something like this:
+
+```kotlin
+plugins {
+    id("com.android.application")
+    id("com.facebook.react")
+    id("org.jetbrains.kotlin.android")
+}
+```
+
+That `id("com.facebook.react")` does not work by itself. Gradle needs to know where that plugin comes from. In React Native projects, resolution usually happens through one of these paths:
+
+1. `pluginManagement` in `android/settings.gradle`
+2. An included build that points to `node_modules/@react-native/gradle-plugin`
+3. Repository declarations that let Gradle locate the plugin artifacts, if applicable
+
+If the settings file still matches an older template, or the root `build.gradle` still uses older wiring, Gradle may never see the plugin implementation.
+
+## Why this breaks after an upgrade or template change
+
+React Native has changed the Android build template several times. The plugin entry points, included build paths, and repository setup have moved across versions. When a project upgrades React Native without updating the Android template files that control Gradle plugin resolution, the JavaScript package version and Android build files stop agreeing with each other.
+
+The common mismatch looks like this:
+
+- `package.json` points to a newer `react-native` version
+- `android/settings.gradle` still uses the old `apply from:` or old include logic
+- `android/build.gradle` still expects legacy `buildscript` classpaths
+- `android/app/build.gradle` applies `com.facebook.react` without a matching plugin resolution setup
+
+Gradle then searches the configured plugin repositories, does not find `com.facebook.react`, and stops.
+
+The key detail is that the plugin is resolved before most other build logic runs. That means a missing or outdated `pluginManagement` block is enough to fail the build even if the React Native JavaScript code is fine.
+
+## Where the React Native plugin is declared
+
+The React Native Android plugin is shipped from the `@react-native/gradle-plugin` package in `node_modules`. The exact path depends on the React Native version, but in current templates the plugin is wired through an included build in `android/settings.gradle`:
+
+```groovy
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+}
+
+plugins {
+    id("com.facebook.react.settings")
+}
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    ex.autolinkLibrariesFromCommand()
+}
+
+rootProject.name = "MyApp"
+include(":app")
+```
+
+That `includeBuild("../node_modules/@react-native/gradle-plugin")` line is the critical bridge. It tells Gradle to look inside the React Native package for plugin implementations before falling back to external repositories.
+
+If that line is missing, wrong, or placed in a settings file that Gradle is not using, `com.facebook.react` cannot be resolved.
+
+## How `pluginManagement` affects resolution
+
+`pluginManagement` in `settings.gradle` controls where Gradle looks for plugins declared with the plugins DSL.
+
+A minimal structure is:
+
+```groovy
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+```
+
+This block matters because plugin IDs are not the same thing as regular dependencies. Putting `com.facebook.react` in `dependencies {}` does nothing. Gradle needs a plugin resolution path, and `pluginManagement` is the mechanism for that.
+
+If the project has a custom `pluginManagement.repositories` block and it omits the standard repositories, plugin resolution can also fail for other Android plugins like `com.android.application` or Kotlin plugins. That is why the block should usually preserve `gradlePluginPortal()`, `google()`, and `mavenCentral()` unless there is a very specific reason to change them.
+
+The practical effect is:
+
+- `includeBuild("../node_modules/@react-native/gradle-plugin")` resolves React Native’s plugin from the local package
+- `repositories { ... }` resolves any plugins that are published externally
+- if the included build path is wrong, React Native’s plugin is invisible to Gradle
+
+## The files that must match the React Native version
+
+For the Android side, these files need to agree with the React Native version:
+
+- `package.json`
+- `android/settings.gradle`
+- `android/build.gradle`
+- `android/app/build.gradle`
+- `android/gradle.properties`
+- `android/gradle/wrapper/gradle-wrapper.properties`
+
+The most important pair is `android/settings.gradle` and `android/app/build.gradle`. If the settings file is from one template generation and the app build file is from another, the plugin ID can be requested in one place and never made available in the other.
+
+A current template typically expects:
+
+```groovy
+// android/settings.gradle
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+plugins {
+    id("com.facebook.react.settings")
+}
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    ex.autolinkLibrariesFromCommand()
+}
+
+rootProject.name = "MyApp"
+include(":app")
+```
+
+And the app module:
+
+```groovy
+// android/app/build.gradle
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.facebook.react")
+}
+
+react {
+    // React Native Android configuration
+}
+```
+
+Older templates often used `apply plugin:` and `buildscript` classpaths. Mixing those styles with the newer plugin DSL is a common way to break resolution.
+
+## What the error usually looks like
+
+The exact wording varies, but it often looks like this:
+
+```text
+* Where:
+Build file '/path/to/project/android/app/build.gradle' line: 2
+
+* What went wrong:
+Plugin [id: 'com.facebook.react'] was not found in any of the following sources:
+
+- Gradle Core Plugins
+- Plugin Repositories
+- Included Builds
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+```
+
+If `settings.gradle` is the problem, the error can show up while evaluating settings or while configuring the project. If the included build path is wrong, Gradle may mention the included build source but still fail to locate the plugin implementation.
+
+## How to verify the plugin path
+
+Start by checking that the React Native Gradle plugin package exists:
+
+```bash
+ls node_modules/@react-native/gradle-plugin
+```
+
+If the directory is missing, reinstall dependencies:
+
+```bash
+npm install
+```
+
+or:
+
+```bash
+yarn install
+```
+
+Then verify the Android settings file points to the correct relative path from `android/settings.gradle`:
+
+```groovy
+includeBuild("../node_modules/@react-native/gradle-plugin")
+```
+
+That path is relative to the `android` directory, not the repo root. From `android/settings.gradle`, `..` goes up to the project root, then into `node_modules`.
+
+Also verify the plugin ID used in `android/app/build.gradle` matches the version of React Native you installed. For current templates, the plugin ID is `com.facebook.react`. If an older or custom setup is using a different wiring model, the settings and app files still need to match that exact model.
+
+## How template drift causes the failure
+
+Template drift means one file has been updated to a newer React Native build pattern and another file has not.
+
+Common examples:
+
+- `android/settings.gradle` is still a legacy file, but `android/app/build.gradle` now uses `plugins { id("com.facebook.react") }`
+- `android/settings.gradle` includes the React plugin build, but `android/app/build.gradle` still applies old `react.gradle` scripts
+- `android/build.gradle` keeps an obsolete `buildscript { dependencies { classpath("com.facebook.react:react-native-gradle-plugin") } }` entry while the project has moved to the included build approach
+- `gradle.properties` or wrapper versions are old enough that the plugin DSL is not supported as expected
+
+When the template changes, React Native’s Android build logic changes with it. The plugin cannot be resolved if the build files are stitched together from multiple template generations.
+
+## Fixing the project
+
+The cleanest fix is to make the Android files match the React Native version you have installed.
+
+### 1. Regenerate the Android template from the same React Native version
+
+If the project can afford it, compare the current Android files with a fresh React Native app created at the same version:
+
+```bash
+npx react-native init TempApp --version 0.74.1
+```
+
+Then compare `android/settings.gradle`, `android/build.gradle`, and `android/app/build.gradle` against the project.
+
+This works because the template files are version-coupled. The plugin resolution setup in the generated app is the authoritative wiring for that release.
+
+### 2. Update `android/settings.gradle`
+
+For modern React Native versions, ensure it contains the included build for the Gradle plugin:
+
+```groovy
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+plugins {
+    id("com.facebook.react.settings")
+}
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    ex.autolinkLibrariesFromCommand()
+}
+
+rootProject.name = "MyApp"
+include(":app")
+```
+
+If the file is using old `include ':app'` only and no `pluginManagement`, the plugin lookup path is incomplete for the plugin DSL setup.
+
+### 3. Update `android/app/build.gradle`
+
+Use the plugin DSL expected by the installed React Native version:
+
+```groovy
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.facebook.react")
+}
+```
+
+Remove conflicting legacy `apply plugin:` declarations if they are still present for React Native.
+
+### 4. Align Gradle and Android Gradle Plugin versions
+
+React Native templates are sensitive to Gradle and Android Gradle Plugin versions. If the wrapper is too old, plugin resolution and included builds can fail in ways that look like a missing plugin.
+
+Check:
+
+```properties
+# android/gradle/wrapper/gradle-wrapper.properties
+distributionUrl=https\://services.gradle.org/distributions/gradle-8.3-all.zip
+```
+
+And the AGP version in `android/build.gradle` or `settings.gradle` depending on template style. The exact versions depend on the React Native release.
+
+### 5. Clean caches after changing the build files
+
+After fixing the files, clear stale Gradle state:
+
+```bash
+cd android
+./gradlew clean
+./gradlew --stop
+cd ..
+rm -rf android/.gradle
+rm -rf ~/.gradle/caches
+```
+
+Then rebuild:
+
+```bash
+cd android
+./gradlew assembleDebug
+```
+
+Gradle caches can preserve a failed resolution path until the configuration is rebuilt.
+
+## Why repository blocks matter
+
+`repositories` inside `pluginManagement` affect plugin lookup, not app dependencies.
+
+If `pluginManagement.repositories` is empty or stripped down, Gradle may not be able to locate plugins that are not provided by the included build. This is especially relevant if the project uses other plugins alongside React Native.
+
+A safe baseline is:
+
+```groovy
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+```
+
+Do not move the React plugin into `dependencyResolutionManagement.repositories`. That block controls regular dependencies, not plugin IDs declared in `plugins {}`.
+
+## How to tell whether the issue is the plugin or the repository
+
+If the error names `com.facebook.react`, the most likely cause is the missing included build or a mismatched template file.
+
+If the error names `com.android.application` or `org.jetbrains.kotlin.android`, the repository configuration in `pluginManagement` may be incomplete. In that case, check whether `gradlePluginPortal()`, `google()`, and `mavenCentral()` are still present.
+
+If the error appears only after bumping React Native, compare the entire Android template against the versioned template for that release. Partial edits are the usual source of the mismatch.
+
+## Practical fix path
+
+Prefer updating the Android template files to match the installed React Native version, especially `android/settings.gradle` and `android/app/build.gradle`. That fixes the plugin resolution mechanism instead of patching the symptoms.
+
+If the project already uses the new plugin DSL, the minimum required fix is usually:
+
+- add `includeBuild("../node_modules/@react-native/gradle-plugin")` to `pluginManagement`
+- keep `gradlePluginPortal()`, `google()`, and `mavenCentral()` in `pluginManagement.repositories`
+- apply `id("com.facebook.react")` in `android/app/build.gradle`
+- remove old `buildscript` classpath wiring that conflicts with the plugin DSL
+
+Keeping the Android template aligned with the React Native release is the reliable way to prevent `Plugin [id: 'com.facebook.react'] was not found` from returning after upgrades or template changes.
