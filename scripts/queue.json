@@ -2,19 +2,6 @@
     "generatedAt": "2026-08-30T22:12:23.002Z",
     "ideas": [
         {
-            "cell": "android-gradle-kotlin::react-native::missing-plugin-classpath",
-            "title": "React Native Android Fails with `Plugin [id: 'com.facebook.react'] was not found`",
-            "description": "Resolve the Gradle plugin lookup failure that blocks Android builds after a React Native upgrade or template change.",
-            "tags": [
-                "react-native",
-                "android",
-                "gradle",
-                "kotlin"
-            ],
-            "angle": "Cover why Gradle cannot resolve the React plugin when the settings and root build files are out of sync, especially after template version changes. Explain where the plugin is declared, how the pluginManagement and repositories blocks affect resolution, and what exact files need to match the React Native version.",
-            "slug": "react-native-android-fails-with-plugin-id-com-facebook-react-was-not-found"
-        },
-        {
             "cell": "deno-network-import::deno::npm-dependency-resolution",
             "title": "Deno Fails to Run an npm Package Because `npm:` Imports Need an Explicit Permission or Lockfile Entry",
             "description": "Fix Deno package loading when an npm dependency is blocked, unresolved, or missing from the module graph.",
@@ -95,18 +82,18 @@
     ],
     "drafted": [
         {
-            "cell": "cors-header-preflight::hono::custom-response-headers",
-            "title": "Hono Returns a CORS Failure When `Access-Control-Allow-Headers` Omits `Content-Type`",
-            "description": "Fix Hono responses that fail browser preflight because the server does not allow the request headers the client sends.",
+            "cell": "android-gradle-kotlin::react-native::missing-plugin-classpath",
+            "title": "React Native Android Fails with `Plugin [id: 'com.facebook.react'] was not found`",
+            "description": "Resolve the Gradle plugin lookup failure that blocks Android builds after a React Native upgrade or template change.",
             "tags": [
-                "hono",
-                "cors",
-                "preflight",
-                "headers"
+                "react-native",
+                "android",
+                "gradle",
+                "kotlin"
             ],
-            "angle": "Explain how browser preflight checks compare `Access-Control-Request-Headers` against `Access-Control-Allow-Headers`, and why JSON or auth requests often fail when `Content-Type` or `Authorization` is missing. Show the exact Hono middleware or manual response headers needed, plus how to verify the preflight with `OPTIONS`.",
-            "slug": "hono-returns-a-cors-failure-when-access-control-allow-headers-omits-content-type",
-            "draftedAt": "2026-09-01T23:43:19.427Z"
+            "angle": "Cover why Gradle cannot resolve the React plugin when the settings and root build files are out of sync, especially after template version changes. Explain where the plugin is declared, how the pluginManagement and repositories blocks affect resolution, and what exact files need to match the React Native version.",
+            "slug": "react-native-android-fails-with-plugin-id-com-facebook-react-was-not-found",
+            "draftedAt": "2026-09-02T23:44:32.914Z"
         }
     ]
 }
