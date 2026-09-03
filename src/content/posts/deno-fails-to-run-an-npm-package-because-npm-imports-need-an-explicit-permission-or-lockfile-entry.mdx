@@ -1,0 +1,320 @@
+---
+title: "Deno Fails to Run an npm Package Because `npm:` Imports Need an Explicit Permission or Lockfile Entry"
+description: "Fix Deno package loading when an npm dependency is blocked, unresolved, or missing from the module graph."
+tags: ["deno", "npm", "imports", "module-resolution"]
+date: Sep 4, 2026
+cell: "deno-network-import::deno::npm-dependency-resolution"
+---
+
+`deno run` fails when an imported npm package is not in the module graph, and the runtime reports `error: Uncaught (in promise) Error: npm package "<name>" is not available from the module graph`, or `error: npm package "<name>" is not yet installed`. The failure happens before your code executes because Deno cannot resolve the package specifier into an allowed dependency entry.
+
+## What the failure means
+
+Deno does not treat npm dependencies the same way Node.js does. A bare npm package name such as `react`, `zod`, or `chalk` is not automatically available just because it appears in source code. Deno resolves modules through a module graph, and the graph must contain an explicit `npm:` specifier or an install-time entry that maps the dependency into the project.
+
+That design affects three kinds of imports:
+
+- remote modules, such as `https://deno.land/std@0.224.0/path/mod.ts`
+- npm modules, such as `npm:zod@3.23.8`
+- local modules, such as `./utils.ts`
+
+Each category is resolved by a different mechanism. A remote URL is fetched and cached by exact URL. A local path is resolved relative to the importing file. An npm package name is resolved only if Deno can connect it to an npm graph entry created by `npm:` imports, `deno add`, `deno install`, or configuration in `deno.json`.
+
+If that mapping is missing, Deno rejects the import even when the package exists on npm.
+
+## How Deno resolves modules
+
+Deno builds a module graph from the entrypoint and every imported dependency. The graph records the full set of modules that are allowed to participate in the runtime.
+
+For local imports, resolution is filesystem-based.
+
+```ts
+// main.ts
+import { format } from "./format.ts";
+
+console.log(format("ok"));
+```
+
+`./format.ts` is resolved relative to `main.ts`. No package registry is involved.
+
+For remote imports, resolution is URL-based.
+
+```ts
+import { join } from "https://deno.land/std@0.224.0/path/join.ts";
+
+console.log(join("a", "b"));
+```
+
+The URL itself is the identity of the module. If the URL changes, the module identity changes.
+
+For npm imports, resolution is package-manager-based, but still controlled by the Deno graph.
+
+```ts
+import { z } from "npm:zod@3.23.8";
+
+console.log(z.string().parse("hello"));
+```
+
+This works because the specifier explicitly tells Deno to resolve `zod` from npm at version `3.23.8`. Deno then creates the graph entry and can load the package and its transitive npm dependencies.
+
+A bare package name is different.
+
+```ts
+import { z } from "zod";
+```
+
+That import is not an npm specifier. In Deno, it is just an unresolved bare specifier unless a project import map or package configuration maps it to a valid target. Without that mapping, the graph does not know how to load it.
+
+## Why the error appears
+
+The failure comes from one of these conditions:
+
+- the source code uses a bare package name instead of `npm:`
+- the package is referenced indirectly by a dependency, but it was never added to the project graph
+- the project has no `deno.json` `imports` entry mapping the bare name
+- the package was not installed or vendored through `deno add`, `deno install`, or `deno cache`
+- the package version required by the graph is not present in the lockfile and the environment is not allowed to fetch it
+
+The important mechanism is that Deno validates dependencies against the graph before execution. Unlike Node.js, it does not walk `node_modules` opportunistically to satisfy arbitrary bare imports. The graph must already contain the package identity.
+
+When Deno says an npm package is not available from the module graph, it means the import cannot be matched to a graph entry. When it says a package is not yet installed, it means the graph points at an npm dependency, but the installation state is missing or incomplete.
+
+## The difference between remote, npm, and local resolution
+
+The distinction matters because the same syntax can mean different things in different runtimes.
+
+### Local resolution
+
+A path beginning with `./`, `../`, or `/` points to a local file.
+
+```ts
+import { parseConfig } from "./config.ts";
+```
+
+The resolver checks the filesystem. There is no registry lookup.
+
+### Remote resolution
+
+A full URL imports a remote module.
+
+```ts
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+```
+
+The URL is fetched over the network, then cached. The import identity is the exact URL string.
+
+### npm resolution
+
+A specifier beginning with `npm:` imports from the npm registry.
+
+```ts
+import chalk from "npm:chalk@5.4.1";
+```
+
+This is explicit and portable. Deno knows that `chalk` is an npm dependency and which version is intended.
+
+Bare `chalk` is not the same thing.
+
+```ts
+import chalk from "chalk";
+```
+
+That only works if the project has an import map or package configuration that maps `chalk` to `npm:chalk@5.4.1`. Without that mapping, Deno has no registry target to resolve.
+
+## Reproducing the failure
+
+A minimal example uses a bare npm import without project configuration.
+
+```ts
+// main.ts
+import chalk from "chalk";
+
+console.log(chalk.green("hello"));
+```
+
+Run it with:
+
+```sh
+deno run main.ts
+```
+
+Deno cannot resolve `chalk` as a module graph entry unless it is mapped. The resulting error varies by version, but it will indicate that the npm package is not available from the module graph or that the package is missing from the graph.
+
+A direct `npm:` specifier avoids that ambiguity.
+
+```ts
+// main.ts
+import chalk from "npm:chalk@5.4.1";
+
+console.log(chalk.green("hello"));
+```
+
+Run:
+
+```sh
+deno run main.ts
+```
+
+Now the graph can resolve `chalk` because the specifier already contains the npm package identity and version.
+
+## Fix 1: use an explicit `npm:` specifier
+
+If the code imports a package directly, the simplest fix is to convert bare imports to `npm:` imports.
+
+```ts
+import express from "npm:express@4.21.2";
+import { z } from "npm:zod@3.23.8";
+```
+
+This is the most direct way to tell Deno what to load. It also makes the dependency version visible at the call site, which is useful in scripts, small tools, and single-file programs.
+
+This approach works well when:
+
+- the code is under your control
+- the package is only used in one place
+- you want the dependency to be obvious without editing configuration
+
+It is less ideal when a project imports many packages and you want stable bare names across the codebase.
+
+## Fix 2: add an import map in `deno.json`
+
+If you want bare imports such as `import chalk from "chalk"` to work, configure an import map in `deno.json`.
+
+```json
+{
+  "imports": {
+    "chalk": "npm:chalk@5.4.1",
+    "zod": "npm:zod@3.23.8"
+  }
+}
+```
+
+Then the code can stay concise.
+
+```ts
+import chalk from "chalk";
+import { z } from "zod";
+
+console.log(chalk.green(z.string().parse("hello")));
+```
+
+Run it from the project root:
+
+```sh
+deno run main.ts
+```
+
+Now Deno resolves `chalk` and `zod` through the import map, which becomes part of the module graph.
+
+This method is useful when:
+
+- multiple files import the same package
+- you want package versions centralized
+- you are migrating a Node project that already uses bare package names
+
+## Fix 3: use `deno add` to update the graph and config
+
+`deno add` updates the project configuration for you and records the dependency in a Deno-managed way.
+
+```sh
+deno add npm:chalk@5.4.1
+deno add npm:zod@3.23.8
+```
+
+Depending on project setup, this may update `deno.json` `imports`, lockfile state, or the package manifest used by the workspace. The result is that the dependency becomes part of the project graph rather than an ad hoc runtime fetch.
+
+After that, a bare import can resolve if the generated mapping exists.
+
+```ts
+import chalk from "chalk";
+```
+
+This is the safer choice when a project should track npm dependencies centrally instead of hardcoding `npm:` specifiers across source files.
+
+## When the package is present but still fails
+
+A package can exist in configuration and still fail if the graph is incomplete or stale.
+
+Common causes include:
+
+- the lockfile records an older dependency set
+- the package was added in one workspace folder but the command runs in another
+- `deno.json` exists, but the code is executed outside the project root
+- the package version in code does not match the one in the config
+- the dependency was removed from config but remains imported in source
+
+Deno resolves against the current project graph. If the configuration and source disagree, the runtime reports the graph mismatch.
+
+To inspect the effective configuration, run:
+
+```sh
+deno info main.ts
+```
+
+That command shows how Deno resolves modules and whether the package is part of the graph.
+
+If the project uses a lockfile, regenerate it after changing dependencies:
+
+```sh
+deno cache --lock=deno.lock --lock-write main.ts
+```
+
+or simply rerun the project command that updates installed dependencies, depending on your Deno version and workflow.
+
+## A Node-style bare import is not enough
+
+A package manager can install `node_modules`, but Deno still needs graph-level permission or mapping.
+
+For example, this package installation does not automatically make `import chalk from "chalk"` valid in every Deno project:
+
+```sh
+npm install chalk
+```
+
+That command is a Node workflow. Deno can interoperate with npm packages, but it still expects the project graph to include the dependency through `npm:` or configuration. The existence of `node_modules` alone is not the resolution rule.
+
+This is why the same package can work in Node and fail in Deno even when both environments are pointed at the same directory.
+
+## Recommended patterns
+
+Use `npm:` specifiers when the dependency is local to one file or one script.
+
+```ts
+import { parse } from "npm:csv-parse@5.5.6";
+```
+
+Use `deno.json` `imports` when the package is shared across multiple files.
+
+```json
+{
+  "imports": {
+    "csv-parse": "npm:csv-parse@5.5.6"
+  }
+}
+```
+
+Then import the bare name throughout the project.
+
+```ts
+import { parse } from "csv-parse";
+```
+
+Use `deno add` when you want Deno to manage the project dependency entry instead of editing the config by hand.
+
+```sh
+deno add npm:csv-parse@5.5.6
+```
+
+That keeps the module graph and project metadata aligned.
+
+## Keeping the error from coming back
+
+The practical fix depends on how the project is organized.
+
+Prefer `npm:` specifiers for small programs and one-off scripts. They are explicit, portable, and least likely to break because the dependency identity is embedded in the import statement.
+
+Prefer `deno.json` `imports` plus `deno add` for multi-file projects. That keeps bare package names stable while ensuring the module graph knows exactly which npm packages are allowed.
+
+Avoid bare npm imports without configuration. A bare name works only when the graph or import map already defines it, and Deno will reject it otherwise.
+
+The durable rule is simple: if Deno cannot find an npm package in the module graph, you need either an explicit `npm:` specifier or a project-level mapping created by `deno add` or `deno.json` `imports`.
