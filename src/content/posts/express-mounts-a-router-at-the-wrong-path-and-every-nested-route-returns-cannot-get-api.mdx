@@ -1,0 +1,439 @@
+---
+title: "Express Mounts a Router at the Wrong Path and Every Nested Route Returns `Cannot GET /api/...`"
+description: "Fix router mounting mistakes that make Express serve 404s for routes that exist in the child router."
+tags: ["express", "routing", "router", "http"]
+date: Sep 5, 2026
+cell: "express-route-prefix::express::mounted-router-paths"
+---
+
+`GET /api/users` returns `Cannot GET /api/users` from Express even though the route exists in the child router.
+
+## What this error means
+
+This error comes from Express’s final 404 handler. It does not mean the route handler threw an exception. It means no mounted middleware or route matched the request path after Express applied all routing prefixes.
+
+The common cause is a router mounted at one path while the routes inside that router are declared with a different path shape than expected.
+
+In Express, `app.use('/api', router)` adds a prefix to every route in `router`. If the router then defines `router.get('/users', ...)`, the effective URL is `/api/users`. If the router defines `router.get('/api/users', ...)` while also being mounted at `/api`, the effective URL becomes `/api/api/users`.
+
+A second source of confusion is the difference between `req.baseUrl` and `req.path`. Inside a mounted router, `req.baseUrl` contains the mount path, while `req.path` contains the path remaining after the mount prefix has been removed. That distinction explains why a route may look correct in one file but still miss at runtime.
+
+## How Express matches a mounted router
+
+Express route matching is prefix-based.
+
+Given this setup:
+
+```ts
+import express, { Request, Response } from 'express';
+
+const app = express();
+const router = express.Router();
+
+router.get('/users', (req: Request, res: Response) => {
+  res.json({
+    baseUrl: req.baseUrl,
+    path: req.path,
+    originalUrl: req.originalUrl,
+  });
+});
+
+app.use('/api', router);
+
+app.listen(3000, () => {
+  console.log('Listening on http://localhost:3000');
+});
+```
+
+A request to `GET /api/users` matches the mounted router because:
+
+- the app sees the `/api` prefix
+- Express strips `/api` before passing control to `router`
+- `router.get('/users')` matches the remaining path
+
+Inside the handler, the values are:
+
+- `req.baseUrl === '/api'`
+- `req.path === '/users'`
+- `req.originalUrl === '/api/users'`
+
+That is the normal shape.
+
+Now compare that with this router:
+
+```ts
+router.get('/api/users', (req: Request, res: Response) => {
+  res.send('ok');
+});
+```
+
+Mounted with `app.use('/api', router)`, the route is effectively looking for `/api/api/users`. A request to `/api/users` never reaches the handler.
+
+## Why a leading slash can still be wrong
+
+A leading slash inside a child router is not the problem by itself. `router.get('/users')` is correct.
+
+The problem appears when the same segment is repeated at both levels. Express does not treat the child router path as absolute. It treats it as relative to the mount path.
+
+This means these combinations behave differently:
+
+```ts
+app.use('/api', router);
+router.get('/users', handler);       // matches /api/users
+router.get('/api/users', handler);    // matches /api/api/users
+```
+
+The same rule applies to `router.use()`.
+
+If a router contains:
+
+```ts
+router.use('/users', usersRouter);
+```
+
+and `usersRouter` contains:
+
+```ts
+usersRouter.get('/profile', handler);
+```
+
+then the final route is `/users/profile` relative to the parent router. If the parent router is mounted at `/api`, the full path is `/api/users/profile`.
+
+If the parent router also uses `/api` internally, the path becomes duplicated.
+
+## A concrete broken layout
+
+A frequent broken layout looks like this:
+
+```text
+src/
+  app.ts
+  routes/
+    api.ts
+    users.ts
+```
+
+`src/app.ts`:
+
+```ts
+import express from 'express';
+import apiRouter from './routes/api';
+
+const app = express();
+
+app.use('/api', apiRouter);
+
+app.listen(3000);
+```
+
+`src/routes/api.ts`:
+
+```ts
+import { Router } from 'express';
+import usersRouter from './users';
+
+const router = Router();
+
+router.use('/api/users', usersRouter);
+
+export default router;
+```
+
+`src/routes/users.ts`:
+
+```ts
+import { Router } from 'express';
+
+const router = Router();
+
+router.get('/users', (req, res) => {
+  res.json({ ok: true });
+});
+
+export default router;
+```
+
+The full path becomes:
+
+- app mount: `/api`
+- api router mount: `/api/users`
+- users route: `/users`
+
+Final URL: `/api/api/users/users`
+
+A request to `/api/users` returns `Cannot GET /api/users`. A request to `/api/api/users/users` matches, which confirms the duplication.
+
+## The correct way to structure the paths
+
+Keep one source of truth for each path segment.
+
+If `app.ts` mounts `/api`, then child routers should not repeat that segment.
+
+A clean layout is:
+
+```text
+src/
+  app.ts
+  routes/
+    api.ts
+    users.ts
+```
+
+`src/app.ts`:
+
+```ts
+import express from 'express';
+import apiRouter from './routes/api';
+
+const app = express();
+
+app.use('/api', apiRouter);
+
+app.listen(3000, () => {
+  console.log('Listening on port 3000');
+});
+```
+
+`src/routes/api.ts`:
+
+```ts
+import { Router } from 'express';
+import usersRouter from './users';
+
+const router = Router();
+
+router.use('/users', usersRouter);
+
+export default router;
+```
+
+`src/routes/users.ts`:
+
+```ts
+import { Router, Request, Response } from 'express';
+
+const router = Router();
+
+router.get('/', (req: Request, res: Response) => {
+  res.json({
+    baseUrl: req.baseUrl,
+    path: req.path,
+    originalUrl: req.originalUrl,
+  });
+});
+
+export default router;
+```
+
+With this structure:
+
+- `GET /api/users` reaches `usersRouter`
+- `req.baseUrl` inside `usersRouter` is `/api/users`
+- `req.path` inside the `GET '/'` handler is `/`
+- `req.originalUrl` remains `/api/users`
+
+That is the expected nested-router shape.
+
+## How `req.baseUrl`, `req.path`, and `router.use()` interact
+
+These fields help verify routing behavior.
+
+Use this diagnostic handler:
+
+```ts
+import { Router, Request, Response } from 'express';
+
+const router = Router();
+
+router.use((req: Request, _res: Response, next) => {
+  console.log({
+    baseUrl: req.baseUrl,
+    path: req.path,
+    originalUrl: req.originalUrl,
+  });
+  next();
+});
+
+router.get('/', (req: Request, res: Response) => {
+  res.json({ route: 'root' });
+});
+
+export default router;
+```
+
+When mounted like this:
+
+```ts
+app.use('/api/users', router);
+```
+
+and requested at `GET /api/users`, the logs show:
+
+```ts
+{
+  baseUrl: '/api/users',
+  path: '/',
+  originalUrl: '/api/users'
+}
+```
+
+If the router is mounted at `/api` and the same router is used under `/users`, then inside the nested router `req.baseUrl` accumulates the mount chain. Express prepends the parent mount path to the child router’s `baseUrl`.
+
+That accumulation matters when the child router itself uses `router.use()`:
+
+```ts
+const router = Router();
+
+router.use('/users', usersRouter);
+router.use('/posts', postsRouter);
+```
+
+Here, `router.use('/users', usersRouter)` does not define a handler. It forwards matching requests to `usersRouter` after trimming `/users` from the path. If the parent `app` mounted the router at `/api`, then a request to `/api/users` reaches `usersRouter` with:
+
+- `req.baseUrl === '/api/users'`
+- `req.path === '/'`
+
+Inside `usersRouter`, a handler at `router.get('/')` matches. A handler at `router.get('/users')` does not, because the `/users` segment was already consumed by the parent `router.use('/users', usersRouter)`.
+
+That trimming behavior is the core mechanism behind nested routers.
+
+## Debugging the mismatch
+
+You can inspect the active route shape with a temporary middleware:
+
+```ts
+router.use((req, _res, next) => {
+  console.log('baseUrl:', req.baseUrl);
+  console.log('path:', req.path);
+  console.log('originalUrl:', req.originalUrl);
+  next();
+});
+```
+
+Then check these cases:
+
+- If `originalUrl` contains `/api/users` but `baseUrl` is only `/api`, the child router is mounted one level too shallow.
+- If `baseUrl` already contains `/api/users` and the request still misses, the handler path inside the child router is probably wrong.
+- If the child router uses `/api/users` while the parent already mounted `/api`, the path is duplicated.
+
+A useful rule is:
+
+- `app.use('/api', router)` defines the shared prefix
+- `router.use('/users', usersRouter)` defines a nested section
+- route handlers inside `usersRouter` should usually use `/` or subpaths relative to that section
+
+## A second broken example with `router.use()`
+
+This version looks plausible but fails:
+
+```ts
+import { Router } from 'express';
+import usersRouter from './users';
+
+const router = Router();
+
+router.use('/api', usersRouter);
+
+export default router;
+```
+
+```ts
+import { Router } from 'express';
+
+const router = Router();
+
+router.get('/users', (_req, res) => {
+  res.send('users');
+});
+
+export default router;
+```
+
+Mounted at:
+
+```ts
+app.use('/api', router);
+```
+
+The full effective prefix becomes `/api/api`. The request path `/api/users` does not match.
+
+If the intent is to expose `/api/users`, the parent should mount `router` at `/api`, and the child should mount `usersRouter` at `/users`, with the handler inside `usersRouter` using `/`.
+
+## File layout that matches the paths
+
+A layout that avoids duplication is:
+
+```text
+src/
+  app.ts
+  routes/
+    api/
+      index.ts
+      users.ts
+      posts.ts
+```
+
+`src/app.ts`:
+
+```ts
+import express from 'express';
+import apiRouter from './routes/api';
+
+const app = express();
+app.use('/api', apiRouter);
+app.listen(3000);
+```
+
+`src/routes/api/index.ts`:
+
+```ts
+import { Router } from 'express';
+import usersRouter from './users';
+import postsRouter from './posts';
+
+const router = Router();
+
+router.use('/users', usersRouter);
+router.use('/posts', postsRouter);
+
+export default router;
+```
+
+`src/routes/api/users.ts`:
+
+```ts
+import { Router } from 'express';
+
+const router = Router();
+
+router.get('/', (_req, res) => {
+  res.json({ resource: 'users' });
+});
+
+export default router;
+```
+
+This yields:
+
+- `GET /api/users`
+- `GET /api/posts`
+
+It also keeps the route hierarchy visible in the folder structure.
+
+## Keeping the problem from coming back
+
+Prefer one of these patterns:
+
+- Mount the API prefix once at the app level, then keep child router paths relative.
+- Put `router.get('/')` and `router.get('/:id')` inside resource routers that are already mounted under the resource segment.
+- Avoid repeating the same segment in both `app.use()` and `router.use()`.
+
+A simple consistency check helps:
+
+- `app.use('/api', apiRouter)`
+- `apiRouter.use('/users', usersRouter)`
+- `usersRouter.get('/')`
+
+That combination maps to `GET /api/users` with no duplication.
+
+If a request still returns `Cannot GET /api/...`, log `req.baseUrl`, `req.path`, and `req.originalUrl`. Those values show exactly which prefix Express has already consumed and which path remains for matching.
