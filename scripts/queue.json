@@ -2,19 +2,6 @@
     "generatedAt": "2026-08-30T22:12:23.002Z",
     "ideas": [
         {
-            "cell": "express-route-prefix::express::mounted-router-paths",
-            "title": "Express Mounts a Router at the Wrong Path and Every Nested Route Returns `Cannot GET /api/...`",
-            "description": "Fix router mounting mistakes that make Express serve 404s for routes that exist in the child router.",
-            "tags": [
-                "express",
-                "routing",
-                "router",
-                "http"
-            ],
-            "angle": "Describe how `app.use('/api', router)` changes every route inside the router and why leading slashes inside the child router can produce surprising paths. Show how `req.baseUrl`, `req.path`, and `router.use()` interact, and give a concrete file layout and mount path that match.",
-            "slug": "express-mounts-a-router-at-the-wrong-path-and-every-nested-route-returns-cannot-get-api"
-        },
-        {
             "cell": "remix-streaming-loader::remix::defer-suspense-boundary",
             "title": "Remix Streams `defer()` Data but the Page Stalls Because No `<Await>` Boundary Wraps It",
             "description": "Make Remix deferred data render correctly by wiring the loader, suspense boundary, and fallback together.",
@@ -69,18 +56,18 @@
     ],
     "drafted": [
         {
-            "cell": "deno-network-import::deno::npm-dependency-resolution",
-            "title": "Deno Fails to Run an npm Package Because `npm:` Imports Need an Explicit Permission or Lockfile Entry",
-            "description": "Fix Deno package loading when an npm dependency is blocked, unresolved, or missing from the module graph.",
+            "cell": "express-route-prefix::express::mounted-router-paths",
+            "title": "Express Mounts a Router at the Wrong Path and Every Nested Route Returns `Cannot GET /api/...`",
+            "description": "Fix router mounting mistakes that make Express serve 404s for routes that exist in the child router.",
             "tags": [
-                "deno",
-                "npm",
-                "imports",
-                "module-resolution"
+                "express",
+                "routing",
+                "router",
+                "http"
             ],
-            "angle": "Explain how Deno resolves npm packages through the module graph, why bare npm dependencies can fail without the right specifier or install step, and how `deno add` or `deno.json` imports map fixes it. Include the difference between remote, npm, and local module resolution so the failure mode is clear.",
-            "slug": "deno-fails-to-run-an-npm-package-because-npm-imports-need-an-explicit-permission-or-lockfile-entry",
-            "draftedAt": "2026-09-03T23:46:12.765Z"
+            "angle": "Describe how `app.use('/api', router)` changes every route inside the router and why leading slashes inside the child router can produce surprising paths. Show how `req.baseUrl`, `req.path`, and `router.use()` interact, and give a concrete file layout and mount path that match.",
+            "slug": "express-mounts-a-router-at-the-wrong-path-and-every-nested-route-returns-cannot-get-api",
+            "draftedAt": "2026-09-04T23:36:29.237Z"
         }
     ]
 }
