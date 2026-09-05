@@ -12,9 +12,11 @@ import ip2geo from '@/assets/projects/ip2geo.webp'
 import launchdock from '@/assets/projects/launchdock.webp'
 import loveEnvelope from '@/assets/projects/love-envelope.webp'
 import muslimTab from '@/assets/projects/muslim-tab.webp'
+import outbid from '@/assets/projects/outbid.webp'
 import pikegjaku from '@/assets/projects/pikegjaku.webp'
 import uebfaqe from '@/assets/projects/uebfaqe.webp'
 import wallpapppers from '@/assets/projects/wallpapppers.webp'
+import xOutbid from '@/assets/projects/x-outbid.webp'
 
 export * from '@/assets/icons'
 export * from '@/assets/tech-icons'
@@ -34,7 +36,9 @@ export {
     launchdock,
     loveEnvelope,
     muslimTab,
+    outbid,
     pikegjaku,
     uebfaqe,
-    wallpapppers
+    wallpapppers,
+    xOutbid
 }

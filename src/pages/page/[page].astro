@@ -1,0 +1,46 @@
+---
+import type { GetStaticPaths } from 'astro'
+import type { Post } from '@/types'
+
+import { getCollection } from 'astro:content'
+import { Home } from '@/layouts'
+import { PostList, Pagination } from '@/components'
+import { staticPages } from '@/data/pages'
+import { pageCount, postsForPage, sortByDate } from '@/utils/posts'
+import { pageTitle } from '@/config'
+
+// Page one lives at `/`, so this route only builds the pages after it.
+export const getStaticPaths: GetStaticPaths = async () => {
+    const posts = sortByDate(await getCollection('posts'))
+    const total = pageCount(posts.length)
+
+    return Array.from({ length: total - 1 }, (_, index) => {
+        const page = index + 2
+
+        return {
+            params: { page: String(page) },
+            props: { page, total, items: postsForPage(posts, page) }
+        }
+    })
+}
+
+const { page, total, items } = Astro.props as {
+    page: number
+    total: number
+    items: Post[]
+}
+
+const tags = [...new Set(items.flatMap((post) => post.data.tags))].sort()
+const meta = staticPages.index
+---
+
+<Home
+    title={pageTitle(`Posts — Page ${page}`)}
+    description={`${meta.description} Page ${page} of ${total}.`}
+    keywords={`${meta.keywords}, ${tags.join(', ')}`}
+    image={`/og/${meta.slug}.png`}
+    type='website'
+>
+    <PostList items={items} />
+    <Pagination page={page} total={total} />
+</Home>

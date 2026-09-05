@@ -1,16 +1,19 @@
 ---
 import { Home } from '@/layouts'
 import { ProductList } from '@/components'
-import { ventures, vibeCoding } from '@/data/products'
+import { productGroups } from '@/data/products'
 import { staticPages } from '@/data/pages'
 
 const withRef = (url: string) =>
     `${url}${url.includes('?') ? '&' : '?'}ref=bfzli.com`
 
-const productItems = [...ventures, ...vibeCoding].map((product) => ({
-    ...product,
-    href: withRef(product.url),
-    external: true
+const groups = productGroups.map((group) => ({
+    title: group.title,
+    items: group.items.map((product) => ({
+        ...product,
+        href: product.url && withRef(product.url),
+        external: true
+    }))
 }))
 const meta = staticPages.products
 ---
@@ -22,5 +25,13 @@ const meta = staticPages.products
     image={`/og/${meta.slug}.png`}
     type='website'
 >
-    <ProductList items={productItems} />
+    {
+        groups.map((group, index) => (
+            <ProductList
+                title={group.title}
+                items={group.items}
+                class={index === 0 ? 'mt-8' : 'mt-10'}
+            />
+        ))
+    }
 </Home>

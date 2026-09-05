@@ -9,6 +9,7 @@ import SkillItem from '@/components/skill-item.astro'
 import PostList from '@/components/post-list.astro'
 import PostItem from '@/components/post-item.astro'
 import PostHeader from '@/components/post-header.astro'
+import Pagination from '@/components/pagination.astro'
 import BackLink from '@/components/back-link.astro'
 import ActionLink from '@/components/action-link.astro'
 import HomeHero from '@/components/home-hero.astro'
@@ -46,6 +47,7 @@ export {
     PostList,
     PostItem,
     PostHeader,
+    Pagination,
     BackLink,
     ActionLink,
     HomeHero,

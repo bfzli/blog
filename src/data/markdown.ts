@@ -1,5 +1,5 @@
 import { constants } from '@/config'
-import { ventures, vibeCoding } from '@/data/products'
+import { ventures, vibeCoded, vibeCoding } from '@/data/products'
 
 const { site, profile } = constants
 
@@ -14,7 +14,7 @@ export const markdownCopy = {
     note: (url: string) =>
         `> Markdown copy of ${url}. Append \`.md\` to any page path on ${site.replace('https://', '')} for its markdown twin. Full index: ${site}/llms.txt`,
 
-    summary: `${profile.name} is a software engineer based in ${profile.location}, building and maintaining developer platforms and browser extensions. His platforms are ${names(ventures)}, and his Chrome extensions are ${names(vibeCoding)}. This site is his personal site and engineering blog.`,
+    summary: `${profile.name} is a software engineer based in ${profile.location}, building and maintaining developer platforms and browser extensions. His platforms are ${names(ventures)}, his vibe-coded projects are ${names(vibeCoded)}, and his Chrome extensions are ${names(vibeCoding)}. This site is his personal site and engineering blog.`,
 
     howToRead: [
         `Every page on ${site} is available as clean markdown by appending \`.md\` to its path.`,

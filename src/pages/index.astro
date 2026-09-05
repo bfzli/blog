@@ -1,13 +1,13 @@
 ---
 import { getCollection } from 'astro:content'
 import { Home } from '@/layouts'
-import { PostList } from '@/components'
+import { PostList, Pagination } from '@/components'
 import { staticPages } from '@/data/pages'
+import { pageCount, postsForPage, sortByDate } from '@/utils/posts'
 
-const posts = (await getCollection('posts')).sort(
-    (a, z) => +new Date(z.data.date) - +new Date(a.data.date)
-)
+const posts = sortByDate(await getCollection('posts'))
 const tags = [...new Set(posts.flatMap((post) => post.data.tags))].sort()
+const total = pageCount(posts.length)
 const meta = staticPages.index
 ---
 
@@ -18,5 +18,6 @@ const meta = staticPages.index
     image={`/og/${meta.slug}.png`}
     type='website'
 >
-    <PostList items={posts} />
+    <PostList items={postsForPage(posts, 1)} />
+    <Pagination page={1} total={total} />
 </Home>

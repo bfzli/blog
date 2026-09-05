@@ -1,7 +1,8 @@
 import type { APIRoute, GetStaticPaths } from 'astro'
 
 import { getCollection } from 'astro:content'
-import { markdownPages, sortByDate } from '@/utils/markdown'
+import { markdownPages } from '@/utils/markdown'
+import { sortByDate } from '@/utils/posts'
 
 export const getStaticPaths: GetStaticPaths = async () => {
     const posts = sortByDate(await getCollection('posts'))

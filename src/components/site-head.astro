@@ -59,10 +59,7 @@ const markdown = constants.site + markdownPath(Astro.url.pathname)
 
 {
     props.date ? (
-        <meta
-            property='article:published_time'
-            content={isoDate(props.date)}
-        />
+        <meta property='article:published_time' content={isoDate(props.date)} />
     ) : null
 }
 

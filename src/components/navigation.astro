@@ -5,10 +5,14 @@ import { cleanPath } from '@/utils/url'
 const path = cleanPath(Astro.url.pathname)
 
 const isActive = (href: string) =>
-    href === '/' ? path === '/' : path.startsWith(href)
+    href === '/'
+        ? path === '/' || path.startsWith('/page/')
+        : path.startsWith(href)
 ---
 
-<nav class='relative inline-flex items-center gap-1 rounded-full bg-elevate p-1'>
+<nav
+    class='relative inline-flex items-center gap-1 rounded-full bg-elevate p-1'
+>
     {
         navigationTabs.map((tab) => (
             <a
