@@ -12,6 +12,7 @@ import ip2geo from '@/assets/projects/ip2geo.webp'
 import launchdock from '@/assets/projects/launchdock.webp'
 import loveEnvelope from '@/assets/projects/love-envelope.webp'
 import muslimTab from '@/assets/projects/muslim-tab.webp'
+import openemail from '@/assets/projects/openemail.webp'
 import outbid from '@/assets/projects/outbid.webp'
 import pikegjaku from '@/assets/projects/pikegjaku.webp'
 import uebfaqe from '@/assets/projects/uebfaqe.webp'
@@ -36,6 +37,7 @@ export {
     launchdock,
     loveEnvelope,
     muslimTab,
+    openemail,
     outbid,
     pikegjaku,
     uebfaqe,
