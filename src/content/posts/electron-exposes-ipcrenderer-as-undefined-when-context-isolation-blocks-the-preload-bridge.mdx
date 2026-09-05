@@ -1,0 +1,360 @@
+---
+title: "Electron Exposes `ipcRenderer` as `undefined` When Context Isolation Blocks the Preload Bridge"
+description: "A renderer cannot access Electron APIs directly when context isolation removes the preload bridge."
+tags: ["electron", "preload", "context-isolation", "ipc", "security"]
+date: Aug 30, 2026
+cell: "preload-bridge-types::electron::context-isolation-api"
+---
+
+`ipcRenderer` is `undefined` in the renderer, and `TypeError: Cannot read properties of undefined (reading 'invoke')` appears when code tries to call `ipcRenderer.invoke(...)` from a page running with `contextIsolation: true` and `nodeIntegration: false`.
+
+## Why the renderer cannot see Electron internals
+
+Electron separates the browser-like renderer from the privileged parts of the app. Two settings control the boundary most directly:
+
+- `contextIsolation: true`
+- `nodeIntegration: false`
+
+With `nodeIntegration: false`, the renderer does not get Node.js globals such as `require`, `process`, or `Buffer` by default. With `contextIsolation: true`, the page’s JavaScript runs in a separate JavaScript context from the preload script. That means objects placed on one side are not automatically visible on the other side.
+
+The result is that direct access to Electron APIs from the page fails in two common ways:
+
+- `require('electron')` throws `ReferenceError: require is not defined`
+- `window.ipcRenderer` is `undefined` unless a preload script explicitly exposes it
+
+The issue is not that `ipcRenderer` is missing from Electron. It is that the renderer does not have permission to reach it directly.
+
+## The boundary created by `contextIsolation`
+
+When `contextIsolation` is enabled, Electron runs at least two separate worlds:
+
+- the page world, where your UI code executes
+- the preload world, where a trusted script can use Node.js and Electron APIs
+
+The page world is untrusted. It may include bundled frontend code, third-party libraries, or content derived from user input. The preload world is trusted and is the only place that should connect the page to Electron internals.
+
+Without a bridge, the page world cannot touch `ipcRenderer`, `fs`, `shell`, or `process`. That is intentional. If page code could call those APIs directly, any XSS bug in the renderer would become an OS-level compromise.
+
+## Why `require('electron')` fails or returns `undefined`
+
+A direct `require('electron')` call depends on Node integration. This pattern is blocked when `nodeIntegration: false` is set.
+
+For example, this renderer code fails:
+
+```ts
+import { ipcRenderer } from 'electron';
+
+document.querySelector('#save')?.addEventListener('click', () => {
+  ipcRenderer.invoke('settings:save', { theme: 'dark' });
+});
+```
+
+In a standard web page context, the module import is not available. If the code is written with CommonJS, the same restriction applies:
+
+```ts
+const { ipcRenderer } = require('electron');
+```
+
+When `require` is not defined, the page cannot load the Electron package at all. If a bundler rewrites the code into a global access pattern, `ipcRenderer` may still resolve to `undefined` because nothing in the page world populated it.
+
+The key point is that the renderer should not be trying to load Electron internals directly. It should call a narrow API that a preload script exposes.
+
+## The correct pattern: preload bridge plus `contextBridge.exposeInMainWorld`
+
+The supported solution is to create a preload script and expose only the operations the page needs.
+
+A minimal `main.ts` can create the browser window with the relevant security settings:
+
+```ts
+import { app, BrowserWindow } from 'electron';
+import path from 'node:path';
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  win.loadURL('http://localhost:3000');
+}
+
+app.whenReady().then(createWindow);
+```
+
+A preload script can then expose a small API into the page world:
+
+```ts
+import { contextBridge, ipcRenderer } from 'electron';
+
+type Settings = {
+  theme: 'light' | 'dark';
+};
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  saveSettings: (settings: Settings) => ipcRenderer.invoke('settings:save', settings),
+  loadSettings: () => ipcRenderer.invoke('settings:load'),
+  onSettingsChanged: (callback: (settings: Settings) => void) => {
+    const listener = (_event: unknown, settings: Settings) => callback(settings);
+    ipcRenderer.on('settings:changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('settings:changed', listener);
+    };
+  }
+});
+```
+
+The renderer then uses `window.electronAPI` instead of `require('electron')`:
+
+```ts
+declare global {
+  interface Window {
+    electronAPI: {
+      saveSettings: (settings: { theme: 'light' | 'dark' }) => Promise<void>;
+      loadSettings: () => Promise<{ theme: 'light' | 'dark' }>;
+      onSettingsChanged: (
+        callback: (settings: { theme: 'light' | 'dark' }) => void
+      ) => () => void;
+    };
+  }
+}
+
+document.querySelector('#save')?.addEventListener('click', async () => {
+  await window.electronAPI.saveSettings({ theme: 'dark' });
+});
+```
+
+This structure works because the preload script runs in a privileged context, while the renderer only receives the exported surface.
+
+## The IPC channel shape matters
+
+`ipcRenderer.invoke` and `ipcMain.handle` form a request/response pair. The channel name is a string, and the payload is serializable data.
+
+A matching main-process handler looks like this:
+
+```ts
+import { ipcMain } from 'electron';
+
+type Settings = {
+  theme: 'light' | 'dark';
+};
+
+ipcMain.handle('settings:save', async (_event, settings: Settings) => {
+  // persist settings
+  return undefined;
+});
+
+ipcMain.handle('settings:load', async () => {
+  const settings: Settings = { theme: 'light' };
+  return settings;
+});
+```
+
+The channel names should be explicit and namespaced, such as `settings:save` or `auth:get-token`. That avoids collisions and makes it obvious which capability is being exposed.
+
+For one-way notifications, use `ipcRenderer.send` and `ipcMain.on`, or `webContents.send` from the main process back to the renderer. If you need a subscription API, wrap it in preload and return an unsubscribe function, as shown above. That keeps cleanup under the page’s control without exposing raw Electron objects.
+
+## Why the bridge must stay narrow
+
+The preload script is trusted code. The page is not. The bridge should expose only the exact methods the UI needs.
+
+This is a security boundary, not just an architecture preference. If you expose the raw `ipcRenderer` object, the page can send arbitrary messages to any channel. If you expose `shell`, the page can open URLs or local files. If you expose `fs`, the page may gain file-system access that a renderer should never have.
+
+A narrow bridge reduces the attack surface in two ways:
+
+1. The page can call only the functions you defined.
+2. Each function can validate arguments before crossing the IPC boundary.
+
+For example, this is safer than exposing `ipcRenderer` directly:
+
+```ts
+contextBridge.exposeInMainWorld('electronAPI', {
+  openExternalDocs: (url: string) => {
+    if (!url.startsWith('https://docs.example.com/')) {
+      throw new Error('Invalid URL');
+    }
+    return ipcRenderer.invoke('shell:open-external', url);
+  }
+});
+```
+
+The main process can then handle the request:
+
+```ts
+import { ipcMain, shell } from 'electron';
+
+ipcMain.handle('shell:open-external', async (_event, url: string) => {
+  await shell.openExternal(url);
+});
+```
+
+This pattern prevents arbitrary destinations from being opened by renderer code.
+
+## Common failure modes
+
+### `require is not defined`
+
+This happens when renderer code tries to load Node or Electron modules directly while `nodeIntegration: false` is set.
+
+Fix:
+
+- move Electron access into `preload`
+- expose a page-facing API with `contextBridge.exposeInMainWorld`
+
+### `ipcRenderer is undefined`
+
+This happens when the page expects preload to create a global, but the preload script does not expose one.
+
+Fix:
+
+- verify the `preload` path is correct
+- ensure the preload script actually runs
+- check that the exposed name matches the renderer code, such as `window.electronAPI`
+
+### `Cannot read properties of undefined (reading 'invoke')`
+
+This usually means `window.electronAPI` exists as `undefined`, or the object exists but does not include `invoke`.
+
+Fix:
+
+- inspect the preload export
+- confirm the renderer is calling the right method name
+- ensure the preload bridge returns functions, not raw Electron objects
+
+### TypeScript says `Property 'electronAPI' does not exist on type 'Window'`
+
+This is a type declaration issue, not an Electron issue.
+
+Fix:
+
+- add a `declare global` augmentation, as shown earlier
+- keep the declaration in a file included by `tsconfig.json`
+
+## A complete minimal example
+
+This layout uses `contextIsolation: true`, `nodeIntegration: false`, and a preload bridge.
+
+`main.ts`:
+
+```ts
+import { app, BrowserWindow, ipcMain } from 'electron';
+import path from 'node:path';
+
+ipcMain.handle('ping', async () => 'pong');
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 900,
+    height: 700,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  win.loadFile('index.html');
+}
+
+app.whenReady().then(createWindow);
+```
+
+`preload.ts`:
+
+```ts
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  ping: () => ipcRenderer.invoke('ping')
+});
+```
+
+`renderer.ts`:
+
+```ts
+declare global {
+  interface Window {
+    electronAPI: {
+      ping: () => Promise<string>;
+    };
+  }
+}
+
+async function main() {
+  const button = document.querySelector<HTMLButtonElement>('#ping');
+  const output = document.querySelector<HTMLDivElement>('#output');
+
+  button?.addEventListener('click', async () => {
+    const result = await window.electronAPI.ping();
+    if (output) {
+      output.textContent = result;
+    }
+  });
+}
+
+main();
+```
+
+`index.html`:
+
+```html
+<!doctype html>
+<html>
+  <body>
+    <button id="ping">Ping</button>
+    <div id="output"></div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
+```
+
+This setup avoids direct renderer access to `electron` while still allowing a controlled IPC call.
+
+## How to verify the bridge is working
+
+If the API is `undefined`, check the following in order:
+
+- The `BrowserWindow` includes the `preload` path.
+- The preload bundle exists at that path.
+- `contextIsolation` is enabled.
+- `nodeIntegration` is disabled if you are following the recommended security model.
+- The preload script imports `contextBridge` from `electron`.
+- The exposed key in `exposeInMainWorld` matches the key used in the renderer.
+- The renderer code runs after the page loads.
+- The main process has a matching `ipcMain.handle` or `ipcMain.on` listener.
+
+For debugging, you can temporarily log from preload:
+
+```ts
+console.log('preload loaded');
+```
+
+You can also inspect the page world in DevTools and check whether `window.electronAPI` exists. If the preload did not load, the problem is usually the `preload` path or bundle output location.
+
+## Keep the API surface minimal
+
+The safest bridge exports functions, not objects with unrestricted methods. Each function should represent one capability. A good bridge often looks like this:
+
+- `loadSettings()`
+- `saveSettings(settings)`
+- `selectFile()`
+- `openExternalDocs(url)`
+
+A bad bridge looks like this:
+
+- `ipcRenderer`
+- `require`
+- `fs`
+- `shell`
+
+The narrow version keeps the renderer from becoming a general-purpose privileged environment. That matters because the renderer often handles untrusted data and browser-like content.
+
+## Practical takeaway
+
+Prefer a preload bridge with `contextBridge.exposeInMainWorld`, `contextIsolation: true`, and `nodeIntegration: false`. Do not call `require('electron')` from the renderer. Instead, expose only the specific IPC methods the UI needs, validate their inputs in preload or main, and keep the channel names explicit and namespaced. That prevents `ipcRenderer` from becoming `undefined` in the renderer and keeps the security boundary intact.

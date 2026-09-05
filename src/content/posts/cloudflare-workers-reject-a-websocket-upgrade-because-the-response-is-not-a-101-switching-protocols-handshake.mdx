@@ -1,0 +1,370 @@
+---
+title: "Cloudflare Workers Reject a WebSocket Upgrade Because the Response Is Not a 101 Switching Protocols Handshake"
+description: "A WebSocket route fails when the Worker returns the wrong upgrade response shape."
+tags: ["cloudflare-workers", "websocket", "upgrade", "http", "edge"]
+date: Sep 1, 2026
+cell: "websocket-handshake::cloudflare-workers::upgrade-response"
+---
+
+Cloudflare Workers rejects the WebSocket upgrade with `Error 1006` and a runtime failure such as `WebSocket upgrade failed: expected 101 Switching Protocols, got 200 OK` when the Worker returns a normal `Response` instead of the required handshake response.
+
+## What a WebSocket upgrade requires
+
+A WebSocket connection does not start as a WebSocket connection. It starts as an HTTP request with `Upgrade: websocket` and the standard WebSocket handshake headers. The server must answer with a very specific HTTP response:
+
+- status `101 Switching Protocols`
+- `Connection: Upgrade`
+- `Upgrade: websocket`
+- the WebSocket accept semantics required by the platform
+
+In ordinary HTTP, a `Response` with status `200` is perfectly valid. For WebSocket upgrade traffic, it is not. The upgrade path is a protocol switch, not a normal fetch response.
+
+Cloudflare Workers enforces this distinction. If the incoming request asks for a WebSocket upgrade, the returned value must match the platform’s expected upgrade response shape. A generic `new Response(...)` does not perform the protocol switch. The browser or client sees the handshake fail, and the socket never opens.
+
+## Why a normal `Response` cannot satisfy `Upgrade: websocket`
+
+A `fetch` handler in a Worker normally returns an HTTP response body. That works for HTML, JSON, assets, and APIs because the exchange stays in HTTP.
+
+WebSocket upgrade traffic is different. The client sends:
+
+```http
+GET /chat HTTP/1.1
+Host: example.com
+Connection: Upgrade
+Upgrade: websocket
+Sec-WebSocket-Version: 13
+Sec-WebSocket-Key: ...
+```
+
+The server must respond with `101 Switching Protocols` and then stop speaking HTTP on that connection. After the handshake succeeds, the transport becomes a bidirectional WebSocket stream.
+
+A normal `Response` object represents a completed HTTP response. It has a body, a status code, and headers, but it does not tell the platform to hand the socket over to the WebSocket runtime. Returning `new Response("ok")` or even `new Response(null, { status: 101 })` is still not enough unless the response is built with the WebSocket upgrade API the platform expects.
+
+The key point is that the Worker runtime needs an explicit WebSocket endpoint object attached to the response. Without that, there is no protocol handoff.
+
+## The `WebSocketPair` flow in Workers
+
+In Cloudflare Workers, the standard way to accept a WebSocket connection is `WebSocketPair`. It creates two linked sockets:
+
+- one socket is kept by the Worker
+- the other socket is sent back to the client in the handshake response
+
+The flow is:
+
+1. Create a `WebSocketPair`.
+2. Extract the client-facing socket and the server-facing socket.
+3. Accept the server-facing socket in the Worker.
+4. Return the client-facing socket in a `101` response with the right headers.
+
+The runtime then upgrades the HTTP connection into a WebSocket connection.
+
+### Minimal accepting Worker
+
+```typescript
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const upgradeHeader = request.headers.get("Upgrade");
+    if (upgradeHeader !== "websocket") {
+      return new Response("Expected websocket upgrade", { status: 426 });
+    }
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+
+    server.accept();
+
+    server.addEventListener("message", (event) => {
+      server.send(`echo: ${event.data}`);
+    });
+
+    server.addEventListener("close", () => {
+      server.close(1000, "closed");
+    });
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+      headers: {
+        Upgrade: "websocket",
+        Connection: "Upgrade",
+      },
+    });
+  },
+};
+```
+
+This is the shape Workers expects. The important part is not just the `101` status. It is the `webSocket: client` property on the response init object. That property is what binds the response to the upgraded socket.
+
+## The exact response shape the platform expects
+
+For a WebSocket upgrade in Workers, the response should be:
+
+- `status: 101`
+- `statusText` is optional
+- `headers` should include `Upgrade: websocket` and `Connection: Upgrade`
+- `webSocket: clientSocket`
+
+That means the response is not a generic HTTP response. It is a special upgrade response with a `webSocket` field.
+
+A complete shape looks like this:
+
+```typescript
+new Response(null, {
+  status: 101,
+  headers: {
+    Upgrade: "websocket",
+    Connection: "Upgrade",
+  },
+  webSocket: client,
+});
+```
+
+If that `webSocket` field is missing, the Worker does not open the socket. If the status is not `101`, the upgrade fails. If the incoming request is not a WebSocket request, you should return a normal HTTP response instead.
+
+The `webSocket` field is specific to Workers and not part of the standard browser `Response` constructor behavior. In other words, the runtime extends the normal response contract to support protocol upgrade.
+
+## How the handshake fails when the response is wrong
+
+A few incorrect patterns produce upgrade failures.
+
+### Returning `200 OK`
+
+```typescript
+export default {
+  async fetch(): Promise<Response> {
+    return new Response("not a websocket");
+  },
+};
+```
+
+This returns a normal HTTP response. The client asked for a protocol switch and received a standard body instead. The browser or WebSocket client then reports a failed handshake.
+
+### Returning `101` without a WebSocket object
+
+```typescript
+export default {
+  async fetch(): Promise<Response> {
+    return new Response(null, {
+      status: 101,
+      headers: {
+        Upgrade: "websocket",
+        Connection: "Upgrade",
+      },
+    });
+  },
+};
+```
+
+This looks close, but it is still incomplete. The response advertises a switch, but there is no socket attached. The platform has no upgraded endpoint to hand to the client, so the connection fails.
+
+### Returning a `101` response before `accept()`
+
+```typescript
+export default {
+  async fetch(): Promise<Response> {
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+      headers: {
+        Upgrade: "websocket",
+        Connection: "Upgrade",
+      },
+    });
+  },
+};
+```
+
+This also fails. The server-side socket must be accepted with `server.accept()` before the response is returned. Accepting is the Worker-side signal that the socket is ready to receive events and messages.
+
+## Request validation before upgrading
+
+A Worker should only attempt the handshake when the request actually asks for WebSocket upgrade. Check the `Upgrade` header before creating the pair.
+
+```typescript
+function isWebSocketRequest(request: Request): boolean {
+  const upgrade = request.headers.get("Upgrade");
+  return upgrade !== null && upgrade.toLowerCase() === "websocket";
+}
+```
+
+Then use it in the handler:
+
+```typescript
+export default {
+  async fetch(request: Request): Promise<Response> {
+    if (!isWebSocketRequest(request)) {
+      return new Response("WebSocket upgrade required", {
+        status: 426,
+        headers: {
+          Upgrade: "websocket",
+        },
+      });
+    }
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+    server.accept();
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+      headers: {
+        Upgrade: "websocket",
+        Connection: "Upgrade",
+      },
+    });
+  },
+};
+```
+
+`426 Upgrade Required` is useful when the endpoint is intended only for WebSocket clients. It makes the failure explicit instead of returning a misleading `200 OK`.
+
+## Message handling after the connection opens
+
+Once the handshake succeeds, the Worker can attach event listeners to the accepted socket.
+
+```typescript
+export default {
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("Upgrade required", { status: 426 });
+    }
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+
+    server.accept();
+
+    server.addEventListener("message", (event) => {
+      const text = typeof event.data === "string" ? event.data : "";
+      if (text === "ping") {
+        server.send("pong");
+        return;
+      }
+      server.send(`received: ${text}`);
+    });
+
+    server.addEventListener("close", (event) => {
+      console.log("socket closed", event.code, event.reason);
+    });
+
+    server.addEventListener("error", (event) => {
+      console.error("socket error", event);
+    });
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+      headers: {
+        Upgrade: "websocket",
+        Connection: "Upgrade",
+      },
+    });
+  },
+};
+```
+
+The `fetch` handler returns immediately after handing off the client socket. The WebSocket connection then continues independently of the HTTP request lifecycle.
+
+## How to test the handshake locally
+
+Use `wrangler` to run the Worker:
+
+```bash
+npm install -D wrangler
+npx wrangler dev
+```
+
+Then connect with a WebSocket client. `wscat` is a simple option:
+
+```bash
+npm install -g wscat
+wscat -c ws://127.0.0.1:8787
+```
+
+If the Worker returns the correct upgrade response, `wscat` opens a session and accepts messages. If the Worker returns the wrong response shape, the client prints a handshake failure.
+
+For browsers, open the DevTools console and create a `WebSocket`:
+
+```javascript
+const ws = new WebSocket("ws://127.0.0.1:8787");
+ws.onopen = () => console.log("open");
+ws.onerror = (e) => console.error("error", e);
+ws.onmessage = (e) => console.log("message", e.data);
+```
+
+A broken handshake typically surfaces as `error` and then `close` with code `1006`, which indicates the connection closed abnormally without a clean close frame.
+
+## Common causes and the mechanism behind them
+
+### Wrong status code
+
+A WebSocket handshake must use `101 Switching Protocols`. Any other status means the connection stayed HTTP.
+
+### Missing `webSocket` in the response
+
+Workers need the upgraded socket attached to the response. Without `webSocket: client`, the runtime cannot complete the protocol switch.
+
+### Forgetting `server.accept()`
+
+The socket exists, but it is not active. The Worker side must accept the socket before the response goes out.
+
+### Returning a body
+
+A body is normal for HTTP. A successful upgrade does not use an HTTP response body in the usual sense. The important part is the socket handoff, not an HTML or text payload.
+
+### Incorrect headers
+
+`Upgrade: websocket` and `Connection: Upgrade` should be present on the handshake response. They describe the protocol change and make the intent explicit.
+
+## A complete pattern you can reuse
+
+This version handles request validation, creates the pair, accepts the server socket, and returns the correct upgrade response.
+
+```typescript
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const upgrade = request.headers.get("Upgrade");
+
+    if (!upgrade || upgrade.toLowerCase() !== "websocket") {
+      return new Response("Expected WebSocket request", {
+        status: 426,
+        headers: {
+          Upgrade: "websocket",
+        },
+      });
+    }
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+
+    server.accept();
+
+    server.addEventListener("message", (event) => {
+      server.send(`echo: ${event.data}`);
+    });
+
+    server.addEventListener("close", () => {
+      // Optional cleanup.
+    });
+
+    return new Response(null, {
+      status: 101,
+      headers: {
+        Upgrade: "websocket",
+        Connection: "Upgrade",
+      },
+      webSocket: client,
+    });
+  },
+};
+```
+
+This is the correct shape because it matches the handshake contract expected by Cloudflare Workers and WebSocket clients.
+
+## Practical takeaway
+
+Prefer the `WebSocketPair` flow with `server.accept()` and a `new Response(null, { status: 101, webSocket: client, headers: { Upgrade: "websocket", Connection: "Upgrade" } })` return value. That is the response shape the platform uses to complete the protocol switch. A normal `Response` cannot satisfy an `Upgrade: websocket` request because it stays in HTTP and does not hand the connection to the WebSocket runtime. To keep the problem from returning, validate the `Upgrade` header before upgrading, return `426` for non-WebSocket requests, and keep the handshake response exactly in the expected `101` plus `webSocket` form.

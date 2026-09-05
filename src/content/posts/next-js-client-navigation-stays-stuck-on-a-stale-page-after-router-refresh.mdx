@@ -1,0 +1,430 @@
+---
+title: "Next.js Client Navigation Stays Stuck on a Stale Page After `router.refresh()`"
+description: "`router.refresh()` does not update a page when client state or caching keeps the old UI alive."
+tags: ["nextjs", "app-router", "navigation", "cache", "react"]
+date: Aug 28, 2026
+cell: "navigation-failure::nextjs::client-router-refresh"
+---
+
+`router.refresh()` completes without an error, but the client still shows the old page content after navigation. There is no React runtime exception, no Next.js overlay, and no visible network failure; the page simply stays stale even though the refresh request was sent.
+
+## What `router.refresh()` actually invalidates
+
+In the Next.js App Router, `router.refresh()` is a client-side navigation primitive from `next/navigation`. It asks Next.js to refetch the current route’s server component payload and merge the new result into the existing React tree.
+
+It does **not** mean “reset the whole page.”
+
+What gets invalidated is the server-rendered data for the current route segment tree. Next.js will request a new React Server Components payload, re-run `layout.tsx`, `page.tsx`, and any server components under the active route, then patch the result into the client tree.
+
+What does **not** automatically reset:
+
+- React state in client components
+- `useRef` values
+- memoized values from `useMemo`
+- local variables inside mounted client components
+- DOM state preserved by React because the component instance is still mounted
+- data that is still served from a cache, including `fetch()` results that are cached under Next.js rules
+
+If a client component remains mounted and continues to render the old value from local state, the refreshed server payload can arrive correctly while the visible UI stays stale.
+
+## Why the page can stay stale after a refresh
+
+The stale display usually comes from one of three mechanisms.
+
+### 1. Client component state still owns the visible value
+
+A server component can pass updated props, but a client component may have copied those props into local state once and then stopped following later updates.
+
+```tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+
+type Props = {
+  title: string;
+};
+
+export function EditableTitle({ title }: Props) {
+  const [value, setValue] = useState(title);
+
+  return (
+    <input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+    />
+  );
+}
+```
+
+If the server sends a new `title` after `router.refresh()`, `useState(title)` does not run again. The input keeps the old state because the component instance is still mounted.
+
+This is the most common reason a refreshed page appears unchanged even though the server data changed.
+
+### 2. The server component re-ran, but the data source was still cached
+
+`router.refresh()` only asks for a new server payload. It does not automatically purge every cache involved in producing that payload.
+
+If the page reads from `fetch()` with default caching, the response may still come from Next.js cache. In the App Router, `fetch()` is cached by default in many server contexts unless you opt out with `cache: 'no-store'` or use revalidation.
+
+```tsx
+export default async function Page() {
+  const res = await fetch('https://example.com/api/post/123');
+  const post = await res.json();
+
+  return <pre>{JSON.stringify(post, null, 2)}</pre>;
+}
+```
+
+That `fetch()` can remain cached. `router.refresh()` re-renders the page, but the page can re-render the same cached payload.
+
+### 3. The component tree is preserved by React reconciliation
+
+`router.refresh()` updates server components, but React tries to preserve mounted client components where possible. If the route tree shape stays compatible, React may keep the client component instance alive, along with its state and memoized values.
+
+That means a client component that derives display content from stale state, stale memoization, or a stale context value can keep rendering the old output.
+
+## What rerenders and what does not
+
+It helps to separate the App Router pieces.
+
+### Server components rerender
+
+These are recomputed on the server when the refresh request arrives:
+
+- `app/**/page.tsx`
+- `app/**/layout.tsx`
+- nested server components imported by those files
+- async server logic such as database queries and server-side `fetch()`
+
+If the data source changes and is not cached, the refreshed server payload should contain the new data.
+
+### Client components may rerender, but state survives
+
+A client component can receive new props and rerender, but this is not the same as remounting.
+
+Preserved values include:
+
+- `useState`
+- `useReducer`
+- `useRef`
+- `useMemo`
+- uncontrolled form fields
+- any data stored in external client-side stores such as Zustand or Redux unless you clear them
+
+### Browser cache and fetch cache are separate concerns
+
+A network response, a Next.js `fetch()` cache hit, and a React state update are different layers.
+
+`router.refresh()` only guarantees a new attempt to read the route’s server payload. It does not guarantee:
+
+- the origin response changed
+- the server component avoided cache reuse
+- the client rendered from the new props instead of local state
+
+## A minimal stale-state example
+
+This page can stay stale after refresh even when the server data changes.
+
+```tsx
+// app/posts/[id]/page.tsx
+import { PostEditor } from './post-editor';
+
+async function getPost(id: string) {
+  const res = await fetch(`http://localhost:3000/api/posts/${id}`, {
+    cache: 'no-store',
+  });
+
+  if (!res.ok) throw new Error('Failed to load post');
+  return res.json() as Promise<{ title: string }>;
+}
+
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const post = await getPost(id);
+
+  return <PostEditor initialTitle={post.title} />;
+}
+```
+
+```tsx
+// app/posts/[id]/post-editor.tsx
+'use client';
+
+import { useState } from 'react';
+
+export function PostEditor({
+  initialTitle,
+}: {
+  initialTitle: string;
+}) {
+  const [title, setTitle] = useState(initialTitle);
+
+  return (
+    <input
+      value={title}
+      onChange={(e) => setTitle(e.target.value)}
+    />
+  );
+}
+```
+
+Even if `getPost()` returns a different `title` after `router.refresh()`, `PostEditor` keeps the earlier state. `useState(initialTitle)` only uses the prop on the first mount.
+
+## Fixing stale client state
+
+If the client component should follow server data, do not copy the prop into permanent local state unless that state is supposed to become independent.
+
+### Prefer controlled rendering from props
+
+If the field is read-only, render the prop directly.
+
+```tsx
+'use client';
+
+export function PostTitle({ title }: { title: string }) {
+  return <h1>{title}</h1>;
+}
+```
+
+### Sync state when the prop changes
+
+If local editing is required, sync state from props with `useEffect`.
+
+```tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+
+export function PostEditor({
+  initialTitle,
+}: {
+  initialTitle: string;
+}) {
+  const [title, setTitle] = useState(initialTitle);
+
+  useEffect(() => {
+    setTitle(initialTitle);
+  }, [initialTitle]);
+
+  return (
+    <input
+      value={title}
+      onChange={(e) => setTitle(e.target.value)}
+    />
+  );
+}
+```
+
+This is appropriate when the server is the source of truth and refresh should replace the current draft state.
+
+### Force a remount when you need a full reset
+
+Sometimes the cleanest fix is to make the client component remount when the server record changes. Use a `key` that changes with the data identity.
+
+```tsx
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const post = await getPost(id);
+
+  return <PostEditor key={post.updatedAt} initialTitle={post.title} />;
+}
+```
+
+A changing `key` forces React to discard the old instance and create a new one. That resets `useState`, `useRef`, and memoized values.
+
+Use this carefully. It is useful when the UI should reset entirely, not when you need to preserve user input.
+
+## Fixing cached server data
+
+If the server component keeps returning the old result, the client can refresh forever and still see stale output.
+
+### Use `cache: 'no-store'` for always-fresh reads
+
+For data that must always reflect the latest server state, disable caching on the `fetch()` call.
+
+```tsx
+async function getPost(id: string) {
+  const res = await fetch(`https://example.com/api/posts/${id}`, {
+    cache: 'no-store',
+  });
+
+  return res.json();
+}
+```
+
+This prevents Next.js from reusing the response cache for that request.
+
+### Use `next: { revalidate }` for time-based freshness
+
+If exact real-time freshness is not required, set a revalidation interval.
+
+```tsx
+await fetch(`https://example.com/api/posts/${id}`, {
+  next: { revalidate: 10 },
+});
+```
+
+This caches the data, then revalidates it after 10 seconds.
+
+### Use cache tags for targeted invalidation
+
+For mutable content, cache tags are usually the best fit. Tag the read, then invalidate that tag after the mutation.
+
+```tsx
+// reading
+await fetch(`https://example.com/api/posts/${id}`, {
+  next: { tags: [`post:${id}`] },
+});
+```
+
+Then invalidate from a server action or route handler.
+
+```tsx
+'use server';
+
+import { revalidateTag } from 'next/cache';
+
+export async function updatePost(id: string, title: string) {
+  await fetch(`https://example.com/api/posts/${id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+
+  revalidateTag(`post:${id}`);
+}
+```
+
+This is more precise than broad route invalidation because it targets the underlying data cache.
+
+## How `router.refresh()` fits with server invalidation
+
+`router.refresh()` and `revalidateTag()` solve different problems.
+
+- `router.refresh()` asks the current route to fetch a new server payload.
+- `revalidateTag()` marks specific cached data as stale on the server.
+
+If the page uses cached data, `router.refresh()` alone may still render the old response. If the page uses live data but the client component stores a copy in state, `revalidateTag()` alone may still not update the visible UI.
+
+A complete update usually needs both layers aligned:
+
+1. Invalidate the data cache on the server.
+2. Refresh the route on the client.
+3. Ensure the client component either follows props or remounts.
+
+## A complete mutation flow
+
+A common pattern is:
+
+- a server action updates the database
+- the action calls `revalidateTag()`
+- the client calls `router.refresh()` after the action resolves
+
+```tsx
+// app/posts/[id]/actions.ts
+'use server';
+
+import { revalidateTag } from 'next/cache';
+
+export async function renamePost(id: string, title: string) {
+  await fetch(`https://example.com/api/posts/${id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+
+  revalidateTag(`post:${id}`);
+}
+```
+
+```tsx
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useTransition } from 'react';
+import { renamePost } from './actions';
+
+export function RenameButton({ id }: { id: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <button
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          await renamePost(id, 'New title');
+          router.refresh();
+        })
+      }
+    >
+      Rename
+    </button>
+  );
+}
+```
+
+This is effective only if the page display is not trapped in stale client state. If the title is shown from `useState(initialTitle)`, the refreshed prop still won’t replace that state unless you sync it or remount the component.
+
+## Debugging the stale page
+
+When a page stays stale after `router.refresh()`, check the layers in this order.
+
+### Verify the server payload changed
+
+Inspect the data source directly in the page’s server code. Add a temporary `console.log()` in the server component or route handler and confirm the server receives new data.
+
+If the server logs show fresh data but the UI does not change, the problem is client state or memoization.
+
+### Verify the fetch is not cached
+
+For `fetch()` on the server, check whether the request uses default caching.
+
+Use one of these depending on the requirement:
+
+- `cache: 'no-store'` for uncached reads
+- `next: { revalidate: n }` for timed revalidation
+- `next: { tags: [...] }` plus `revalidateTag()` for targeted invalidation
+
+### Check whether the displayed value comes from local state
+
+Search for:
+
+- `useState(props.value)`
+- `useMemo(() => props.value, [])`
+- Zustand or Redux selectors that are not reset
+- uncontrolled inputs that need a `key` change to reset
+
+### Check whether the component should remount
+
+If the entire record changed and the UI should reset fully, use a `key` based on the record identity or version.
+
+```tsx
+<PostEditor key={post.id + ':' + post.version} initialTitle={post.title} />
+```
+
+That is often the simplest way to eliminate preserved state.
+
+## Which fix to prefer
+
+Prefer the narrowest fix that matches the data flow.
+
+Use `revalidateTag()` when the underlying problem is stale server cache for a specific entity or collection. It is the most precise server-side invalidation mechanism for App Router data.
+
+Use `cache: 'no-store'` when the data must always be fresh and caching provides no benefit.
+
+Use `useEffect` synchronization when the client component should stay mounted but follow updated props.
+
+Use a changing `key` when the component should reset entirely on new data.
+
+Use `router.refresh()` as the client trigger that re-requests the current route payload. It is not a full reset, and it does not override client state or cached data by itself.
+
+The stale page usually comes from relying on `router.refresh()` to do all three jobs at once: invalidate server data, replace client state, and force a remount. It only performs the first part.

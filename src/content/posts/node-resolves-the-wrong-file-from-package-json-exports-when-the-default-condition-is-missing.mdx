@@ -1,0 +1,425 @@
+---
+title: "Node Resolves the Wrong File from `package.json` `exports` When the Default Condition Is Missing"
+description: "A package can load the wrong build target if `exports` does not declare the condition Node is using."
+tags: ["node", "package-json", "exports", "esm", "commonjs"]
+date: Aug 31, 2026
+cell: "package-exports-resolution::node::dual-entrypoint-build"
+---
+
+## `Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './dist/index.js' is not defined by "exports" in ...`
+
+Node’s package resolution can load the wrong file, or fail to load a package at all, when `package.json` `exports` does not declare the condition Node is actually using. The symptom depends on which entry point is requested and which loader is in play, but the mechanism is the same: Node evaluates the `exports` map, selects the first matching condition it understands, and ignores targets that are not reachable from that branch.
+
+That makes `exports` both a routing table and a compatibility boundary. If the map is incomplete, Node may pick a fallback file that was never meant for the active runtime, or it may reject the request entirely with `ERR_PACKAGE_PATH_NOT_EXPORTED`, `ERR_REQUIRE_ESM`, or `ERR_MODULE_NOT_FOUND`.
+
+## How Node resolves `exports`
+
+When a package has an `exports` field, Node stops using the legacy deep import behavior for that package. A request such as `import "pkg"` or `require("pkg")` is resolved through the `exports` map instead of walking the filesystem directly.
+
+A minimal package export map looks like this:
+
+```json
+{
+  "name": "pkg",
+  "exports": {
+    ".": "./dist/index.js"
+  }
+}
+```
+
+That single string target means both `import "pkg"` and `require("pkg")` resolve to the same file, unless the file type and package type create a mismatch later.
+
+Most real packages need different entry points for ESM and CommonJS. That is where conditional exports come in.
+
+```json
+{
+  "name": "pkg",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+Node evaluates that object by checking conditions in a defined order. For built-in resolution, the important conditions are:
+
+- `import` for ESM `import`
+- `require` for CommonJS `require`
+- `node` for Node-specific resolution
+- `default` as the fallback when no more specific condition matched
+- custom conditions provided by `--conditions`
+
+Node does not merge these targets. It chooses one branch and stops. If the active condition set does not include a key, that branch is skipped.
+
+The exact condition set depends on the caller:
+
+- ESM loader: `import`, `node`, and any custom conditions
+- CommonJS loader: `require`, `node`, and any custom conditions
+- `default`: matched only if nothing more specific matches
+
+That means `default` is not optional boilerplate. It is the compatibility path for environments that do not present the exact condition keys used in the map.
+
+## Why the wrong file gets loaded
+
+A package can publish correctly and still load the wrong build target if the `exports` map points one runtime to a file intended for another runtime.
+
+Consider this package layout:
+
+```text
+pkg/
+  dist/
+    index.mjs
+    index.cjs
+  package.json
+```
+
+A broken `package.json` might look like this:
+
+```json
+{
+  "name": "pkg",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.mjs"
+    }
+  }
+}
+```
+
+This looks plausible if the package is ESM-first, but `require("pkg")` now resolves to an `.mjs` file. In CommonJS, Node will fail with:
+
+```text
+Error [ERR_REQUIRE_ESM]: require() of ES Module .../dist/index.mjs not supported.
+```
+
+The package is “published correctly” in the sense that the tarball contains the file and the map is valid JSON, but the runtime contract is wrong. CommonJS asked for a `require`-compatible target and got an ESM file instead.
+
+The opposite mistake is just as common:
+
+```json
+{
+  "name": "pkg",
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.cjs",
+      "require": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+Now ESM `import "pkg"` can load a CommonJS build. Node allows interop in some cases, but the module shape changes. Named exports may not behave as expected, and `default` interop can differ across tooling. A package that seems to work under one loader can expose a different runtime API under another.
+
+The core issue is not ESM versus CommonJS by itself. It is the mismatch between the condition key and the file format.
+
+## How `default` affects resolution
+
+`default` is the generic fallback. It is used when no more specific condition matches, including custom runtimes that do not set `import` or `require`.
+
+A complete map often looks like this:
+
+```json
+{
+  "name": "pkg",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+This shape keeps Node, bundlers, and nonstandard condition sets aligned. If the loader is ESM-aware, it takes `import`. If it is CommonJS, it takes `require`. If neither is present, `default` ensures there is still a usable path.
+
+Without `default`, some toolchains that honor `exports` but do not provide the same condition set may fail to resolve the package. That often shows up as a runtime import error in one environment and a successful load in another.
+
+For example, a package used by a bundler that reads `exports` but only applies a custom condition set can fall through to nothing if `default` is missing. Node itself usually supplies either `import` or `require`, but tools layered on top of Node do not always mirror Node’s condition behavior exactly.
+
+## The exact resolution order matters
+
+Node checks conditions in object order, not by scanning for the “best” file type. That means the order in `exports` matters when multiple keys could match.
+
+This is valid but fragile:
+
+```json
+{
+  "exports": {
+    ".": {
+      "default": "./dist/index.cjs",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+If a resolver processes keys in object order and stops at the first match, `default` can shadow both `import` and `require`. In Node’s own behavior, condition matching is driven by the active condition set, but the practical rule is still the same: put specific conditions before fallback conditions.
+
+The safe ordering is:
+
+```json
+{
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+This keeps the intent explicit and avoids accidental fallback selection in tools that iterate keys in insertion order.
+
+## Package shape that keeps ESM and CommonJS aligned
+
+The most reliable package layout is to build both module formats and point `exports` at each one directly.
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+A few details matter here:
+
+- `type: "module"` makes `.js` files ESM by default, so using explicit `.mjs` and `.cjs` avoids ambiguity.
+- `import` and `require` point to different build outputs.
+- `default` mirrors the CommonJS file so fallback environments still get a compatible entry point.
+- `types` can be included in modern tooling, but TypeScript also respects `typesVersions` or adjacent declaration files depending on your setup.
+
+If the package is CommonJS-first, the shape is similar:
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "main": "./dist/index.cjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+The important part is not the package type. It is that each runtime condition points to a file it can actually execute.
+
+## A runnable example
+
+This package exports both module formats and keeps them in sync.
+
+`package.json`:
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "type": "module",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+`dist/index.mjs`:
+
+```js
+export function greet(name) {
+  return `hello, ${name}`;
+}
+```
+
+`dist/index.cjs`:
+
+```js
+function greet(name) {
+  return `hello, ${name}`;
+}
+
+module.exports = { greet };
+```
+
+ESM consumer:
+
+```ts
+import { greet } from "pkg";
+
+console.log(greet("world"));
+```
+
+CommonJS consumer:
+
+```ts
+const { greet } = require("pkg");
+
+console.log(greet("world"));
+```
+
+Both consumers resolve to the appropriate file. There is no format mismatch, and no loader has to guess.
+
+## How to reproduce a bad resolution
+
+A missing `default` or a misrouted condition is easiest to spot by testing both loaders directly.
+
+Create a package with this `exports` map:
+
+```json
+{
+  "name": "pkg",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs"
+    }
+  }
+}
+```
+
+Now run these commands from a consumer project that depends on it:
+
+```bash
+node --input-type=module -e "import('pkg').then(m => console.log(m))"
+node -e "require('pkg')"
+```
+
+The first command succeeds. The second fails because there is no `require` branch and no `default` fallback. Node reports that the package subpath is not exported or that the module cannot be required, depending on the exact shape of the package and file types.
+
+If you add `default` and point it at a CommonJS file, the second command succeeds:
+
+```json
+{
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+That is the simplest way to keep both loaders on a supported path.
+
+## Custom conditions and runtime-specific branches
+
+Node also supports custom conditions through `--conditions`. That is useful for environment-specific builds, but it makes missing `default` branches more visible.
+
+A package can define a custom branch like this:
+
+```json
+{
+  "exports": {
+    ".": {
+      "development": "./dist/index.dev.js",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+Then a command such as this activates the custom branch:
+
+```bash
+node --conditions=development app.mjs
+```
+
+If `development` is present, Node prefers it when the loader includes that condition. If a tool does not set it, the resolver falls back to `import`, `require`, or `default` as applicable.
+
+This is why `default` should usually be the last branch and should point to the most broadly compatible artifact. It is the safe landing zone for runtimes that do not participate in the package’s custom condition naming.
+
+## Detecting the problem before publish
+
+The fastest check is to test both resolution modes against the packed tarball, not just the source tree.
+
+```bash
+npm pack
+npm install ./pkg-1.0.0.tgz
+node -e "require('pkg')"
+node --input-type=module -e "import('pkg').then(console.log)"
+```
+
+If the CommonJS path throws `ERR_REQUIRE_ESM`, the `require` branch points at an ESM file. If ESM import fails with a syntax or export-shape error, the `import` branch points at a CommonJS file or an incompatible wrapper.
+
+You can also inspect the resolved file paths:
+
+```bash
+node --input-type=module -e "import('pkg').then(m => console.log(m))"
+node -e "console.log(require.resolve('pkg'))"
+```
+
+`require.resolve` shows the CommonJS target. For ESM, the path is usually visible only through additional debugging, but the failure mode still points back to the `exports` branch selection.
+
+## The package.json shape to prefer
+
+For a package that must support both `import` and `require`, prefer this shape:
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  }
+}
+```
+
+If the package also exposes subpaths, duplicate the same pattern for each public entry point:
+
+```json
+{
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    },
+    "./feature": {
+      "import": "./dist/feature.mjs",
+      "require": "./dist/feature.cjs",
+      "default": "./dist/feature.cjs"
+    }
+  }
+}
+```
+
+Do not expose internal files unless they are part of the supported API. Once `exports` is present, deep imports outside that map are blocked by design.
+
+## Practical takeaway
+
+Prefer explicit conditional exports with both `import` and `require`, plus a `default` fallback that matches the most compatible runtime target. That keeps Node’s resolution deterministic, avoids `ERR_REQUIRE_ESM` from misrouted CommonJS consumers, and reduces the chance that another resolver or bundler falls through because it does not recognize the same condition set.
+
+The safe pattern is simple: point each condition at a file built for that module system, keep `default` last, and test `import` and `require` against the packed artifact before publish.

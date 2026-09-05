@@ -1,0 +1,326 @@
+---
+title: "Hono Cannot Match `c.req.param()` When a Static Route Shadows a Dynamic One"
+description: "Route order in Hono can hide dynamic params and make `c.req.param()` return empty values."
+tags: ["hono", "routing", "params", "path-matching", "server"]
+date: Aug 23, 2026
+cell: "params-null-404::hono::wildcard-route-order"
+---
+
+`c.req.param()` returns an empty string in a Hono route when a static path is matched instead of the intended parameterized route. The handler runs, but the expected parameter is missing.
+
+## How Hono route matching works
+
+Hono matches the request path against registered routes and then invokes the first route pattern that fits. When more than one route can match the same request, route precedence matters.
+
+A static route like `/users/me` is more specific than a dynamic route like `/users/:id`. If both exist, a request to `/users/me` matches the static route first. That is correct behavior. The problem appears when the route order or route shape causes the handler you expect to be parameterized to run without the parameter you expect.
+
+In Hono, `c.req.param()` reads values from the route that was matched. If the matched route pattern does not define `:id`, there is no parameter to read.
+
+## The failure mode
+
+Consider this route set:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.get('/users/me', (c) => {
+  return c.text('current user')
+})
+
+app.get('/users/:id', (c) => {
+  const id = c.req.param('id')
+  return c.text(`user ${id}`)
+})
+
+export default app
+```
+
+A request to `GET /users/me` will match `/users/me`, not `/users/:id`.
+
+That means:
+
+- the static handler runs
+- `c.req.param('id')` is not available in that handler
+- if you accidentally expect `/users/me` to go through the dynamic route, the parameter looks missing
+
+A related variant appears when the route handler is shared across multiple path patterns:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+const handler = (c: any) => {
+  const id = c.req.param('id')
+  return c.text(`user ${id}`)
+}
+
+app.get('/users/me', handler)
+app.get('/users/:id', handler)
+
+export default app
+```
+
+Here the same handler runs for both routes. For `/users/me`, `c.req.param('id')` is empty because the matched pattern is `/users/me`, which does not define `:id`.
+
+## Why the handler still runs
+
+Hono does not infer intent from the handler body. It only knows the route pattern that matched the incoming request.
+
+That distinction matters:
+
+- the handler is attached to a route
+- the route pattern determines which path variables exist
+- `c.req.param()` only exposes variables captured by that match
+
+So the failure is not “the handler failed to run.” The handler ran exactly as registered. The mismatch is between the route pattern and the code that expects a dynamic parameter.
+
+## Route precedence and shadowing
+
+Static paths shadow parameterized ones when both are candidates for the same request path.
+
+For example:
+
+- `/posts/latest` is static
+- `/posts/:slug` is dynamic
+
+A request to `/posts/latest` matches the static route. That is fine if the static route exists intentionally. It becomes a bug when the route ordering or naming makes a path appear to be dynamic, but a static sibling intercepts it first.
+
+This also happens with broader route groups:
+
+```ts
+app.get('/api/users/me', currentUserHandler)
+app.get('/api/users/:id', userByIdHandler)
+```
+
+`/api/users/me` will never reach `userByIdHandler`. The parameterized route is not broken. It is just not the matched route for that request.
+
+## Confirm the matched pattern before reading params
+
+Before reading `c.req.param()`, confirm which route matched.
+
+Hono exposes route metadata on the context in some integration patterns, but the most reliable approach is to structure routes so that each handler only reads parameters that its own pattern defines.
+
+For debugging, log the path and the expected pattern at the handler boundary:
+
+```ts
+app.get('/users/me', (c) => {
+  console.log('matched /users/me for', c.req.path)
+  return c.text('current user')
+})
+
+app.get('/users/:id', (c) => {
+  console.log('matched /users/:id for', c.req.path)
+  const id = c.req.param('id')
+  return c.text(`user ${id}`)
+})
+```
+
+If you need to verify which handler is selected for a specific request, add a temporary header:
+
+```ts
+app.get('/users/me', (c) => {
+  return c.text('current user', 200, {
+    'x-matched-route': '/users/me',
+  })
+})
+
+app.get('/users/:id', (c) => {
+  const id = c.req.param('id')
+  return c.text(`user ${id}`, 200, {
+    'x-matched-route': '/users/:id',
+  })
+})
+```
+
+The point is to inspect the matched route, not the presumed route.
+
+## Reorder routes so specific paths come first
+
+If a parameterized route is being shadowed by a more general pattern, register the more specific route before the broader one.
+
+For overlapping dynamic routes, the same rule applies. Put the most specific match first.
+
+Example:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.get('/users/me', (c) => c.text('current user'))
+app.get('/users/:id', (c) => c.text(`user ${c.req.param('id')}`))
+
+export default app
+```
+
+This ordering is clear and safe because the static route is intentionally separate.
+
+If you have multiple dynamic routes that overlap, use specificity to control match order:
+
+```ts
+app.get('/files/:name.:ext', handleFileWithExt)
+app.get('/files/:name', handleFileWithoutExt)
+```
+
+The more specific route should be registered first so it claims the request before the broader pattern.
+
+## Use distinct prefixes to avoid collisions
+
+A better fix than depending on precedence is to make the route shapes non-overlapping.
+
+Instead of mixing a reserved static segment and a dynamic identifier under the same path prefix, separate them:
+
+```ts
+app.get('/users/me', currentUserHandler)
+app.get('/users/id/:id', userByIdHandler)
+```
+
+Or:
+
+```ts
+app.get('/me', currentUserHandler)
+app.get('/users/:id', userByIdHandler)
+```
+
+Distinct prefixes make route matching obvious. They also reduce accidental collisions when more routes get added later.
+
+This matters for maintainability. If `/users/me` and `/users/:id` coexist, anyone adding another static child like `/users/settings` needs to understand the precedence rules. Separate prefixes lower that risk.
+
+## Read params only in handlers whose pattern defines them
+
+A handler should only call `c.req.param()` for keys that are present in the route pattern that matched it.
+
+Valid:
+
+```ts
+app.get('/posts/:postId', (c) => {
+  const postId = c.req.param('postId')
+  return c.text(postId)
+})
+```
+
+Risky:
+
+```ts
+const handler = (c: any) => {
+  const postId = c.req.param('postId')
+  return c.text(postId)
+}
+
+app.get('/posts/latest', handler)
+app.get('/posts/:postId', handler)
+```
+
+In the second example, `postId` is undefined or empty on `/posts/latest`. The handler body assumes a parameter that the route does not define.
+
+If a shared handler is necessary, branch on the path or factor the dynamic behavior into separate route handlers.
+
+## Confirm the route pattern in tests
+
+Route shadowing is easy to catch with a small test suite.
+
+Install the common test tools:
+
+```sh
+npm install hono @hono/node-server vitest
+```
+
+A minimal test can assert the response for each route:
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.get('/users/me', (c) => c.text('current user'))
+app.get('/users/:id', (c) => c.text(`user ${c.req.param('id')}`))
+
+describe('routes', () => {
+  it('matches the static route', async () => {
+    const res = await app.request('/users/me')
+    expect(await res.text()).toBe('current user')
+  })
+
+  it('matches the dynamic route', async () => {
+    const res = await app.request('/users/123')
+    expect(await res.text()).toBe('user 123')
+  })
+})
+```
+
+If a later route addition causes `/users/me` to be handled by the wrong path, this test fails immediately.
+
+You can also assert the absence of accidental param reads by checking the response shape or response headers from the specific route.
+
+## A practical route layout
+
+A clear layout avoids ambiguity:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.get('/health', (c) => c.text('ok'))
+
+app.get('/users/me', (c) => {
+  return c.json({ scope: 'current-user' })
+})
+
+app.get('/users/:id', (c) => {
+  const id = c.req.param('id')
+  return c.json({ scope: 'user-by-id', id })
+})
+
+app.get('/users/:id/settings', (c) => {
+  const id = c.req.param('id')
+  return c.json({ userId: id, settings: true })
+})
+
+export default app
+```
+
+This version keeps each route’s parameter requirements aligned with its path pattern.
+
+## When the parameter is still empty
+
+If `c.req.param('name')` returns an empty value, check these points in order:
+
+1. The matched path is not the one you expect.
+2. A static sibling route is shadowing the dynamic route.
+3. The route pattern does not define the parameter key you are reading.
+4. The handler is reused for routes that do not all expose the same params.
+5. The request path includes an exact static match that takes precedence.
+
+For example, this fails because the route does not define `id`:
+
+```ts
+app.get('/users/me', (c) => {
+  return c.text(c.req.param('id'))
+})
+```
+
+This succeeds because the route does:
+
+```ts
+app.get('/users/:id', (c) => {
+  return c.text(c.req.param('id'))
+})
+```
+
+## Prefer explicit route separation
+
+The most robust fix is to prevent the collision rather than rely on precedence rules.
+
+Use one of these patterns:
+
+- put static routes before dynamic siblings when they must share a prefix
+- use distinct prefixes such as `/users/me` and `/users/id/:id`
+- keep parameter reads inside handlers whose route patterns define those parameters
+- add tests that assert the expected route response for each path
+
+If a static route must coexist with a parameterized one, register the static route first and keep the handler separate. That makes the matching behavior explicit and keeps `c.req.param()` aligned with the actual route pattern.

@@ -1,0 +1,444 @@
+---
+title: "SvelteKit Throws ReferenceError: document is not defined During Server-Side Rendering"
+description: "SvelteKit SSR crashes when a component touches document before the browser runs it; isolate browser-only code and gate it behind client checks."
+tags: ["sveltekit", "ssr", "document", "browser-api", "javascript"]
+date: Aug 16, 2026
+cell: "document-is-not-defined::sveltekit::ssr-component-access"
+---
+
+`ReferenceError: document is not defined` breaks SvelteKit server-side rendering when a component, utility, or load path touches `document` before the browser has taken over.
+
+## Why this error happens in SvelteKit
+
+SvelteKit renders routes on the server first. During that phase, the code path runs in Node.js, not in a browser. Node.js does not provide DOM globals such as `window`, `document`, `localStorage`, or `navigator`.
+
+That means any code that evaluates `document` during server rendering will fail immediately with:
+
+```text
+ReferenceError: document is not defined
+```
+
+The important detail is timing. The browser only hydrates after the server has already produced HTML. So any access that happens before hydration can run only in the server environment. If that access happens at module initialization, inside a `load` function that runs on the server, or in shared utility code imported by server-rendered code, the request fails before the page can load.
+
+## What counts as server-side execution
+
+In SvelteKit, several paths can execute before the browser exists for that request.
+
+### Top-level module code
+
+Anything at the top level of a `.svelte`, `.ts`, `.js`, or `.svelte.ts` file runs when the module is evaluated. If that top-level code reads `document`, it fails as soon as the server imports the module.
+
+```ts
+// src/lib/dom-utils.ts
+const title = document.title;
+
+export function getTitle() {
+  return title;
+}
+```
+
+This fails because `document.title` is evaluated during import, not inside a browser-only callback.
+
+### `load` functions
+
+`load` functions run on the server by default for SSR. If a `load` function accesses `document`, it throws the same error.
+
+```ts
+// src/routes/+page.ts
+import type { PageLoad } from './$types';
+
+export const load: PageLoad = async () => {
+  const text = document.body.innerText;
+  return { text };
+};
+```
+
+That code cannot run on the server because the server has no DOM.
+
+### Shared utilities imported by server-rendered code
+
+A utility does not need to live in a route file to cause the problem. If a server-rendered component imports a shared helper that touches the DOM, the failure still happens when the module is evaluated.
+
+```ts
+// src/lib/measure.ts
+export function getViewportWidth() {
+  return document.documentElement.clientWidth;
+}
+```
+
+If this helper is imported by a component that renders on the server, the import path is enough to break SSR.
+
+### Reactive statements and component initialization
+
+In Svelte components, code inside component initialization can also run during SSR. If the access is not wrapped in a browser-only lifecycle hook, it can still fail.
+
+```svelte
+<script lang="ts">
+  const id = document.cookie;
+</script>
+```
+
+That code is evaluated when the component renders on the server.
+
+## How SvelteKit renders first, then hydrates
+
+The SSR pipeline matters because it explains why browser APIs are unsafe in shared code.
+
+1. SvelteKit receives the request.
+2. It executes server-rendered route code.
+3. It renders components to HTML in Node.js.
+4. The browser receives the HTML.
+5. Hydration attaches client-side behavior.
+
+Before step 4, there is no DOM. So any code that depends on `document` must be delayed until the client-side phase.
+
+Svelte provides a built-in signal for this boundary: `onMount`. Code inside `onMount` runs only in the browser, never during SSR.
+
+## Fix browser-only code with `onMount`
+
+Use `onMount` for DOM reads, DOM writes, and browser APIs that should not run on the server.
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  let title = '';
+
+  onMount(() => {
+    title = document.title;
+  });
+</script>
+
+<p>{title}</p>
+```
+
+`onMount` solves the timing problem because Svelte does not run it during server rendering. The component can still render on the server, but the `document.title` access waits until the browser mounts the component.
+
+Use this pattern for:
+
+- `document`
+- `window`
+- `localStorage`
+- `sessionStorage`
+- `matchMedia`
+- `ResizeObserver`
+- `IntersectionObserver`
+- DOM measurement calls such as `getBoundingClientRect()`
+
+If the code needs cleanup, return a function from `onMount`:
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  let width = 0;
+
+  onMount(() => {
+    const update = () => {
+      width = document.documentElement.clientWidth;
+    };
+
+    update();
+    window.addEventListener('resize', update);
+
+    return () => {
+      window.removeEventListener('resize', update);
+    };
+  });
+</script>
+
+<p>{width}</p>
+```
+
+## Guard access with `browser`
+
+SvelteKit exports the `browser` constant from `'$app/environment'`. It is `true` in the browser and `false` during SSR. Use it when you need conditional logic outside `onMount`.
+
+```ts
+import { browser } from '$app/environment';
+
+export function getStoredTheme() {
+  if (!browser) return 'light';
+  return localStorage.getItem('theme') ?? 'light';
+}
+```
+
+This guard prevents the server from evaluating the browser branch.
+
+A common use is initialization that must work in both server and client contexts:
+
+```ts
+import { browser } from '$app/environment';
+
+export function readCookieName() {
+  if (!browser) return '';
+  return document.cookie;
+}
+```
+
+Use `browser` when a function can be called from multiple places and `onMount` is not a good fit. Use `onMount` when the logic is tied to a component lifecycle.
+
+## Move DOM access out of `load`
+
+`load` is for data fetching and route setup, not for direct DOM access. If you need browser data, fetch it in the component after mount, or read it from client-only stores.
+
+A bad pattern:
+
+```ts
+// src/routes/+page.ts
+export const load = async () => {
+  return {
+    height: document.body.scrollHeight
+  };
+};
+```
+
+A correct pattern is to return data that the server can actually compute:
+
+```ts
+// src/routes/+page.ts
+import type { PageLoad } from './$types';
+
+export const load: PageLoad = async ({ fetch }) => {
+  const res = await fetch('/api/content');
+  const content = await res.json();
+
+  return { content };
+};
+```
+
+Then read browser-only values in the component:
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  export let content: { title: string };
+
+  let height = 0;
+
+  onMount(() => {
+    height = document.body.scrollHeight;
+  });
+</script>
+
+<h1>{content.title}</h1>
+<p>Body height: {height}</p>
+```
+
+If route setup truly depends on browser state, the route logic belongs in the client-side component, not in `load`.
+
+## Isolate shared utilities so they do not import DOM code on the server
+
+Shared utilities are a frequent source of SSR failures because they look harmless. A helper used by both server and client code must not touch `document` at the top level.
+
+Bad:
+
+```ts
+// src/lib/dom.ts
+export const pageTitle = document.title;
+
+export function setTitle(next: string) {
+  document.title = next;
+}
+```
+
+Better:
+
+```ts
+// src/lib/dom.ts
+import { browser } from '$app/environment';
+
+export function getPageTitle() {
+  if (!browser) return '';
+  return document.title;
+}
+
+export function setTitle(next: string) {
+  if (!browser) return;
+  document.title = next;
+}
+```
+
+Even better is to split the helper into browser-only and universal modules.
+
+```ts
+// src/lib/browser/dom.ts
+export function setTitle(next: string) {
+  document.title = next;
+}
+```
+
+Then import that file only from client-side code paths.
+
+This separation matters because bundlers and SSR evaluators resolve imports before they know which branch a function will take. If the top level of an imported module reads `document`, the damage happens during module evaluation.
+
+## Use `<svelte:head>` for document metadata
+
+If the goal is to change the page title or meta tags, use SvelteKit’s head management instead of mutating `document` manually.
+
+```svelte
+<svelte:head>
+  <title>Dashboard</title>
+  <meta name="description" content="Account dashboard" />
+</svelte:head>
+```
+
+This works during SSR and avoids browser-only DOM manipulation. For static metadata, it is the correct solution.
+
+If the title depends on route data, bind it to a server-safe variable and render it in `<svelte:head>`:
+
+```svelte
+<script lang="ts">
+  export let data: { title: string };
+</script>
+
+<svelte:head>
+  <title>{data.title}</title>
+</svelte:head>
+```
+
+## Handle client-only libraries carefully
+
+Many browser-only packages assume `window` or `document` exists during import. If you import them directly in SSR code, they can fail before your own guard runs.
+
+For example:
+
+```ts
+import { someWidget } from 'client-only-widget';
+```
+
+If `client-only-widget` evaluates DOM globals at module load time, importing it in a server-rendered path is enough to throw `ReferenceError: document is not defined`.
+
+Use dynamic import inside `onMount` or behind a `browser` check:
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  onMount(async () => {
+    const { someWidget } = await import('client-only-widget');
+    someWidget(document.body);
+  });
+</script>
+```
+
+This delays loading until the browser is available. It also keeps the server bundle from evaluating the package during SSR.
+
+## Prefer wrapper components for browser-only behavior
+
+When a widget or library needs the DOM, keep it inside a component that never runs on the server for the unsafe part.
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  let host: HTMLDivElement;
+
+  onMount(async () => {
+    const { createChart } = await import('$lib/browser/chart');
+    createChart(host);
+  });
+</script>
+
+<div bind:this={host}></div>
+```
+
+The component can still SSR its container `div`, which is fine. The browser-only initialization waits until `onMount`.
+
+## Common trigger patterns to search for
+
+If you are debugging a project, search for these patterns:
+
+- top-level `document`
+- top-level `window`
+- `document` in `+page.ts` or `+layout.ts`
+- `document` in utilities imported by SSR code
+- `localStorage` or `sessionStorage` outside `onMount`
+- direct imports of browser-only packages in shared modules
+- DOM reads inside reactive code that runs during component initialization
+
+A quick search often finds the problem faster than inspecting the runtime stack.
+
+For example, this command finds likely offenders:
+
+```bash
+grep -RIn "document\|window\|localStorage\|sessionStorage" src
+```
+
+If the project is large, narrow the search to files used by routes and shared libraries first.
+
+## What not to do
+
+Do not try to solve this by disabling SSR globally unless the entire route truly must be client-only. Disabling SSR removes the server render, but it also removes the benefits of initial HTML output and can hide other architectural issues.
+
+A route-level opt-out looks like this:
+
+```ts
+// src/routes/+page.ts
+export const ssr = false;
+```
+
+That is a valid escape hatch, but it is not the default fix. It should be used only when the page cannot function without client-only APIs.
+
+Do not wrap `document` in `try`/`catch` as a normal pattern. It still leaves browser-only code in server paths and makes the code harder to reason about. Use explicit lifecycle boundaries and environment guards instead.
+
+## A practical decision order
+
+If the code touches the DOM, choose the fix in this order:
+
+1. If it is metadata, use `<svelte:head>`.
+2. If it is component-side browser logic, move it into `onMount`.
+3. If it is a shared utility, guard it with `browser` or split it into browser-only modules.
+4. If a third-party package is browser-only, import it dynamically inside `onMount`.
+5. If the route cannot be SSR-compatible at all, set `ssr = false` for that route.
+
+That order keeps SSR intact whenever possible and confines browser-only code to the client.
+
+## Example: converting a failing component
+
+Bad version:
+
+```svelte
+<script lang="ts">
+  const theme = document.documentElement.getAttribute('data-theme');
+</script>
+
+<p>{theme}</p>
+```
+
+The error occurs because `document.documentElement` is read immediately at module evaluation time.
+
+Fixed version:
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  let theme = '';
+
+  onMount(() => {
+    theme = document.documentElement.getAttribute('data-theme') ?? '';
+  });
+</script>
+
+<p>{theme}</p>
+```
+
+If the value is needed by multiple helpers, keep the browser access at the edge and pass plain data into shared functions.
+
+```ts
+export function formatTheme(theme: string) {
+  return theme || 'default';
+}
+```
+
+Then only the browser-specific layer reads `document`, and the universal logic stays SSR-safe.
+
+## Keep the problem from returning
+
+The main rule is simple: server-rendered code must not depend on browser globals during initialization. Put DOM work behind `onMount`, gate browser checks with `browser`, and keep shared modules free of top-level `document` access.
+
+Prefer `onMount` for component behavior because it matches the SSR boundary directly. Prefer `browser` when a function can run in both environments. Use client-only modules for DOM-heavy integrations. Reserve `ssr = false` for routes that cannot be made compatible.
+
+That combination prevents `ReferenceError: document is not defined` from coming back in SvelteKit SSR.

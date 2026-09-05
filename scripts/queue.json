@@ -1,167 +1,73 @@
 {
-    "generatedAt": "2026-08-09T20:18:26.399Z",
+    "generatedAt": "2026-08-30T22:12:23.002Z",
     "ideas": [
         {
-            "cell": "document-is-not-defined::sveltekit::ssr-component-access",
-            "title": "SvelteKit Throws ReferenceError: document is not defined During Server-Side Rendering",
-            "description": "SvelteKit SSR crashes when a component touches document before the browser runs it; isolate browser-only code and gate it behind client checks.",
+            "cell": "remix-streaming-loader::remix::defer-suspense-boundary",
+            "title": "Remix Streams `defer()` Data but the Page Stalls Because No `<Await>` Boundary Wraps It",
+            "description": "Make Remix deferred data render correctly by wiring the loader, suspense boundary, and fallback together.",
             "tags": [
-                "sveltekit",
-                "ssr",
-                "document",
-                "browser-api",
-                "javascript"
+                "remix",
+                "streaming",
+                "suspense",
+                "defer"
             ],
-            "angle": "Explain that SvelteKit renders components on the server first, so any top-level reference to document fails before hydration. Cover the mechanisms that trigger it, such as module initialization, load functions, and shared utilities, then show the correct fixes: onMount, browser guards, and moving DOM access into client-only code.",
-            "slug": "sveltekit-throws-referenceerror-document-is-not-defined-during-server-side-rendering"
+            "angle": "Explain how `defer()` returns a promise that must be consumed by `<Await>` inside a `Suspense` boundary, and why the HTML can render while the deferred part never resolves visibly. Cover the loader shape, the component structure, and the exact boundary placement required for streamed data.",
+            "slug": "remix-streams-defer-data-but-the-page-stalls-because-no-await-boundary-wraps-it"
         },
         {
-            "cell": "custom-domain-misconfigured::cloudflare-pages::dns-and-hostname",
-            "title": "Point a Custom Domain at Cloudflare Pages Without Leaving the Site on the Default Subdomain",
-            "description": "Cloudflare Pages stays on the generated pages.dev hostname until DNS and the Pages custom domain are configured together.",
+            "cell": "node-esm-path::node::import-meta-url-file-url",
+            "title": "Node Imports a Local ESM File as `[ERR_MODULE_NOT_FOUND]` Because the Path Is Not a File URL",
+            "description": "Fix local ESM imports in Node when relative paths or missing extensions stop module resolution.",
             "tags": [
-                "cloudflare-pages",
-                "dns",
-                "custom-domain",
-                "ssl",
-                "deployment"
+                "node",
+                "esm",
+                "imports",
+                "filesystem"
             ],
-            "angle": "Describe how Cloudflare Pages binds hostnames and why DNS alone does not attach a custom domain to a project. Explain the required steps in Pages and the DNS record setup, including apex and www handling, so the reader can verify the hostname, certificate, and route are all aligned.",
-            "slug": "point-a-custom-domain-at-cloudflare-pages-without-leaving-the-site-on-the-default-subdomain"
+            "angle": "Cover the resolution rules for native ESM in Node, including why `import './module'` can fail when the file extension is omitted. Explain the difference between package resolution and file URL resolution, and show the correct `./module.js` or `fileURLToPath` pattern for local modules.",
+            "slug": "node-imports-a-local-esm-file-as-err-module-not-found-because-the-path-is-not-a-file-url"
         },
         {
-            "cell": "metro-transformer-crash::react-native::syntax-in-shared-module",
-            "title": "React Native Fails to Bundle When a Shared Module Imports Node Built-ins",
-            "description": "Metro stops bundling when shared code pulls in fs, path, or crypto that the React Native runtime cannot provide.",
+            "cell": "docker-compose-healthcheck::docker::dependency-ordering",
+            "title": "Docker Compose Starts an API Before Postgres Is Ready and the App Logs `ECONNREFUSED`",
+            "description": "Use health checks and dependency conditions so Compose waits for Postgres instead of starting the app too early.",
             "tags": [
-                "react-native",
-                "metro",
-                "bundling",
-                "node-core-modules",
-                "javascript"
+                "docker",
+                "compose",
+                "postgres",
+                "healthcheck"
             ],
-            "angle": "Explain why React Native’s runtime and Metro resolver do not include Node built-ins, even when a dependency works on web or Node. Cover how to spot the offending import, how transitive dependencies trigger the failure, and how to replace or shim the code with platform-specific modules.",
-            "slug": "react-native-fails-to-bundle-when-a-shared-module-imports-node-built-ins"
+            "angle": "Explain why `depends_on` only controls container start order and not service readiness, which leaves the app connecting before Postgres accepts connections. Show a healthcheck for Postgres, the correct `depends_on: condition: service_healthy` setup, and the fallback retry behavior the app should still keep.",
+            "slug": "docker-compose-starts-an-api-before-postgres-is-ready-and-the-app-logs-econnrefused"
         },
         {
-            "cell": "server-component-fetch-cache::nextjs::unexpected-stale-data",
-            "title": "Next.js App Router Serves Stale Data Because a Server Component Fetch Is Cached",
-            "description": "Next.js can reuse a server component fetch result unless you set the right cache mode or revalidation behavior.",
+            "cell": "nginx-websocket-upgrade::nginx::proxy-headers",
+            "title": "Nginx Proxies a WebSocket Endpoint but the Client Fails the Upgrade with `400 Bad Request`",
+            "description": "Fix WebSocket proxying by forwarding the upgrade headers and using the right HTTP version.",
             "tags": [
-                "nextjs",
-                "app-router",
-                "fetch",
-                "cache",
-                "server-components"
+                "nginx",
+                "websocket",
+                "proxy",
+                "headers"
             ],
-            "angle": "Explain how the App Router caches fetch calls in server components by default and why that can return old data. Cover request memoization, static rendering, revalidate, and cache: 'no-store', then show how to choose the right option for per-request freshness or controlled regeneration.",
-            "slug": "next-js-app-router-serves-stale-data-because-a-server-component-fetch-is-cached"
-        },
-        {
-            "cell": "pnpm-workspace-tsconfig::vite::wrong-package-resolution",
-            "title": "Vite Resolves the Wrong Package in a pnpm Workspace Because tsconfig Paths Leak Into Build Imports",
-            "description": "A pnpm monorepo can resolve a local source file instead of the published package entry point and break the build.",
-            "tags": [
-                "vite",
-                "pnpm",
-                "monorepo",
-                "tsconfig",
-                "module-resolution"
-            ],
-            "angle": "Explain how path aliases and workspace links can bypass the package entry point that bundlers expect. Cover why the build resolves differently from TypeScript, how that affects exports, and how to fix it with package.json exports, Vite alias rules, or narrower tsconfig paths.",
-            "slug": "vite-resolves-the-wrong-package-in-a-pnpm-workspace-because-tsconfig-paths-leak-into-build-imports"
+            "angle": "Describe how Nginx strips upgrade semantics unless `proxy_http_version 1.1` and the `Upgrade` and `Connection` headers are forwarded correctly. Explain why the backend sees a normal HTTP request instead of a WebSocket handshake, and include the exact location block needed to preserve the upgrade.",
+            "slug": "nginx-proxies-a-websocket-endpoint-but-the-client-fails-the-upgrade-with-400-bad-request"
         }
     ],
     "drafted": [
         {
-            "cell": "static-site-deploy-base-path::github-pages::asset-resolution",
-            "title": "Deploying a Static Site to GitHub Pages Breaks Asset URLs Under a Repository Path",
-            "description": "Why a site works locally but 404s on GitHub Pages when assets resolve from the domain root instead of the repo path.",
-            "tags": [
-                "github-pages",
-                "static-site",
-                "deploy",
-                "asset-paths",
-                "base-path"
-            ],
-            "angle": "Explain that GitHub Pages often serves the site from a subpath, not from /. Cover relative versus absolute asset URLs, framework base-path settings, and build output that must embed the correct prefix so CSS, JS, and images resolve after deployment.",
-            "slug": "deploying-a-static-site-to-github-pages-breaks-asset-urls-under-a-repository-path",
-            "draftedAt": "2026-08-07T22:27:47.340Z"
-        },
-        {
-            "cell": "express-bodyparser-req-body-undefined::express::middleware-order",
-            "title": "Express Returns req.body Undefined When JSON Middleware Runs Too Late",
-            "description": "Fix req.body staying undefined in Express by placing JSON parsing middleware before your route handlers.",
+            "cell": "express-route-prefix::express::mounted-router-paths",
+            "title": "Express Mounts a Router at the Wrong Path and Every Nested Route Returns `Cannot GET /api/...`",
+            "description": "Fix router mounting mistakes that make Express serve 404s for routes that exist in the child router.",
             "tags": [
                 "express",
-                "body-parser",
-                "middleware",
-                "json",
+                "routing",
+                "router",
                 "http"
             ],
-            "angle": "Explain that Express does not parse request bodies by default, so req.body stays undefined until a parser runs. Cover why middleware order matters, how express.json() and express.urlencoded() populate req.body, and how content-type affects parsing. Show the minimal route and middleware arrangement that makes JSON POST requests work.",
-            "slug": "express-returns-req-body-undefined-when-json-middleware-runs-too-late",
-            "draftedAt": "2026-08-08T22:21:00.839Z"
-        },
-        {
-            "cell": "workers-request-stream-used-after-consume::cloudflare-workers::body-reuse",
-            "title": "Cloudflare Workers Fail with TypeError: Body has already been used for Request",
-            "description": "Understand why a consumed Request body cannot be read twice in Workers and how to clone or buffer it safely.",
-            "tags": [
-                "cloudflare-workers",
-                "fetch",
-                "request-body",
-                "streams",
-                "javascript"
-            ],
-            "angle": "Explain the Fetch body model in Workers: a Request body is a stream that can be consumed only once. Cover where the TypeError comes from, why calling request.json() and then forwarding the same Request fails, and how Request.clone(), await request.text(), or a buffered payload avoids reuse errors. Include the limits of cloning for large bodies and when to read once and reuse the parsed data instead.",
-            "slug": "cloudflare-workers-fail-with-typeerror-body-has-already-been-used-for-request",
-            "draftedAt": "2026-08-09T22:22:22.241Z"
-        },
-        {
-            "cell": "hono-middleware-context-missing::hono::route-params",
-            "title": "Hono Cannot Read c.req.param() After a Middleware Forgets next()",
-            "description": "Fix missing route params in Hono by preserving middleware flow and route context.",
-            "tags": [
-                "hono",
-                "middleware",
-                "routing",
-                "typescript",
-                "web-framework"
-            ],
-            "angle": "Explain how Hono composes middleware and route handlers, and why omitting await next() stops downstream handlers from seeing the matched route context. Cover the difference between global middleware and per-route handlers, how param extraction depends on the resolved route, and what code structure keeps c.req.param() available. The takeaway should be when to call next(), when to short-circuit, and how to verify route matching.",
-            "slug": "hono-cannot-read-c-req-param-after-a-middleware-forgets-next",
-            "draftedAt": "2026-08-10T22:29:33.348Z"
-        },
-        {
-            "cell": "next-image-loader-host-undefined::nextjs::remote-image-config",
-            "title": "Next.js Cannot Optimize Images from an Unconfigured Remote Host",
-            "description": "Configure next/image so remote images stop failing with host validation and optimization errors.",
-            "tags": [
-                "nextjs",
-                "images",
-                "webpack",
-                "remote-patterns",
-                "react"
-            ],
-            "angle": "Explain how next/image validates remote URLs before optimization and why an unlisted hostname or protocol causes the request to fail. Cover the difference between images.domains and images.remotePatterns, when the optimizer runs, and how the image request is rewritten through the Next.js loader. Show the exact config shape needed for subdomains, query strings, and development versus production hosts.",
-            "slug": "next-js-cannot-optimize-images-from-an-unconfigured-remote-host",
-            "draftedAt": "2026-08-11T22:34:22.719Z"
-        },
-        {
-            "cell": "pages-functions-env-undefined::cloudflare-pages::runtime-secrets",
-            "title": "Cloudflare Pages Functions Read undefined Environment Variables at Runtime",
-            "description": "Make Cloudflare Pages Functions see bound secrets and vars instead of undefined values.",
-            "tags": [
-                "cloudflare-pages",
-                "functions",
-                "environment-variables",
-                "wrangler",
-                "edge"
-            ],
-            "angle": "Explain that Pages Functions read bindings from the runtime env object, not from Node-style process.env. Cover how the Pages deployment model injects vars and secrets, why missing bindings or mismatched names return undefined, and how local development with wrangler pages dev can differ from production. Show how to declare vars in the Pages project, access them through context.env or the handler env, and confirm the binding name matches exactly.",
-            "slug": "cloudflare-pages-functions-read-undefined-environment-variables-at-runtime",
-            "draftedAt": "2026-08-12T22:33:02.861Z"
+            "angle": "Describe how `app.use('/api', router)` changes every route inside the router and why leading slashes inside the child router can produce surprising paths. Show how `req.baseUrl`, `req.path`, and `router.use()` interact, and give a concrete file layout and mount path that match.",
+            "slug": "express-mounts-a-router-at-the-wrong-path-and-every-nested-route-returns-cannot-get-api",
+            "draftedAt": "2026-09-04T23:36:29.237Z"
         }
     ]
 }

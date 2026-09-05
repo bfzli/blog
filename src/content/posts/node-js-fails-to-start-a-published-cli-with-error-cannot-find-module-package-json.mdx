@@ -1,0 +1,352 @@
+---
+title: "Node.js Fails to Start a Published CLI with Error: Cannot find module '/package.json'"
+description: "A packaged CLI crashes because the entrypoint resolves package metadata from the wrong location."
+tags: ["node", "cli", "npm", "packaging", "esm"]
+date: Aug 24, 2026
+cell: "cli-package-json-not-found::node::binary-entrypoint"
+---
+
+`node ./dist/cli.js` fails after publish with `Error: Cannot find module '/package.json'`.
+
+## Why this breaks after `npm pack`
+
+A bundled CLI often needs metadata from `package.json` at startup. Common uses include:
+
+- printing `name` and `version` in `--help`
+- reading `bin`-adjacent config values
+- locating files relative to the package root
+- setting `process.title` or telemetry tags
+
+The implementation is usually simple:
+
+```ts
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const packageJsonPath = resolve(dirname(fileURLToPath(import.meta.url)), '../package.json');
+const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+```
+
+That works when the source tree still looks like the repository. It often breaks after `npm pack` or `npm publish` because the runtime file layout changes.
+
+Published packages are not the same as the working tree. The tarball contains only the files matched by `files`, `.npmignore`, and npm’s default rules. The entrypoint may be copied into `dist/`, while `package.json` may be excluded from the build output and may or may not be included in the package tarball depending on package config. If the code resolves `../package.json` from the emitted file, the computed path can point to a location that does not exist in the published artifact.
+
+The same failure happens when code resolves `package.json` from the current working directory instead of the module location. In that case `process.cwd()` might be `/` under a shell wrapper, a monorepo root, or a test runner. `path.resolve('package.json')` becomes `/package.json`, and `readFileSync('/package.json')` throws `ENOENT`.
+
+The error text usually looks like one of these:
+
+```text
+Error: ENOENT: no such file or directory, open '/package.json'
+Error: Cannot find module '/package.json'
+```
+
+The exact message depends on whether the code uses `fs.readFileSync` or `require`/`import` against a path.
+
+## The mechanism: module path versus package path
+
+There are three common ways CLIs try to locate `package.json`.
+
+### 1. Relative path from `import.meta.url`
+
+In ESM, `import.meta.url` points to the actual emitted file, not the project root. That is good, but the relative segment must match the published layout.
+
+```ts
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const pkgPath = resolve(here, '../package.json');
+const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+```
+
+If the built file lives at `dist/cli.js` and the published tarball contains `package.json` at the package root, `../package.json` is correct only if `dist` is one level below the root in the installed package. If your bundler outputs `dist/bin/cli.mjs` or your publish step nests files under another directory, that relative hop becomes wrong.
+
+### 2. Relative path from `__dirname`
+
+In CommonJS, `__dirname` has the same issue.
+
+```js
+const { readFileSync } = require('node:fs');
+const { resolve } = require('node:path');
+
+const pkgPath = resolve(__dirname, '../package.json');
+const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+```
+
+This fails when build output changes directory depth, when the file is bundled into a single artifact, or when the CLI is executed from a copied wrapper where `__dirname` is not near the package root.
+
+### 3. Relative path from `process.cwd()`
+
+This is the least stable.
+
+```ts
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
+```
+
+`resolve('package.json')` uses the current working directory. If the CLI is launched from anywhere other than the package root, it resolves the wrong file. For a published CLI, that is almost never a safe assumption.
+
+## Why the tarball layout matters
+
+Inspect the package tarball before assuming the source tree layout matches the published artifact.
+
+```sh
+npm pack --dry-run
+npm pack
+tar -tf your-package-1.2.3.tgz
+```
+
+A typical package might contain:
+
+```text
+package/dist/cli.js
+package/dist/index.js
+package/package.json
+package/README.md
+```
+
+If the runtime code lives in `package/dist/cli.js`, then `../package.json` points to `package/package.json`, which exists. But if the build output is deeper, such as `package/dist/bin/cli.js`, then `../package.json` points to `package/dist/package.json`, which does not exist. In that case the error is deterministic.
+
+The tarball can also omit `package.json` entirely if the publish config is wrong. For example, a restrictive `files` list can exclude it:
+
+```json
+{
+  "name": "example-cli",
+  "version": "1.0.0",
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}
+```
+
+`npm publish` always includes a package manifest in the registry package metadata, but that is not the same as shipping a `package.json` file inside the tarball at the location your code expects. If your code reads a file from disk at runtime, the file must actually be present in the tarball.
+
+## How to reproduce the failure
+
+This minimal setup reproduces the problem with an ESM CLI.
+
+`package.json`:
+
+```json
+{
+  "name": "example-cli",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "example-cli": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pack": "npm pack --dry-run"
+  }
+}
+```
+
+`src/cli.ts`:
+
+```ts
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const pkgPath = resolve(here, '../package.json');
+
+const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+console.log(`${pkg.name} ${pkg.version}`);
+```
+
+`tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": "src",
+    "esModuleInterop": true,
+    "strict": true
+  },
+  "include": ["src"]
+}
+```
+
+Build, pack, and run from the tarball:
+
+```sh
+npm run build
+npm pack
+npm install -g ./example-cli-1.0.0.tgz
+example-cli
+```
+
+If `dist/cli.js` is not one directory below the packaged `package.json`, the CLI fails with `ENOENT` or `Cannot find module '/package.json'`.
+
+## The fix: resolve from the module you actually ship
+
+The path must be anchored to the file that is guaranteed to exist in the published tarball. There are two safe patterns.
+
+### Pattern 1: Read `package.json` from the package root next to the CLI
+
+If the published layout is stable and `package.json` is shipped at the package root, compute the path relative to the emitted file and keep the output directory structure consistent.
+
+```ts
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const pkgPath = resolve(here, '../../package.json');
+const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+```
+
+Use this only if `dist/cli.js` is actually two levels below the package root. The number of `../` segments must match the published tree, not the source tree.
+
+That means the build pipeline must keep the runtime file where the code expects it. If you move the output directory, update the code or stop reading the file from disk.
+
+### Pattern 2: Avoid file I/O and inject the version at build time
+
+For a CLI that only needs its own version, build-time injection is more robust than reading `package.json` at runtime.
+
+With `esbuild`:
+
+```ts
+import { build } from 'esbuild';
+
+await build({
+  entryPoints: ['src/cli.ts'],
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  outfile: 'dist/cli.js',
+  define: {
+    __VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.0.0')
+  }
+});
+```
+
+Then use the injected constant:
+
+```ts
+declare const __VERSION__: string;
+
+console.log(`example-cli ${__VERSION__}`);
+```
+
+With `tsup`, the same idea works through `define` in the config.
+
+This avoids runtime dependency on the filesystem and avoids the tarball layout problem entirely.
+
+## If you must read `package.json`, ship the file intentionally
+
+If runtime metadata access is required, make the file part of the published artifact and verify it lands where the code expects it.
+
+`package.json`:
+
+```json
+{
+  "name": "example-cli",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "example-cli": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ]
+}
+```
+
+The explicit `package.json` entry is useful when a restrictive `files` array is present. It prevents accidental omission from the tarball.
+
+Then keep the runtime path aligned with the output structure:
+
+```ts
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const pkgPath = resolve(here, '../package.json');
+
+function readPackageJson(path: string) {
+  return JSON.parse(readFileSync(path, 'utf8')) as {
+    name: string;
+    version: string;
+  };
+}
+
+const pkg = readPackageJson(pkgPath);
+console.log(`${pkg.name} ${pkg.version}`);
+```
+
+If the CLI entrypoint is a bundled single file, there may be no nearby `package.json` at all. In that case, shipping the file is not enough. The code still needs the correct relative path.
+
+## When the issue is CWD instead of the tarball
+
+If the code uses `process.cwd()`, the fix is different. Use a module-relative path rather than the launch directory.
+
+Bad:
+
+```ts
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
+```
+
+Better:
+
+```ts
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8'));
+```
+
+This makes the lookup independent of where the user runs the command.
+
+## Validation steps that catch the bug before publish
+
+Use the packaged artifact, not the repo checkout, when validating the CLI.
+
+```sh
+npm pack --json
+tar -xf example-cli-1.0.0.tgz
+node package/dist/cli.js
+```
+
+If the artifact is supposed to be installable globally, test that path too:
+
+```sh
+npm install -g ./example-cli-1.0.0.tgz
+example-cli --help
+```
+
+Also inspect the tarball contents in CI:
+
+```sh
+npm pack --dry-run | tee /tmp/pack.txt
+```
+
+and fail the build if the expected files are missing. For example, check for both `dist/cli.js` and `package.json` in the archive.
+
+## Practical takeaway
+
+Prefer build-time injection for CLI version and metadata when possible. It removes the dependency on `package.json` at runtime and avoids layout-sensitive path resolution.
+
+If runtime file access is required, anchor the path to `import.meta.url` or `__dirname`, not `process.cwd()`, and verify that the published tarball contains the file at the exact relative location the code expects. Use `npm pack --dry-run` and run the CLI from the packed artifact to confirm the published layout matches the path logic.

@@ -1,0 +1,403 @@
+---
+title: "Vite Resolves the Wrong Package in a pnpm Workspace Because tsconfig Paths Leak Into Build Imports"
+description: "A pnpm monorepo can resolve a local source file instead of the published package entry point and break the build."
+tags: ["vite", "pnpm", "monorepo", "tsconfig", "module-resolution"]
+date: Aug 20, 2026
+cell: "pnpm-workspace-tsconfig::vite::wrong-package-resolution"
+---
+
+`vite build` fails in a pnpm workspace with `Missing "./dist/index.js" export in "@acme/ui" package` or `Could not resolve "@acme/ui"` because the resolver follows a `tsconfig.json` path alias or a workspace symlink to the local source tree instead of the package entry point that the build expects.
+
+## Why this happens
+
+TypeScript, Vite, Node.js, and pnpm do not all resolve imports the same way.
+
+TypeScript uses `tsconfig.json` for type-checking and editor navigation. If `compilerOptions.paths` maps `@acme/ui` to a source file, TypeScript treats that mapping as authoritative during type resolution.
+
+Vite uses its own resolver for the dev server and the production build. It starts with Rollup-compatible package resolution, but it can also consume aliases from `resolve.alias`, and it can be influenced indirectly by workspace links.
+
+pnpm adds another layer. In a workspace, package dependencies are usually symlinked into `node_modules`. That means an import like `@acme/ui` can point to the workspace package directory rather than a published tarball layout. If that package directory contains source files and your alias also points there, the build can bypass the package entry point entirely.
+
+That bypass is the core issue. A package entry point is where `package.json` controls the public API through `main`, `module`, and especially `exports`. When a bundler resolves through the source tree instead of the package entry file, it may never see the `exports` map. The result is usually one of these:
+
+- a missing export error during build
+- an import of a file that is not intended to be public
+- different module format handling between dev and build
+- code that type-checks but does not bundle
+
+## What TypeScript sees versus what Vite builds
+
+A common setup in a monorepo looks like this:
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@acme/ui": ["packages/ui/src/index.ts"],
+      "@acme/ui/*": ["packages/ui/src/*"]
+    }
+  }
+}
+```
+
+That mapping is useful for editor support and local compilation. TypeScript can resolve `@acme/ui` to `packages/ui/src/index.ts`, and imports inside the workspace feel natural.
+
+The problem is that this mapping is not a package boundary. It is a shortcut around the package itself.
+
+If `packages/ui/package.json` contains exports like this:
+
+```json
+{
+  "name": "@acme/ui",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./button": "./dist/button.js"
+  }
+}
+```
+
+then consumers are supposed to import the package entry points only. The build expects `@acme/ui` to resolve to `dist/index.js`, not `src/index.ts`.
+
+If Vite receives the alias and resolves to source, the package export map never participates. That can break import paths, especially if the source tree uses internal files that are not listed in `exports`.
+
+## How package `exports` change resolution
+
+The `exports` field is a contract. It defines which subpaths a package exposes. Once `exports` exists, Node.js and bundlers that honor it stop treating the package as a free-form directory.
+
+This package is fully public:
+
+```json
+{
+  "name": "@acme/ui",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js"
+}
+```
+
+This package exposes only explicit entry points:
+
+```json
+{
+  "name": "@acme/ui",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./button": "./dist/button.js",
+    "./package.json": "./package.json"
+  }
+}
+```
+
+With the second form, this import works:
+
+```ts
+import { Button } from '@acme/ui/button'
+```
+
+This import does not work unless it is exported:
+
+```ts
+import { ButtonBase } from '@acme/ui/src/button/ButtonBase'
+```
+
+When path aliases route around the package boundary, TypeScript may still accept the deep import because it resolves straight to the file. The build then sees a file path that the package never exported. That mismatch is what produces build-time failures.
+
+## Why pnpm workspace links make this easier to trigger
+
+pnpm creates a content-addressable store and links workspace packages into each consuming package’s `node_modules`. The link is real from the resolver’s perspective, but it still represents the local workspace package rather than a packed publish artifact.
+
+That matters because a workspace package often has a different on-disk shape from the published package:
+
+- source files exist in `src`
+- build output lives in `dist`
+- `package.json` exports only `dist`
+- private files are present locally but not meant for consumers
+
+If Vite resolves `@acme/ui` to the workspace directory and then a `paths` alias or `resolve.alias` redirects that package name to `packages/ui/src`, the build may treat the source directory as the authoritative module root. The package boundary disappears.
+
+The same import can therefore behave differently in three places:
+
+- TypeScript: resolves through `paths`
+- Vite dev server: resolves through alias or workspace link
+- Vite production build: applies stricter Rollup resolution and package export checks
+
+That difference explains why code can appear to work in the editor or dev server and still fail under `vite build`.
+
+## Reproducible example
+
+A minimal monorepo layout looks like this:
+
+```text
+pnpm-workspace.yaml
+packages/
+  app/
+    index.html
+    src/main.ts
+    package.json
+    vite.config.ts
+  ui/
+    src/index.ts
+    src/button.ts
+    package.json
+tsconfig.json
+```
+
+`packages/ui/package.json`:
+
+```json
+{
+  "name": "@acme/ui",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}
+```
+
+`tsconfig.json` at the workspace root:
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@acme/ui": ["packages/ui/src/index.ts"]
+    }
+  }
+}
+```
+
+`packages/app/src/main.ts`:
+
+```ts
+import { Button } from '@acme/ui'
+
+console.log(Button)
+```
+
+`packages/app/vite.config.ts`:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({})
+```
+
+Now run:
+
+```sh
+pnpm install
+pnpm --filter @acme/app build
+```
+
+If the package has no `dist/index.js` yet, the build can fail because the resolver follows package metadata in one path and source aliases in another. If the build instead resolves source files, it can fail later when it reaches a deep import or an internal file that `exports` does not allow.
+
+The exact error depends on the shape of the alias and package metadata, but the root cause is the same: the import is not being resolved through the package entry point that the package declares.
+
+## Why the dev server can appear fine
+
+`vite dev` is more permissive than a production build in several ways.
+
+It can serve files on demand from the workspace source tree.
+
+It can tolerate source-level aliases that a packaged build should not use.
+
+It does not always perform the same dependency graph finalization as Rollup during `vite build`.
+
+That means a package import can seem valid in dev even when the production build is relying on a different resolver path. The dev server’s success does not prove that the package boundary is correct.
+
+This is especially visible when a package exposes only built artifacts through `exports`, but TypeScript aliases send imports directly into `src`. The editor and dev server work with source files. The build wants the public package surface.
+
+## Fix 1: prefer package `exports` and import the package entry point
+
+The cleanest fix is to make the workspace package look like the published package and import only what it exports.
+
+`packages/ui/package.json`:
+
+```json
+{
+  "name": "@acme/ui",
+  "version": "1.0.0",
+  "type": "module",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./button": {
+      "types": "./dist/button.d.ts",
+      "import": "./dist/button.js"
+    }
+  }
+}
+```
+
+Then build the package first:
+
+```sh
+pnpm --filter @acme/ui build
+pnpm --filter @acme/app build
+```
+
+And import only exported subpaths:
+
+```ts
+import { Button } from '@acme/ui/button'
+```
+
+This keeps TypeScript, Vite, Node.js, and consumers aligned on the same public API. It also prevents accidental deep imports into internal source files.
+
+## Fix 2: make Vite aliases point at the package, not `src`
+
+If you need an alias for local development, point it at the package root or build output in a way that preserves the package boundary.
+
+A Vite config with a package-aware alias:
+
+```ts
+import { defineConfig } from 'vite'
+import path from 'node:path'
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@acme/ui': path.resolve(__dirname, '../ui')
+    }
+  }
+})
+```
+
+This still maps the workspace package name, but it does not hard-code `src/index.ts`. Vite can read the package metadata and apply `exports`.
+
+Avoid aliases like this in build paths:
+
+```ts
+resolve: {
+  alias: {
+    '@acme/ui': path.resolve(__dirname, '../ui/src')
+  }
+}
+```
+
+That form bypasses `package.json` entirely. It also makes the consuming package depend on the source layout of another package, which defeats the purpose of publishing a package boundary.
+
+If you must use a source alias for local tooling, restrict it to the TypeScript compiler only, not the build tool.
+
+## Fix 3: narrow `tsconfig.paths`
+
+If `paths` must exist, keep them narrow enough that they do not replace package resolution for every tool.
+
+Use `paths` for editor convenience inside the package that owns the source, not as a general replacement for package imports across the workspace.
+
+Better:
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@acme/ui/internal/*": ["packages/ui/src/internal/*"]
+    }
+  }
+}
+```
+
+Worse:
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@acme/ui": ["packages/ui/src/index.ts"],
+      "@acme/ui/*": ["packages/ui/src/*"]
+    }
+  }
+}
+```
+
+The second form makes every consumer import look like a local file reference. That is exactly what bypasses the package entry point.
+
+A good rule is simple: if the import path is meant to represent a package, do not map it directly to source in shared workspace `tsconfig` files. Let the package boundary stay visible.
+
+## Keeping TypeScript and Vite aligned
+
+TypeScript path mappings can be useful for intra-package source imports, but they should not redefine external package names.
+
+For local package development, prefer one of these patterns:
+
+- package-relative imports inside the package, such as `./button`
+- package exports for public cross-package imports
+- `resolve.alias` that points to the package root, not `src`
+- `paths` only for private source aliases that never cross package boundaries
+
+If you use `vite-tsconfig-paths`, remember that it can make Vite follow `tsconfig.json` aliases automatically. That is convenient for app code, but it also means a shared workspace `paths` entry can leak into the build resolver. If that plugin is enabled, audit the aliases carefully.
+
+A safer setup is to keep the workspace root `tsconfig.json` minimal and define package-specific configs where needed.
+
+`packages/ui/tsconfig.json`:
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "declaration": true
+  },
+  "include": ["src"]
+}
+```
+
+`tsconfig.base.json`:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  }
+}
+```
+
+This keeps TypeScript focused on each package without using workspace-wide path aliases to impersonate package resolution.
+
+## Practical debugging steps
+
+You can verify which resolver path is being used by checking these points:
+
+1. Inspect `tsconfig.json` for `paths` that match package names.
+2. Inspect `vite.config.ts` for `resolve.alias`.
+3. Inspect each package’s `package.json` for `exports`.
+4. Confirm whether the consuming package imports package subpaths or source files.
+5. Build the dependency package before the consumer package.
+
+Useful commands:
+
+```sh
+pnpm --filter @acme/ui build
+pnpm --filter @acme/app exec vite build --debug
+```
+
+You can also check resolution with Node.js directly:
+
+```sh
+node -p "require.resolve('@acme/ui')"
+```
+
+If that resolves to a workspace source path when you expect a built entry point, the package boundary is not being respected.
+
+## Practical takeaway
+
+Prefer package `exports` and package-entry imports first. That is the most stable fix because it keeps TypeScript, Vite, pnpm, and Node.js aligned on the same public module surface.
+
+Use Vite aliases only to point at a package root, not a `src` directory, when you need local workspace ergonomics.
+
+Keep `tsconfig.paths` narrow, and avoid shared path aliases that map published package names directly to source files. That prevents TypeScript from hiding a resolution path that the production build cannot use.

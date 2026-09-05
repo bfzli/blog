@@ -1,0 +1,270 @@
+---
+title: "Point a Custom Domain at Cloudflare Pages Without Leaving the Site on the Default Subdomain"
+description: "Cloudflare Pages stays on the generated pages.dev hostname until DNS and the Pages custom domain are configured together."
+tags: ["cloudflare-pages", "dns", "custom-domain", "ssl", "deployment"]
+date: Aug 17, 2026
+cell: "custom-domain-misconfigured::cloudflare-pages::dns-and-hostname"
+---
+
+`ERR_NAME_NOT_RESOLVED` appears when `yourdomain.com` or `www.yourdomain.com` still resolves to the default `*.pages.dev` hostname instead of the Cloudflare Pages custom domain route, even though the DNS record exists.
+
+## What Cloudflare Pages actually binds
+
+Cloudflare Pages does not serve a project for every hostname that merely points at it in DNS. Pages binds requests by hostname, and that binding is stored on the Pages project as a custom domain attachment.
+
+That means there are two separate systems involved:
+
+1. DNS decides where the hostname resolves.
+2. Pages decides whether that hostname is an accepted route for the project.
+
+If DNS points `www.example.com` at the Pages service but `www.example.com` is not added in the Pages project’s custom domains list, the request can reach Cloudflare’s edge and still fail route matching. The hostname is not recognized as belonging to the project.
+
+The default `*.pages.dev` hostname is different. It is created automatically for the project and always maps to that project. It does not require a DNS record in the zone you control. A custom domain does.
+
+## Why DNS alone is not enough
+
+A DNS record tells the browser where to go. It does not tell Pages which project should answer for that hostname.
+
+Cloudflare uses the custom domain attachment to do three things:
+
+- associate the hostname with the project
+- issue and manage the TLS certificate for that hostname
+- create the edge route that forwards requests for that hostname to the project
+
+Without that attachment, a DNS record can point at the right edge network but still fail because the edge has no project route for the hostname.
+
+This is why a CNAME such as `www` pointing to `my-project.pages.dev` is not sufficient by itself. The hostname has to exist in both places:
+
+- DNS points `www.example.com` to `my-project.pages.dev` or to the Pages CNAME target Cloudflare asks for
+- Pages lists `www.example.com` as a custom domain for `my-project`
+
+The same rule applies to the apex domain `example.com`.
+
+## The required configuration in Pages
+
+Add the domain in the Pages project first.
+
+In the Cloudflare dashboard:
+
+1. Open **Workers & Pages**.
+2. Select the Pages project.
+3. Open **Custom domains**.
+4. Add `example.com`.
+5. Add `www.example.com` if you want the `www` hostname to work directly.
+
+Cloudflare then provisions the hostname binding and certificate.
+
+The practical effect is that the Pages project becomes the authoritative route for those hostnames. DNS can then point them there, but the project binding must exist first or at least be created as part of the same setup.
+
+For automation, use the Pages API or `wrangler`. The exact command depends on the project setup, but the important part is that the custom domain is attached to the project rather than only creating a DNS record.
+
+A typical `wrangler` deployment command looks like this:
+
+```bash
+npx wrangler pages deploy ./dist --project-name my-pages-project
+```
+
+That deploys content, but it does not by itself make `example.com` a custom domain. The hostname binding is a separate action in the dashboard or via API.
+
+## Apex domain setup
+
+The apex domain is `example.com`, not `www.example.com`.
+
+For Cloudflare-hosted zones, the apex record should usually be an `A` or `AAAA` record only if the target is a real IP address. Pages is not exposed as a fixed IP. For Pages, Cloudflare expects a `CNAME`-style alias at the apex handled through Cloudflare’s DNS flattening.
+
+In the Cloudflare DNS UI, add:
+
+- Type: `CNAME`
+- Name: `@`
+- Target: the Pages hostname Cloudflare instructs you to use, often `my-pages-project.pages.dev`
+- Proxy status: proxied
+
+Cloudflare flattens the apex `CNAME` behind the scenes so `example.com` can resolve properly even though the DNS protocol normally disallows `CNAME` at the zone apex.
+
+If you manage DNS outside Cloudflare, you need an equivalent flattening or ALIAS/ANAME capability. Otherwise the apex cannot point directly at a Pages hostname using standard DNS.
+
+## `www` handling
+
+The `www` hostname is simpler. It can be a normal `CNAME`.
+
+Add:
+
+- Type: `CNAME`
+- Name: `www`
+- Target: the same Pages hostname, such as `my-pages-project.pages.dev`
+- Proxy status: proxied
+
+This makes `www.example.com` resolve to the Pages service. But again, the hostname still has to be attached in the Pages project.
+
+If both `example.com` and `www.example.com` are expected to work, add both as custom domains in Pages.
+
+If only one is attached, the other may resolve but still fail certificate or route validation.
+
+## Verification sequence
+
+The configuration is correct only when three things line up:
+
+- DNS resolves the hostname to Cloudflare
+- the Pages project contains the hostname as a custom domain
+- the certificate covers the hostname
+
+You can verify each layer independently.
+
+### 1. Verify DNS
+
+Use `dig` or `nslookup`.
+
+```bash
+dig example.com
+dig www.example.com
+```
+
+For Cloudflare-managed DNS, you want to see Cloudflare answers and not a stale third-party target.
+
+For the apex, expect Cloudflare’s flattened answer rather than a visible `CNAME` in the final response. For `www`, a `CNAME` chain to the Pages hostname is normal.
+
+### 2. Verify the project route
+
+In the Pages dashboard, open the project and confirm the custom domains list includes:
+
+- `example.com`
+- `www.example.com`
+
+If the domain is not there, DNS records alone are not enough.
+
+### 3. Verify the certificate
+
+In the browser, inspect the TLS certificate for the hostname. The certificate should include the exact hostname in the `Subject Alternative Name` list.
+
+You can verify with `openssl`:
+
+```bash
+openssl s_client -connect example.com:443 -servername example.com </dev/null 2>/dev/null | openssl x509 -noout -text
+```
+
+Look for `DNS:example.com` or `DNS:www.example.com` in the SAN section.
+
+If the certificate does not include the hostname, the Pages custom domain binding has not completed or the hostname is not attached to the correct project.
+
+### 4. Verify the HTTP route
+
+Check the response headers and status code:
+
+```bash
+curl -I https://example.com
+curl -I https://www.example.com
+```
+
+A correctly bound Pages route should return a normal HTTPS response from the project, not a certificate error, redirect loop, or Cloudflare “not found” page for the hostname.
+
+## Common failure modes
+
+### DNS points to the project, but Pages does not know the hostname
+
+This is the most common split configuration bug.
+
+A record such as:
+
+```dns
+www CNAME my-pages-project.pages.dev
+```
+
+does not automatically attach `www.example.com` to the Pages project.
+
+Cloudflare still needs the hostname configured in the project. Until that happens, the route does not exist.
+
+### The apex works but `www` does not
+
+This usually means `example.com` was added in Pages and DNS, but `www.example.com` was not.
+
+Add `www.example.com` as a second custom domain and create the `www` `CNAME` record.
+
+### `www` works but the apex does not
+
+This usually means the `www` DNS record and custom domain are configured, but the apex zone record is missing or incorrect.
+
+For a Cloudflare-managed zone, the apex should typically be a proxied `CNAME` to the Pages hostname, not an `A` record to a guessed IP.
+
+### Certificate shows the wrong hostname
+
+This means the hostname binding is not complete or the hostname was added to the wrong Pages project.
+
+Cloudflare issues certificates per hostname attachment. If the hostname is not attached to the project, the edge cannot present the expected certificate for that name.
+
+## Recommended setup for both apex and `www`
+
+The cleanest arrangement is to attach both hostnames in Pages and choose one canonical redirect target.
+
+A common setup is:
+
+- `example.com` serves the site
+- `www.example.com` redirects to `example.com`
+
+Or the reverse:
+
+- `www.example.com` serves the site
+- `example.com` redirects to `www.example.com`
+
+Do not rely on DNS to perform the redirect. DNS cannot redirect HTTP requests. It can only decide where names resolve.
+
+Use Cloudflare Pages custom domains plus a redirect rule if a canonical hostname is required.
+
+For example, if `example.com` is canonical and `www.example.com` should redirect, configure:
+
+- `example.com` as a Pages custom domain
+- `www.example.com` as a Pages custom domain
+- a redirect from `www.example.com` to `example.com`
+
+The redirect can be implemented in the Pages project or at the edge, depending on the deployment model.
+
+## Exact DNS record examples
+
+For a Cloudflare-managed zone, the DNS records usually look like this:
+
+```dns
+example.com.  CNAME  my-pages-project.pages.dev.
+www.example.com.  CNAME  my-pages-project.pages.dev.
+```
+
+In the Cloudflare dashboard, that often appears as:
+
+- `@` → `my-pages-project.pages.dev`
+- `www` → `my-pages-project.pages.dev`
+
+Both should be proxied.
+
+Do not create a conflicting `A` record for the same hostname. A hostname cannot be cleanly routed when multiple record types conflict.
+
+## Exact request flow
+
+When configuration is correct, the path is:
+
+1. The browser requests `https://example.com`.
+2. DNS resolves `example.com` to Cloudflare.
+3. Cloudflare sees `example.com` is a custom domain on the Pages project.
+4. Cloudflare presents a certificate valid for `example.com`.
+5. The request is routed to the Pages project.
+6. The site responds.
+
+If the custom domain attachment is missing, step 3 fails even if step 2 succeeds.
+
+That is the key distinction. DNS gets traffic to Cloudflare. The Pages custom domain binding tells Cloudflare which project owns the hostname.
+
+## Minimal checklist
+
+Use this sequence when setting up or fixing the domain:
+
+```text
+1. Add example.com to the Pages project custom domains.
+2. Add www.example.com if it should work directly.
+3. Create proxied DNS CNAME records for @ and www to the Pages hostname.
+4. Wait for certificate issuance.
+5. Confirm curl -I returns the site over HTTPS.
+6. Confirm openssl shows the hostname in SAN.
+```
+
+If the hostname still lands on the default `pages.dev` domain in the browser, recheck whether the custom domain was actually attached to the project or only added in DNS.
+
+## Practical takeaway
+
+Prefer configuring the Pages custom domain first, then point DNS at it. DNS alone does not attach a hostname to a Pages project, so the certificate and edge route will remain unbound until the domain is added in Pages. For both apex and `www`, add each hostname as a custom domain, create the corresponding proxied DNS records, and verify with `dig`, `curl`, and `openssl` that resolution, TLS, and routing all match the same hostname.
