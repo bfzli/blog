@@ -2,19 +2,6 @@
     "generatedAt": "2026-08-30T22:12:23.002Z",
     "ideas": [
         {
-            "cell": "remix-streaming-loader::remix::defer-suspense-boundary",
-            "title": "Remix Streams `defer()` Data but the Page Stalls Because No `<Await>` Boundary Wraps It",
-            "description": "Make Remix deferred data render correctly by wiring the loader, suspense boundary, and fallback together.",
-            "tags": [
-                "remix",
-                "streaming",
-                "suspense",
-                "defer"
-            ],
-            "angle": "Explain how `defer()` returns a promise that must be consumed by `<Await>` inside a `Suspense` boundary, and why the HTML can render while the deferred part never resolves visibly. Cover the loader shape, the component structure, and the exact boundary placement required for streamed data.",
-            "slug": "remix-streams-defer-data-but-the-page-stalls-because-no-await-boundary-wraps-it"
-        },
-        {
             "cell": "node-esm-path::node::import-meta-url-file-url",
             "title": "Node Imports a Local ESM File as `[ERR_MODULE_NOT_FOUND]` Because the Path Is Not a File URL",
             "description": "Fix local ESM imports in Node when relative paths or missing extensions stop module resolution.",
@@ -56,18 +43,18 @@
     ],
     "drafted": [
         {
-            "cell": "express-route-prefix::express::mounted-router-paths",
-            "title": "Express Mounts a Router at the Wrong Path and Every Nested Route Returns `Cannot GET /api/...`",
-            "description": "Fix router mounting mistakes that make Express serve 404s for routes that exist in the child router.",
+            "cell": "remix-streaming-loader::remix::defer-suspense-boundary",
+            "title": "Remix Streams `defer()` Data but the Page Stalls Because No `<Await>` Boundary Wraps It",
+            "description": "Make Remix deferred data render correctly by wiring the loader, suspense boundary, and fallback together.",
             "tags": [
-                "express",
-                "routing",
-                "router",
-                "http"
+                "remix",
+                "streaming",
+                "suspense",
+                "defer"
             ],
-            "angle": "Describe how `app.use('/api', router)` changes every route inside the router and why leading slashes inside the child router can produce surprising paths. Show how `req.baseUrl`, `req.path`, and `router.use()` interact, and give a concrete file layout and mount path that match.",
-            "slug": "express-mounts-a-router-at-the-wrong-path-and-every-nested-route-returns-cannot-get-api",
-            "draftedAt": "2026-09-04T23:36:29.237Z"
+            "angle": "Explain how `defer()` returns a promise that must be consumed by `<Await>` inside a `Suspense` boundary, and why the HTML can render while the deferred part never resolves visibly. Cover the loader shape, the component structure, and the exact boundary placement required for streamed data.",
+            "slug": "remix-streams-defer-data-but-the-page-stalls-because-no-await-boundary-wraps-it",
+            "draftedAt": "2026-09-05T23:29:08.337Z"
         }
     ]
 }
