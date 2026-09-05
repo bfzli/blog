@@ -1,0 +1,372 @@
+---
+title: "Remix Streams `defer()` Data but the Page Stalls Because No `<Await>` Boundary Wraps It"
+description: "Make Remix deferred data render correctly by wiring the loader, suspense boundary, and fallback together."
+tags: ["remix", "streaming", "suspense", "defer"]
+date: Sep 6, 2026
+cell: "remix-streaming-loader::remix::defer-suspense-boundary"
+---
+
+`<Await>` is missing from the route tree, so `defer()` returns a promise that never renders visibly. There is no runtime exception in the happy path, but the streamed page stays on the fallback state and the deferred value never appears because the promise is not consumed inside a `Suspense` boundary.
+
+## What `defer()` actually returns
+
+In Remix, `defer()` does not resolve data before the response is sent. It marks parts of the loader result as deferred and lets the server stream the HTML shell first.
+
+That means the loader can return a mixed payload:
+
+- values that are available immediately
+- promises for values that are still pending
+
+The key point is that the deferred field is not just another JSON value. It remains a promise-like placeholder until a component reads it through `<Await>`.
+
+A minimal loader looks like this:
+
+```ts
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { defer } from "@remix-run/node";
+
+export async function loader({ params }: LoaderFunctionArgs) {
+  const articlePromise = fetch(`https://example.com/api/articles/${params.slug}`).then(
+    async (res) => {
+      if (!res.ok) throw new Error(`Failed to load article: ${res.status}`);
+      return (await res.json()) as { title: string; body: string };
+    }
+  );
+
+  return defer({
+    slug: params.slug,
+    article: articlePromise,
+  });
+}
+```
+
+`slug` is available immediately. `article` is deferred. The route can start rendering before `article` resolves.
+
+If the component tree never places that promise under `<Await>`, the deferred value has nowhere to resolve. The server can still send HTML, but the streamed part stays hidden behind whatever fallback is being shown.
+
+## Why the page can render but the deferred content never appears
+
+`defer()` and `<Await>` are paired mechanisms.
+
+`defer()` tells Remix that a loader field may resolve later. `<Await>` tells Remix where to consume that field. `Suspense` tells React what to show while the promise is pending.
+
+If any one of those is missing, the stream does not complete in the visible UI:
+
+- no `defer()` means the loader waits for all data before responding
+- no `Suspense` means there is no fallback boundary for the pending promise
+- no `<Await>` means nothing reads the deferred field and unwraps it
+
+The page can still send HTML because the non-deferred parts of the route render normally. The shell, header, layout, and immediate loader values are all present. The missing piece is the boundary that marks the deferred region as resumable.
+
+This is why the failure often looks like a stall rather than a hard crash. The browser receives markup, but the region that depends on the promise never transitions from fallback to content.
+
+## The exact boundary structure Remix expects
+
+The route component needs three layers in the right order:
+
+1. `Await` around the deferred field
+2. `Suspense` around `Await`
+3. fallback content inside `Suspense`
+
+The component shape should look like this:
+
+```tsx
+import { Suspense } from "react";
+import { Await, useLoaderData } from "@remix-run/react";
+
+type LoaderData = {
+  slug: string;
+  article: Promise<{ title: string; body: string }>;
+};
+
+export default function ArticleRoute() {
+  const data = useLoaderData<typeof loader>();
+
+  return (
+    <main>
+      <h1>Article {data.slug}</h1>
+
+      <Suspense fallback={<p>Loading article...</p>}>
+        <Await resolve={data.article} errorElement={<p>Article failed to load.</p>}>
+          {(article) => (
+            <article>
+              <h2>{article.title}</h2>
+              <p>{article.body}</p>
+            </article>
+          )}
+        </Await>
+      </Suspense>
+    </main>
+  );
+}
+```
+
+That placement matters.
+
+`Suspense` must wrap the `Await` component. If `Await` is outside the boundary, React has no pending UI to switch to when the promise is unresolved.
+
+`resolve={data.article}` must point directly at the promise returned from `defer()`. If you destructure the wrong field or transform it into a plain value too early, you lose the streaming behavior.
+
+The `errorElement` prop is also important. If the promise rejects after the shell has streamed, Remix can render the error branch for that deferred region instead of freezing the page in fallback state.
+
+## What happens when `<Await>` is missing
+
+If the route reads deferred data without `<Await>`, the code typically falls into one of these broken patterns:
+
+```tsx
+import { useLoaderData } from "@remix-run/react";
+
+export default function BrokenRoute() {
+  const data = useLoaderData<typeof loader>();
+
+  return (
+    <main>
+      <h1>{data.slug}</h1>
+      <article>{/* data.article is still a promise here */}</article>
+    </main>
+  );
+}
+```
+
+That code does not unwrap `data.article`. Depending on how it is used, it can lead to:
+
+- a blank region
+- `[object Promise]` if coerced into text
+- a component waiting forever because the promise was never subscribed to
+- a fallback that never transitions because there is no `Suspense` boundary around the deferred read
+
+The important mechanism is that the promise only becomes renderable inside the `Await` render prop. Outside that context, it is just a promise object.
+
+## What happens when `Suspense` is missing
+
+This version uses `<Await>` but leaves out `Suspense`:
+
+```tsx
+import { Await, useLoaderData } from "@remix-run/react";
+
+export default function BrokenRoute() {
+  const data = useLoaderData<typeof loader>();
+
+  return (
+    <main>
+      <Await resolve={data.article}>
+        {(article) => <p>{article.title}</p>}
+      </Await>
+    </main>
+  );
+}
+```
+
+This is still wrong. `Await` depends on React Suspense semantics. Without a boundary, the fallback has nowhere to mount while the promise is pending.
+
+In practice, the UI may appear to freeze, or the route may fail to show the deferred region until the promise happens to resolve before render timing becomes visible. That makes the bug intermittent-looking even though the structure is still invalid.
+
+The fix is not to add another loader. The fix is to wrap the `Await` region in `Suspense`.
+
+## Loader shape rules that keep deferred data streamable
+
+The loader should return a plain object from `defer()`. Keep immediate data synchronous and only defer the parts that benefit from streaming.
+
+Good:
+
+```ts
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { defer } from "@remix-run/node";
+
+export async function loader({ params }: LoaderFunctionArgs) {
+  const settings = {
+    theme: "dark",
+    locale: "en-US",
+  };
+
+  const comments = fetch(`https://example.com/api/posts/${params.slug}/comments`).then((res) =>
+    res.json()
+  );
+
+  return defer({
+    settings,
+    comments,
+  });
+}
+```
+
+Bad:
+
+```ts
+import { defer } from "@remix-run/node";
+
+export async function loader() {
+  const comments = await fetch("https://example.com/api/comments").then((res) => res.json());
+
+  return defer({
+    comments,
+  });
+}
+```
+
+The second version removes the streaming benefit by awaiting before `defer()`. If everything is already resolved, there is nothing left to stream.
+
+Another mistake is to wrap the deferred promise in another object and then forget that only the nested field is promised:
+
+```ts
+return defer({
+  payload: {
+    comments: fetch("/api/comments").then((res) => res.json()),
+  },
+});
+```
+
+That can still work, but the component must resolve the exact promise path. If the code passes `data.payload` to `Await` instead of `data.payload.comments`, the boundary will not unwrap the intended value.
+
+## Correct component placement for nested routes
+
+In Remix nested layouts, the streamed region often belongs in a child route while the parent layout renders immediately. The boundary should sit as close as possible to the part that depends on the deferred value.
+
+Example:
+
+```tsx
+import { Outlet } from "@remix-run/react";
+
+export default function BlogLayout() {
+  return (
+    <div>
+      <header>Blog</header>
+      <Outlet />
+    </div>
+  );
+}
+```
+
+Child route:
+
+```tsx
+import { Suspense } from "react";
+import { Await, useLoaderData } from "@remix-run/react";
+
+export default function PostRoute() {
+  const data = useLoaderData<typeof loader>();
+
+  return (
+    <section>
+      <h1>{data.slug}</h1>
+
+      <Suspense fallback={<p>Loading comments...</p>}>
+        <Await resolve={data.comments}>
+          {(comments: Array<{ id: string; body: string }>) => (
+            <ul>
+              {comments.map((comment) => (
+                <li key={comment.id}>{comment.body}</li>
+              ))}
+            </ul>
+          )}
+        </Await>
+      </Suspense>
+    </section>
+  );
+}
+```
+
+This keeps the layout visible while only the comments section waits. If the boundary is placed too high, the entire route may remain in fallback longer than necessary. If it is placed too low, the parent may try to render parts that still depend on unresolved data.
+
+The rule is simple: wrap only the subtree that reads the deferred promise.
+
+## How to verify the route is actually streaming
+
+The most direct check is to inspect the document response and the browser behavior.
+
+Start the app with:
+
+```bash
+npm run dev
+```
+
+Then request the route in a browser and in the network panel confirm:
+
+- the HTML response begins before the deferred fetch finishes
+- the fallback is visible first
+- the deferred content replaces the fallback after the promise resolves
+
+If you want a terminal check, use `curl` against the route and inspect whether the initial HTML is sent before the async backend finishes:
+
+```bash
+curl -N http://localhost:3000/posts/example
+```
+
+The `-N` flag disables buffering so streamed chunks are visible as they arrive.
+
+If the response includes the shell but never includes the later chunk containing the deferred data, the loader may not be returning a real promise, or the UI may not contain the right `Suspense` and `Await` structure.
+
+## Common invalid patterns
+
+These are the most common structural mistakes.
+
+### 1. Returning plain data from `defer()`
+
+```ts
+return defer({
+  article: { title: "Loaded already", body: "This is not deferred" },
+});
+```
+
+This is not a deferred value. It is immediate data. The `Await` boundary is unnecessary here.
+
+### 2. Reading the promise directly in JSX
+
+```tsx
+<p>{data.article}</p>
+```
+
+A promise is not renderable text. It must be resolved in `Await`.
+
+### 3. Nesting `Await` outside `Suspense`
+
+```tsx
+<Await resolve={data.article}>
+  {(article) => <p>{article.title}</p>}
+</Await>
+```
+
+This lacks the fallback boundary React needs.
+
+### 4. Putting `Suspense` around the wrong subtree
+
+```tsx
+<Suspense fallback={<p>Loading...</p>}>
+  <header>{data.slug}</header>
+</Suspense>
+
+<Await resolve={data.article}>
+  {(article) => <p>{article.title}</p>}
+</Await>
+```
+
+The boundary does not cover the deferred read, so it cannot manage the pending state.
+
+### 5. Awaiting the promise in the loader
+
+```ts
+const article = await fetch(...);
+return defer({ article });
+```
+
+That eliminates streaming for the field.
+
+## Practical debugging checklist
+
+If streamed data is not appearing, verify these points in order:
+
+- the loader returns `defer(...)`
+- the deferred field is a promise, not a resolved value
+- the component reads that field through `<Await>`
+- `<Await>` is inside `Suspense`
+- the `fallback` prop is present and renders something visible
+- the `resolve` prop references the exact deferred promise
+- the route does not `await` the same data before calling `defer()`
+
+The most useful mental model is that `defer()` only changes when the response starts. It does not magically render unresolved values. `Await` is the consumer, and `Suspense` is the placeholder.
+
+## Prefer the boundary fix over ad hoc workarounds
+
+The fix to use is the canonical Remix pairing: `defer()` in the loader, `<Await resolve={...}>` in the component, and `Suspense fallback={...}` around it. That structure is the one Remix and React both expect, and it preserves the streaming behavior without blocking the rest of the page.
+
+Avoid workarounds like manually polling for data, duplicating the fetch in a client effect, or converting the promise into immediate data in the loader. Those options remove the streaming model and reintroduce full-page waiting. Keeping the loader shape, boundary placement, and `Await` consumption aligned prevents the stalled-page behavior from coming back.
