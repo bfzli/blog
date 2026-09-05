@@ -2,6 +2,7 @@ import type { ProductGroup, Venture, VibeCoding } from '@/types'
 
 import {
     betterfiletransfer,
+    openemail,
     envless,
     ip2geo,
     wallpapppers,
@@ -17,6 +18,12 @@ import {
 } from '@/assets'
 
 export const ventures: Venture[] = [
+    {
+        name: 'OpenEmail',
+        description: 'Emails that belong to you, entirely.',
+        icon: openemail,
+        url: 'https://openemail.uk'
+    },
     {
         name: 'Envless',
         description: 'Environment variables, without the mess.',
