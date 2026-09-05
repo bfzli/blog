@@ -18,9 +18,9 @@ export type Props = {
 
 export interface Venture {
     name: string
-    description: string
-    icon: ImageMetadata
-    url: string
+    description?: string
+    icon?: ImageMetadata
+    url?: string
 }
 
 export interface VibeCoding {
@@ -34,6 +34,12 @@ export interface VibeCoding {
     tags: string[]
     actionText?: string
     actionIcon?: string
+}
+
+export interface ProductGroup {
+    title: string
+    note?: string
+    items: (Venture | VibeCoding)[]
 }
 
 export interface Experience {
@@ -168,9 +174,9 @@ export interface MarkdownPage {
 
 export interface Product {
     name: string
-    description: string
-    icon: ImageMetadata
-    href: string
+    description?: string
+    icon?: ImageMetadata
+    href?: string
     external?: boolean
 }
 

@@ -1,4 +1,4 @@
-import type { Venture, VibeCoding } from '@/types'
+import type { ProductGroup, Venture, VibeCoding } from '@/types'
 
 import {
     betterfiletransfer,
@@ -10,8 +10,10 @@ import {
     cloudagents,
     uebfaqe,
     pikegjaku,
+    outbid,
     focux,
-    muslimTab
+    muslimTab,
+    xOutbid
 } from '@/assets'
 
 export const ventures: Venture[] = [
@@ -40,12 +42,6 @@ export const ventures: Venture[] = [
         url: 'https://launchdock.sh'
     },
     {
-        name: 'Cloudagents',
-        description: 'One-click cloud hosting for OpenClaw AI agents.',
-        icon: cloudagents,
-        url: 'https://cloudagents.run'
-    },
-    {
         name: 'Uebfaqe',
         description: 'Krijo uebfaqen tënde me AI brenda pak minutash.',
         icon: uebfaqe,
@@ -56,7 +52,10 @@ export const ventures: Venture[] = [
         description: 'Dhuro gjak — sot për dikë, nesër për ty.',
         icon: pikegjaku,
         url: 'https://pikegjaku.com'
-    },
+    }
+]
+
+export const vibeCoded: Venture[] = [
     {
         name: 'BetterFileTransfer',
         description: 'Send anything to anyone, anywhere, safely.',
@@ -68,6 +67,27 @@ export const ventures: Venture[] = [
         description: 'Make a love invitation worth opening.',
         icon: loveEnvelope,
         url: 'https://envelope.love'
+    }
+]
+
+export const graveyard: Venture[] = [
+    {
+        name: 'Cloudagents',
+        description: 'One-click cloud hosting for OpenClaw AI agents.',
+        icon: cloudagents,
+        url: 'https://cloudagents.run'
+    },
+    {
+        name: 'Outbid',
+        description: 'Ranks apps by trees bid, not votes.',
+        icon: outbid,
+        url: 'https://outbid.green'
+    },
+    {
+        name: 'X Outbid',
+        description: 'A shared X profile for everyone to bid.',
+        icon: xOutbid,
+        url: 'https://x-profile.bid'
     }
 ]
 
@@ -110,5 +130,15 @@ export const vibeCoding: VibeCoding[] = [
         ],
         privacyPolicy:
             'Muslim Tab is committed to protecting your privacy. We do not collect, store, or share any personal data whatsoever. Location data, if used, is processed exclusively on your device to calculate prayer times and is never sent to any server or third-party service. We do not use any analytics, tracking tools, or data collection mechanisms. All preferences, settings, and data are stored locally in your browser and never leave your device. Your privacy is completely protected, and you can use Muslim Tab with complete confidence that your data remains yours alone.'
+    }
+]
+
+export const productGroups: ProductGroup[] = [
+    { title: 'Ventures', items: ventures },
+    { title: 'Vibe Coded', items: [...vibeCoded, ...vibeCoding] },
+    {
+        title: 'Graveyard',
+        note: 'Retired projects, no longer maintained.',
+        items: graveyard
     }
 ]

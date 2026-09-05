@@ -2,7 +2,7 @@
 import { Image } from 'astro:assets'
 
 interface Props {
-    src: ImageMetadata
+    src?: ImageMetadata
     alt: string
     size?: number
 }
@@ -14,13 +14,25 @@ const { src, alt, size = 48 } = Astro.props
     class='flex items-center justify-center rounded-2xl bg-elevate'
     style={`width:${size}px;height:${size}px`}
 >
-    <Image
-        src={src}
-        alt={alt}
-        width={size}
-        height={size}
-        loading='eager'
-        data-skeleton
-        class='h-full w-full rounded-2xl object-contain'
-    />
+    {
+        src ? (
+            <Image
+                src={src}
+                alt={alt}
+                width={size}
+                height={size}
+                loading='eager'
+                data-skeleton
+                class='h-full w-full rounded-2xl object-contain'
+            />
+        ) : (
+            <span
+                class='font-semibold text-comment'
+                style={`font-size:${Math.round(size / 2.4)}px`}
+                aria-hidden='true'
+            >
+                {alt.charAt(0).toUpperCase()}
+            </span>
+        )
+    }
 </div>

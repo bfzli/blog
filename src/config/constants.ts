@@ -35,6 +35,7 @@ const greeting = {
 export const constants = {
     profile,
     greeting,
+    pagination: { postsPerPage: 10 },
     site: 'https://bfzli.com',
     links: {
         external: [

@@ -9,21 +9,31 @@ const {
     href,
     external = false
 } = Astro.props as Product
+
+// Graveyard entries can outlive their site, so a row without a link stays static.
+const Tag = href ? 'a' : 'div'
 ---
 
 <li class='-mx-3 flex'>
-    <a
+    <Tag
         href={href}
-        target={external ? '_blank' : undefined}
-        rel={external ? 'noopener noreferrer' : undefined}
-        class='group flex w-full items-start gap-4 rounded-xl px-3 py-3 transition-hover hover:bg-post-hover'
+        target={href && external ? '_blank' : undefined}
+        rel={href && external ? 'noopener noreferrer' : undefined}
+        class:list={[
+            'transition-hover group flex w-full items-start gap-4 rounded-xl px-3 py-3',
+            href && 'hover:bg-post-hover'
+        ]}
     >
         <IconTile src={icon} alt={name} />
         <div class='min-w-0 flex-1'>
             <h3 class='text-lg font-semibold text-default'>{name}</h3>
-            <p class='-mt-1 text-sm leading-relaxed text-soft'>
-                {description}
-            </p>
+            {
+                description && (
+                    <p class='-mt-1 text-sm leading-relaxed text-soft'>
+                        {description}
+                    </p>
+                )
+            }
         </div>
-    </a>
+    </Tag>
 </li>

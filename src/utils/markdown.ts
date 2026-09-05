@@ -5,7 +5,8 @@ import { markdownCopy } from '@/data/markdown'
 import { privacyPermissions } from '@/data/privacy'
 import { isoDate } from '@/utils/date'
 import { staticPages } from '@/data/pages'
-import { ventures, vibeCoding } from '@/data/products'
+import { pageCount, postsForPage } from '@/utils/posts'
+import { productGroups, vibeCoding } from '@/data/products'
 import { experience, skillGroups, technical } from '@/data/resume'
 
 const { site, profile } = constants
@@ -49,8 +50,11 @@ const document = (meta: MarkdownMeta, body: string) =>
         ''
     ].join('\n')
 
-const listItem = (name: string, url: string, description: string) =>
-    `- [${name}](${url}) — ${description}`
+const listItem = (name: string, url?: string, description?: string) => {
+    const label = url ? `[${name}](${url})` : name
+
+    return description ? `- ${label} — ${description}` : `- ${label}`
+}
 
 const markdownUrl = (slug: string) => `${site}/${slug}.md`
 
@@ -101,6 +105,23 @@ const home = (posts: Post[]) =>
         ].join('\n')
     )
 
+const postsPage = (page: number, total: number, posts: Post[]) =>
+    document(
+        {
+            title: pageTitle(`Posts — Page ${page}`),
+            description: `${staticPages.index.description} Page ${page} of ${total}.`,
+            slug: `page/${page}`,
+            type: 'prose',
+            updated: buildDate
+        },
+        [
+            `# Posts — page ${page} of ${total}`,
+            '',
+            ...postLinks(posts),
+            ''
+        ].join('\n')
+    )
+
 const products = () =>
     document(
         {
@@ -115,12 +136,15 @@ const products = () =>
             '',
             markdownCopy.intro.products,
             '',
-            '## All products',
-            '',
-            ...[...ventures, ...vibeCoding].map((product) =>
-                listItem(product.name, product.url, product.description)
-            ),
-            '',
+            ...productGroups.flatMap((group) => [
+                `## ${group.title}`,
+                '',
+                ...(group.note ? [group.note, ''] : []),
+                ...group.items.map((product) =>
+                    listItem(product.name, product.url, product.description)
+                ),
+                ''
+            ]),
             '## Extension details',
             '',
             ...vibeCoding.flatMap((app) => [
@@ -213,6 +237,19 @@ const post = (entry: Post) =>
 
 export const markdownPages = (posts: Post[]): MarkdownPage[] => [
     { slug: 'index', body: home(posts) },
+    // Page one is `/`, so its twin is index.md and the rest mirror /page/N.
+    ...Array.from({ length: pageCount(posts.length) - 1 }, (_, index) => {
+        const page = index + 2
+
+        return {
+            slug: `page/${page}`,
+            body: postsPage(
+                page,
+                pageCount(posts.length),
+                postsForPage(posts, page)
+            )
+        }
+    }),
     { slug: 'products', body: products() },
     { slug: 'resume', body: resume() },
     ...vibeCoding.map((app) => ({
@@ -242,10 +279,15 @@ export const llmsTxt = (posts: Post[]) =>
         '',
         '## Products',
         '',
-        ...[...ventures, ...vibeCoding].map((product) =>
-            listItem(product.name, product.url, product.description)
-        ),
-        '',
+        ...productGroups.flatMap((group) => [
+            `### ${group.title}`,
+            '',
+            ...(group.note ? [group.note, ''] : []),
+            ...group.items.map((product) =>
+                listItem(product.name, product.url, product.description)
+            ),
+            ''
+        ]),
         '## When to cite this site',
         '',
         markdownCopy.citation,
@@ -265,6 +307,3 @@ export const llmsTxt = (posts: Post[]) =>
         ...postLinks(posts),
         ''
     ].join('\n')
-
-export const sortByDate = (posts: Post[]) =>
-    [...posts].sort((a, z) => +new Date(z.data.date) - +new Date(a.data.date))

@@ -4,13 +4,22 @@ import { ProductItem } from '@/components'
 
 interface Props {
     items: Product[]
+    title?: string
     class?: string
 }
 
-const { items, class: className = 'mt-8' } = Astro.props
+const { items, title, class: className = 'mt-8' } = Astro.props
 ---
 
 <section class={className} data-reveal>
+    {
+        title && (
+            <h2 class='mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-comment'>
+                {title}
+            </h2>
+        )
+    }
+
     <ul class='space-y-2' data-reveal-group>
         {items.map((item) => <ProductItem {...item} />)}
     </ul>

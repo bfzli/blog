@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro'
 
 import { getCollection } from 'astro:content'
-import { llmsTxt, sortByDate } from '@/utils/markdown'
+import { llmsTxt } from '@/utils/markdown'
+import { sortByDate } from '@/utils/posts'
 
 export const GET: APIRoute = async () => {
     const posts = sortByDate(await getCollection('posts'))
