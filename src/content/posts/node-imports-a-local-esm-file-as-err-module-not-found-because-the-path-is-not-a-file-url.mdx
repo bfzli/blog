@@ -1,0 +1,339 @@
+---
+title: "Node Imports a Local ESM File as `[ERR_MODULE_NOT_FOUND]` Because the Path Is Not a File URL"
+description: "Fix local ESM imports in Node when relative paths or missing extensions stop module resolution."
+tags: ["node", "esm", "imports", "filesystem"]
+date: Sep 7, 2026
+cell: "node-esm-path::node::import-meta-url-file-url"
+---
+
+`import './module'` in native Node ESM fails to load a local file and throws `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/path/to/module' imported from /path/to/app.js`.
+
+## What Node is trying to resolve
+
+Native ECMAScript modules in Node use a different resolver from CommonJS. When a file is loaded as ESM, Node does not apply CommonJS convenience rules such as automatic extension searching for relative specifiers.
+
+That means these imports are not equivalent:
+
+```ts
+import './module'
+import './module.js'
+```
+
+For a local file, `./module` is a relative ESM specifier, not a package name. Node resolves it as a URL-like path segment, then looks for an exact match. If there is no file literally named `module` with no extension, resolution fails.
+
+The resulting error is commonly:
+
+```text
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/path/to/module' imported from /path/to/app.js
+```
+
+Sometimes the message also includes a hint about the missing extension, depending on the Node version and the exact import path.
+
+## Why this happens in native ESM
+
+Node has two major resolution modes for module specifiers:
+
+1. **Package resolution**
+2. **File URL resolution**
+
+They are related, but not the same.
+
+A bare specifier such as `react`, `lodash-es`, or `@scope/pkg` goes through package resolution. Node searches `node_modules`, reads `package.json`, and applies package export rules if present.
+
+A relative or absolute specifier such as `./module`, `../utils/math.js`, or `file:///Users/me/app/module.js` goes through file resolution. In ESM mode, file resolution is strict. Node does not guess the extension and does not append `/index.js` the way CommonJS historically could.
+
+This strictness is intentional. It matches the URL-based design of ESM and keeps import targets explicit.
+
+## The difference from CommonJS resolution
+
+CommonJS `require()` has legacy lookup behavior:
+
+```js
+require('./module')
+```
+
+This can resolve, in order, to things like:
+
+- `./module.js`
+- `./module.json`
+- `./module.node`
+- `./module/index.js`
+
+That convenience does not apply to ESM `import`.
+
+In native ESM, this is a valid local import:
+
+```ts
+import './module.js'
+```
+
+This is not:
+
+```ts
+import './module'
+```
+
+unless there is an actual file or package export that resolves that exact specifier.
+
+## A minimal failing example
+
+Given this file layout:
+
+```text
+app/
+  package.json
+  index.mjs
+  module.js
+```
+
+and `index.mjs` containing:
+
+```ts
+import './module'
+```
+
+run:
+
+```bash
+node index.mjs
+```
+
+Node throws:
+
+```text
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/absolute/path/app/module' imported from /absolute/path/app/index.mjs
+```
+
+The fix is to import the file with its extension:
+
+```ts
+import './module.js'
+```
+
+That works because Node can resolve the path to an exact file.
+
+## Why the specifier is not treated as a path guess
+
+ES modules use URL semantics. Relative specifiers are resolved against the importing module’s URL, then normalized. A path-like specifier without an extension is still just a specifier. Node does not do extension inference because that would make the resolver ambiguous and less consistent with browser ESM.
+
+This matters for more than `.js` files. The same rule applies to `.mjs`, `.cjs`, `.ts` when using a loader, and any other local module file. If you want a local module to load in native Node ESM, the specifier must match the actual file path that Node can resolve.
+
+## Package resolution is different from file resolution
+
+A package import works because Node is not searching for a filesystem path directly. It is looking up a package entry point.
+
+For example:
+
+```ts
+import express from 'express'
+```
+
+This is a bare specifier. Node checks `node_modules/express`, reads its `package.json`, and uses the package's `exports` or `main` field.
+
+Package resolution can support subpath exports like:
+
+```ts
+import { something } from 'my-package/utils'
+```
+
+if the package explicitly allows that in `exports`.
+
+Relative imports do not use that machinery. `./module` is not a package path. It is a file specifier, and file specifiers must include the exact filename, including extension, unless a custom loader changes the behavior.
+
+## The correct local import pattern
+
+For local ESM files in Node, use the real filename:
+
+```ts
+// index.mts or index.mjs
+import { parseConfig } from './parse-config.js'
+import { formatOutput } from './format-output.js'
+```
+
+If the source file is TypeScript and you compile to JavaScript, the import in emitted code still needs to refer to the emitted `.js` file. With `tsc`, that usually means authoring imports as `.js` even inside `.ts` source:
+
+```ts
+// src/index.ts
+import { parseConfig } from './parse-config.js'
+```
+
+This is correct because TypeScript preserves the import specifier in the output, and the runtime file is JavaScript.
+
+## TypeScript and the `.js` extension in source
+
+This looks odd at first, but it is the standard pattern for ESM-targeted TypeScript.
+
+If `tsconfig.json` uses `module: "nodenext"` or `module: "node16"`, TypeScript understands Node’s ESM rules. A source file like this:
+
+```ts
+// src/index.ts
+import { parseConfig } from './parse-config.js'
+```
+
+typically compiles cleanly, even though the source file is `parse-config.ts`, because the emitted JavaScript will be `parse-config.js`.
+
+A matching `tsconfig.json` often looks like this:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true
+  },
+  "include": ["src"]
+}
+```
+
+The important part is that the runtime import points to the emitted JavaScript file, not the TypeScript source file.
+
+If you write `import './parse-config'` in ESM-targeted TypeScript, the emitted JavaScript will still contain `import './parse-config'`, and Node will still fail at runtime.
+
+## When `fileURLToPath` matters
+
+`fileURLToPath` is not the fix for missing extensions. It is used when you need to convert a file URL into a filesystem path, usually in ESM code that needs `__filename`-like behavior or to work with path APIs.
+
+In CommonJS, `__dirname` and `__filename` are available. In ESM, they are not. A common replacement is:
+
+```ts
+import { fileURLToPath } from 'node:url'
+import { dirname } from 'node:path'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+```
+
+This is useful when you need to build a local path relative to the current module.
+
+For example:
+
+```ts
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+const configPath = join(__dirname, 'config.json')
+const raw = await readFile(configPath, 'utf8')
+console.log(raw)
+```
+
+Here `fileURLToPath(import.meta.url)` converts the module URL into a path string. That path string can be passed to `join`, `readFile`, or other filesystem APIs.
+
+This is a separate concern from import specifiers. `import './module.js'` is for module resolution. `fileURLToPath(import.meta.url)` is for path manipulation.
+
+## Why local file URLs and paths get mixed up
+
+The phrase “path is not a file URL” usually points to the distinction between:
+
+- a **filesystem path** like `/Users/me/app/module.js`
+- a **file URL** like `file:///Users/me/app/module.js`
+
+Node ESM internally works with URLs during resolution. `import.meta.url` is a URL string, not a path. That is why `new URL('./module.js', import.meta.url)` works for building a sibling file URL:
+
+```ts
+const moduleUrl = new URL('./module.js', import.meta.url)
+```
+
+If you need the filesystem path from that URL, convert it:
+
+```ts
+import { fileURLToPath } from 'node:url'
+
+const modulePath = fileURLToPath(new URL('./module.js', import.meta.url))
+```
+
+If you pass a plain path where a URL is expected, or you build a relative import without the required extension, resolution can fail with `ERR_MODULE_NOT_FOUND`.
+
+## A correct pattern for loading sibling files
+
+If the goal is to load a sibling module, prefer a direct import with the extension:
+
+```ts
+import { loadUser } from './load-user.js'
+```
+
+If the goal is to derive a filesystem path, use `import.meta.url` plus `fileURLToPath`:
+
+```ts
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const dataPath = join(here, 'data', 'users.json')
+```
+
+If the goal is to dynamically import a sibling module, build a URL, not a path:
+
+```ts
+const mod = await import(new URL('./load-user.js', import.meta.url))
+```
+
+That works because dynamic `import()` accepts a URL object and Node can resolve it as a module URL.
+
+## Related failure modes
+
+Missing extensions are the most common cause of `ERR_MODULE_NOT_FOUND` in ESM, but they are not the only one.
+
+Other causes include:
+
+- The file does not exist at the resolved location.
+- The import path casing does not match the file name on a case-sensitive filesystem.
+- A package `exports` map blocks access to a subpath.
+- The file is actually `.ts` or `.tsx`, but Node is running plain JavaScript without a loader.
+- The module is in a directory, but you imported `./dir` expecting index resolution.
+
+These produce similar resolution errors, but the fix depends on the exact target and environment.
+
+## Package `exports` can make a valid-looking path fail
+
+For package imports, an `exports` field can reject paths that used to work with older Node versions.
+
+Example:
+
+```json
+{
+  "name": "my-package",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  }
+}
+```
+
+With that configuration, `import 'my-package'` works, but `import 'my-package/internal.js'` fails unless the subpath is exported.
+
+That is package resolution, not relative file resolution. It is important because a package import that looks like a path is still handled by package rules if it does not begin with `./`, `../`, or `/`.
+
+## How to prevent the error
+
+The simplest rule is to write ESM imports the same way Node will execute them at runtime.
+
+Use these patterns:
+
+```ts
+import './module.js'
+import '../utils/math.js'
+import config from './config.json' assert { type: 'json' }
+```
+
+Use `fileURLToPath(import.meta.url)` when you need a path string:
+
+```ts
+import { fileURLToPath } from 'node:url'
+```
+
+Keep TypeScript and Node aligned by using `moduleResolution: "NodeNext"` or `moduleResolution: "Node16"` when targeting native ESM. That makes TypeScript enforce the same extension rules that Node uses.
+
+Avoid relying on CommonJS-style extension guessing. It works in `require()`, not in native ESM.
+
+## Practical takeaway
+
+For local modules in Node ESM, prefer explicit file imports like `./module.js`. That is the most reliable fix because it matches Node’s file URL resolution exactly and avoids extension guessing.
+
+Use `fileURLToPath(import.meta.url)` only when you need to convert the current module URL into a filesystem path for `fs`, `path`, or related APIs. For imports, keep the specifier explicit and include the actual runtime extension.
