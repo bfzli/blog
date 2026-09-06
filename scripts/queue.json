@@ -2,19 +2,6 @@
     "generatedAt": "2026-09-06T21:49:08.001Z",
     "ideas": [
         {
-            "cell": "node-esm-path::node::import-meta-url-file-url",
-            "title": "Node Imports a Local ESM File as `[ERR_MODULE_NOT_FOUND]` Because the Path Is Not a File URL",
-            "description": "Fix local ESM imports in Node when relative paths or missing extensions stop module resolution.",
-            "tags": [
-                "node",
-                "esm",
-                "imports",
-                "filesystem"
-            ],
-            "angle": "Cover the resolution rules for native ESM in Node, including why `import './module'` can fail when the file extension is omitted. Explain the difference between package resolution and file URL resolution, and show the correct `./module.js` or `fileURLToPath` pattern for local modules.",
-            "slug": "node-imports-a-local-esm-file-as-err-module-not-found-because-the-path-is-not-a-file-url"
-        },
-        {
             "cell": "docker-compose-healthcheck::docker::dependency-ordering",
             "title": "Docker Compose Starts an API Before Postgres Is Ready and the App Logs `ECONNREFUSED`",
             "description": "Use health checks and dependency conditions so Compose waits for Postgres instead of starting the app too early.",
@@ -141,18 +128,18 @@
     ],
     "drafted": [
         {
-            "cell": "remix-streaming-loader::remix::defer-suspense-boundary",
-            "title": "Remix Streams `defer()` Data but the Page Stalls Because No `<Await>` Boundary Wraps It",
-            "description": "Make Remix deferred data render correctly by wiring the loader, suspense boundary, and fallback together.",
+            "cell": "node-esm-path::node::import-meta-url-file-url",
+            "title": "Node Imports a Local ESM File as `[ERR_MODULE_NOT_FOUND]` Because the Path Is Not a File URL",
+            "description": "Fix local ESM imports in Node when relative paths or missing extensions stop module resolution.",
             "tags": [
-                "remix",
-                "streaming",
-                "suspense",
-                "defer"
+                "node",
+                "esm",
+                "imports",
+                "filesystem"
             ],
-            "angle": "Explain how `defer()` returns a promise that must be consumed by `<Await>` inside a `Suspense` boundary, and why the HTML can render while the deferred part never resolves visibly. Cover the loader shape, the component structure, and the exact boundary placement required for streamed data.",
-            "slug": "remix-streams-defer-data-but-the-page-stalls-because-no-await-boundary-wraps-it",
-            "draftedAt": "2026-09-05T23:29:08.337Z"
+            "angle": "Cover the resolution rules for native ESM in Node, including why `import './module'` can fail when the file extension is omitted. Explain the difference between package resolution and file URL resolution, and show the correct `./module.js` or `fileURLToPath` pattern for local modules.",
+            "slug": "node-imports-a-local-esm-file-as-err-module-not-found-because-the-path-is-not-a-file-url",
+            "draftedAt": "2026-09-06T23:23:51.811Z"
         }
     ]
 }
