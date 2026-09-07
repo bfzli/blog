@@ -1,0 +1,382 @@
+---
+title: "Docker Compose Starts an API Before Postgres Is Ready and the App Logs `ECONNREFUSED`"
+description: "Use health checks and dependency conditions so Compose waits for Postgres instead of starting the app too early."
+tags: ["docker", "compose", "postgres", "healthcheck"]
+date: Sep 8, 2026
+cell: "docker-compose-healthcheck::docker::dependency-ordering"
+---
+
+## App startup fails with `ECONNREFUSED` when Docker Compose starts the API before Postgres accepts connections
+
+The API container starts, then logs `connect ECONNREFUSED 172.18.0.2:5432` or `ECONNREFUSED 127.0.0.1:5432` while trying to open a PostgreSQL connection. The failure happens because Docker Compose has started the Postgres container, but Postgres is not yet ready to accept TCP connections on port `5432`.
+
+This is not a database configuration error by itself. It is a startup ordering problem combined with a readiness gap.
+
+## What `depends_on` does and what it does not do
+
+In Compose, `depends_on` only controls container start order. It makes Docker start the dependency container before the dependent container. It does not wait for the service inside the container to be ready.
+
+That distinction matters for Postgres.
+
+The PostgreSQL server process may still be:
+
+- initializing the data directory
+- replaying WAL
+- applying recovery
+- starting its listener only after internal checks complete
+
+During that window, the container exists and may even be running, but `postgres` is not yet accepting connections. If the API process starts immediately and attempts a connection, the kernel returns `ECONNREFUSED` because nothing is listening on `5432` yet.
+
+A minimal Compose file with only `depends_on` can therefore still race the database.
+
+## The failure mode in Compose
+
+A typical Compose service definition looks like this:
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: appdb
+
+  api:
+    build: .
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://app:secret@db:5432/appdb
+```
+
+This guarantees that `db` is started before `api`, but not that `db` is ready to accept connections.
+
+If the API uses a startup path that connects immediately, for example with `pg` in Node.js, the first connect attempt can fail like this:
+
+```text
+Error: connect ECONNREFUSED 172.18.0.2:5432
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1549:16)
+```
+
+That error is emitted by the TCP client, not by PostgreSQL. It usually means the socket was refused before a server was listening.
+
+## Add a Postgres health check
+
+Compose can wait for a health status instead of just container start. For Postgres, the standard check is `pg_isready`, which ships in the official `postgres` image.
+
+Use a `healthcheck` on the database service:
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: appdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+```
+
+Mechanically, `pg_isready` checks whether the server is accepting connections. It exits with status `0` when it is ready, and a non-zero status when it is not. Compose uses that status to determine when the service becomes `healthy`.
+
+A few details matter:
+
+- `interval` controls how often Compose runs the check.
+- `timeout` controls how long each probe may run.
+- `retries` controls how many failures are allowed before the container is considered unhealthy.
+- `start_period` gives Postgres time to initialize before failures count against the retry budget.
+
+For Postgres images, `pg_isready` is usually the correct readiness probe because it checks the actual server socket rather than merely the container process.
+
+## Wait for `service_healthy` in `depends_on`
+
+Once the database has a health check, use a health-aware dependency condition for the API:
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: appdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app:secret@db:5432/appdb
+```
+
+With `condition: service_healthy`, Compose waits until `db` reports healthy before starting `api`.
+
+That changes the startup contract from “start this container first” to “do not start the dependent container until the database says it is ready.”
+
+This is the correct Compose-level fix for the startup race.
+
+## A complete runnable example
+
+A working example with a small TypeScript API looks like this.
+
+`docker-compose.yml`:
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: appdb
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app:secret@db:5432/appdb
+    ports:
+      - "3000:3000"
+```
+
+`Dockerfile`:
+
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+
+CMD ["npm", "start"]
+```
+
+`package.json`:
+
+```json
+{
+  "name": "compose-postgres-healthcheck-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node dist/index.js",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "pg": "8.13.1"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
+}
+```
+
+`src/index.ts`:
+
+```ts
+import { Client } from 'pg';
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL is required');
+}
+
+const client = new Client({ connectionString });
+
+async function main() {
+  await client.connect();
+
+  const result = await client.query('select now() as now');
+  console.log(result.rows[0]);
+
+  await client.end();
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+To build and run:
+
+```sh
+npm install
+npm run build
+docker compose up --build
+```
+
+Without the health check and `condition: service_healthy`, the API can start before `db` accepts connections. With them, Compose delays `api` until the health probe succeeds.
+
+## Why the health check works
+
+The health check moves the readiness decision into the database container lifecycle.
+
+The flow becomes:
+
+1. Docker starts `db`.
+2. Postgres initializes.
+3. Compose runs `pg_isready`.
+4. `pg_isready` fails until the server listens on `5432` and accepts the supplied database and user.
+5. Once `pg_isready` succeeds, Compose marks `db` as healthy.
+6. Compose starts `api`.
+
+That avoids the race where the API attempts a socket connection while PostgreSQL is still booting.
+
+This is different from checking whether port `5432` exists in the container network namespace. A port can exist without the service being able to complete a client connection in the expected way. `pg_isready` is closer to the actual condition the app needs.
+
+## Why the app should still retry
+
+Even with a Compose health check, the app should keep retry behavior.
+
+Compose health checks solve startup ordering for local orchestration. They do not make the database permanently available. The app still needs to tolerate transient connection failures in these situations:
+
+- the database container restarts
+- the container network is recreated
+- Postgres is slow after a cold start
+- a deploy replaces the database pod or container
+- the app starts outside Compose, where no health-gated dependency exists
+
+If the application only tries once and exits on `ECONNREFUSED`, it becomes fragile. The correct model is:
+
+- Compose waits for the database when it can
+- the app retries in case the readiness signal was briefly stale or the service is still settling
+
+A simple retry loop in TypeScript using `pg` can look like this:
+
+```ts
+import { Client } from 'pg';
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL is required');
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function connectWithRetry(
+  attempts: number,
+  delayMs: number
+): Promise<Client> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const client = new Client({ connectionString });
+
+    try {
+      await client.connect();
+      return client;
+    } catch (error) {
+      lastError = error;
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError;
+}
+
+async function main() {
+  const client = await connectWithRetry(10, 1000);
+  const result = await client.query('select 1 as ok');
+  console.log(result.rows[0]);
+  await client.end();
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+This keeps startup resilient without depending entirely on Compose.
+
+The retry interval and attempt count should be chosen for the environment. For local development, `10` attempts with `1000` ms delays is often enough. In production, the application should usually use a dedicated reconnect policy or the database driver’s built-in retry and pool settings.
+
+## What not to rely on
+
+Do not rely on `sleep 10` in the API container command. A fixed delay only hides the race. It is brittle because Postgres startup time varies with:
+
+- disk speed
+- volume size
+- crash recovery
+- image cold start
+- resource contention on the host
+
+A ten-second sleep may be too short on a slow machine and too long on a fast one.
+
+Do not rely on `depends_on` alone if the API connects during startup. It does not mean “wait until ready.”
+
+Do not treat container health as equivalent to application readiness unless the health check probes the actual service condition needed by the dependent process.
+
+## Common Compose and Postgres details
+
+The official Postgres image reads these environment variables on first initialization:
+
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `POSTGRES_DB`
+
+If you change `POSTGRES_DB`, make sure the health check uses the same database name:
+
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+```
+
+If the health check probes a database that does not exist yet, it can fail even though Postgres itself is up.
+
+Also note that `pg_isready` is not a query. It only verifies readiness. It does not confirm schema migrations, tables, or application-specific invariants. If the API needs migrated tables before starting, that is a separate readiness requirement. In that case, a migration step or a stricter application-level startup check is needed.
+
+## Verifying the setup
+
+You can inspect health status with:
+
+```sh
+docker compose ps
+```
+
+A healthy database should show a status similar to:
+
+```text
+NAME                IMAGE         COMMAND                  SERVICE   STATUS                    PORTS
+demo-db-1           postgres:16   "docker-entrypoint.s…"   db        Up 20 seconds (healthy)   0.0.0.0:5432->5432/tcp
+demo-api-1          demo-api      "docker-entrypoint.s…"   api       Up 5 seconds              0.0.0.0:3000->3000/tcp
+```
+
+If the database stays unhealthy, inspect logs:
+
+```sh
+docker compose logs db
+```
+
+If `pg_isready` keeps failing, the usual causes are incorrect credentials, the wrong database name in the probe, or a Postgres initialization error.
+
+## Practical takeaway
+
+Use a Postgres health check with `pg_isready` and `depends_on: condition: service_healthy` to prevent Compose from starting the API before the database is actually ready. Keep retry logic in the application anyway, because startup ordering in Compose does not protect against later database restarts or non-Compose deployments. The Compose health gate removes the startup race; the app-side retry keeps the connection path resilient when readiness changes after boot.
