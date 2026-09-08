@@ -2,19 +2,6 @@
     "generatedAt": "2026-09-06T21:49:08.001Z",
     "ideas": [
         {
-            "cell": "nginx-websocket-upgrade::nginx::proxy-headers",
-            "title": "Nginx Proxies a WebSocket Endpoint but the Client Fails the Upgrade with `400 Bad Request`",
-            "description": "Fix WebSocket proxying by forwarding the upgrade headers and using the right HTTP version.",
-            "tags": [
-                "nginx",
-                "websocket",
-                "proxy",
-                "headers"
-            ],
-            "angle": "Describe how Nginx strips upgrade semantics unless `proxy_http_version 1.1` and the `Upgrade` and `Connection` headers are forwarded correctly. Explain why the backend sees a normal HTTP request instead of a WebSocket handshake, and include the exact location block needed to preserve the upgrade.",
-            "slug": "nginx-proxies-a-websocket-endpoint-but-the-client-fails-the-upgrade-with-400-bad-request"
-        },
-        {
             "cell": "sveltekit-server-only-module-leak::sveltekit::prerender-build",
             "title": "SvelteKit Breaks Prerender with \"window is not defined\" When a Server File Imports Browser Code",
             "description": "Prerendered SvelteKit pages crash when server-side code pulls in a browser-only module that touches `window` during build.",
@@ -115,18 +102,18 @@
     ],
     "drafted": [
         {
-            "cell": "docker-compose-healthcheck::docker::dependency-ordering",
-            "title": "Docker Compose Starts an API Before Postgres Is Ready and the App Logs `ECONNREFUSED`",
-            "description": "Use health checks and dependency conditions so Compose waits for Postgres instead of starting the app too early.",
+            "cell": "nginx-websocket-upgrade::nginx::proxy-headers",
+            "title": "Nginx Proxies a WebSocket Endpoint but the Client Fails the Upgrade with `400 Bad Request`",
+            "description": "Fix WebSocket proxying by forwarding the upgrade headers and using the right HTTP version.",
             "tags": [
-                "docker",
-                "compose",
-                "postgres",
-                "healthcheck"
+                "nginx",
+                "websocket",
+                "proxy",
+                "headers"
             ],
-            "angle": "Explain why `depends_on` only controls container start order and not service readiness, which leaves the app connecting before Postgres accepts connections. Show a healthcheck for Postgres, the correct `depends_on: condition: service_healthy` setup, and the fallback retry behavior the app should still keep.",
-            "slug": "docker-compose-starts-an-api-before-postgres-is-ready-and-the-app-logs-econnrefused",
-            "draftedAt": "2026-09-07T23:53:35.770Z"
+            "angle": "Describe how Nginx strips upgrade semantics unless `proxy_http_version 1.1` and the `Upgrade` and `Connection` headers are forwarded correctly. Explain why the backend sees a normal HTTP request instead of a WebSocket handshake, and include the exact location block needed to preserve the upgrade.",
+            "slug": "nginx-proxies-a-websocket-endpoint-but-the-client-fails-the-upgrade-with-400-bad-request",
+            "draftedAt": "2026-09-08T23:46:51.813Z"
         }
     ]
 }
