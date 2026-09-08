@@ -1,0 +1,336 @@
+---
+title: "Nginx Proxies a WebSocket Endpoint but the Client Fails the Upgrade with `400 Bad Request`"
+description: "Fix WebSocket proxying by forwarding the upgrade headers and using the right HTTP version."
+tags: ["nginx", "websocket", "proxy", "headers"]
+date: Sep 9, 2026
+cell: "nginx-websocket-upgrade::nginx::proxy-headers"
+---
+
+WebSocket requests proxied through Nginx fail at the upgrade step with `400 Bad Request`. The backend receives a plain HTTP request instead of a WebSocket handshake, so the client never switches protocols.
+
+## What the error means
+
+A WebSocket connection starts as an HTTP request with a required upgrade handshake.
+
+The client sends headers similar to these:
+
+```http
+GET /socket.io/?EIO=4&transport=websocket HTTP/1.1
+Host: example.com
+Connection: Upgrade
+Upgrade: websocket
+Sec-WebSocket-Version: 13
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+```
+
+The server must respond with `101 Switching Protocols` if it accepts the upgrade. If anything in the proxy chain removes the upgrade semantics, the upstream does not see a WebSocket handshake. It sees an ordinary HTTP request, and many WebSocket servers reject that with `400 Bad Request`.
+
+That failure usually appears in browser devtools, a WebSocket client, or server logs. The exact message varies by framework, but the common pattern is:
+
+- client side: `Unexpected response code: 400`
+- browser side: `WebSocket connection to 'wss://...' failed: Error during WebSocket handshake: Unexpected response code: 400`
+- upstream logs: `400 Bad Request`
+
+## Why Nginx changes the request
+
+Nginx is an HTTP reverse proxy unless it is explicitly told to preserve the WebSocket upgrade path.
+
+The critical detail is that WebSocket upgrade handling depends on HTTP/1.1 and on forwarding two headers:
+
+- `Upgrade`
+- `Connection`
+
+If `proxy_http_version 1.1` is not set, Nginx uses HTTP/1.0 semantics to talk to the upstream in proxy mode. HTTP/1.0 does not support the upgrade flow used by WebSockets. Even if the incoming request from the browser is HTTP/1.1, the proxied request can be downgraded unless you override it.
+
+If `Upgrade` and `Connection` are not forwarded, the upstream never sees the handshake request. It gets a normal proxied request, with no instruction to switch protocols. The backend then returns `400 Bad Request`, because the route or library expects a WebSocket upgrade and not a standard HTTP GET.
+
+This is why a configuration that works for regular `GET` and `POST` routes can still fail for `wss://` connections.
+
+## The required Nginx configuration
+
+The proxy location needs three things:
+
+1. `proxy_http_version 1.1`
+2. `proxy_set_header Upgrade $http_upgrade`
+3. `proxy_set_header Connection "Upgrade"` or an equivalent conditional mapping
+4. the usual proxy headers such as `Host` and `X-Forwarded-For`
+
+A minimal working location block looks like this:
+
+```nginx
+location /ws/ {
+    proxy_pass http://backend;
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+}
+```
+
+This preserves the WebSocket handshake from client to upstream.
+
+If the backend expects the request path unchanged, make sure `proxy_pass` matches that expectation. For example, `proxy_pass http://backend;` and `proxy_pass http://backend/;` are not equivalent in Nginx. The trailing slash changes URI rewriting behavior.
+
+## Why `proxy_http_version 1.1` is necessary
+
+WebSocket upgrade uses HTTP semantics only for the initial handshake. After the `101 Switching Protocols` response, the connection becomes a persistent bidirectional stream.
+
+Nginx’s proxy module defaults to HTTP/1.0 behavior unless you set `proxy_http_version 1.1`. With HTTP/1.0, connection reuse and upgrade handling are not compatible with the WebSocket handshake.
+
+Without HTTP/1.1:
+
+- the `Connection: Upgrade` semantics are not preserved correctly
+- upstream servers that require HTTP/1.1 for WebSocket negotiation reject the request
+- Nginx may buffer or normalize the request in a way the backend does not recognize as a handshake
+
+This is not a WebSocket-specific quirk of a particular backend. It is a consequence of how the proxy speaks to the upstream server.
+
+## Why the `Upgrade` header matters
+
+The `Upgrade` header identifies the protocol the client wants to switch to. For WebSockets, that value is `websocket`.
+
+Nginx does not automatically forward this header in a way that guarantees an upstream handshake. You need:
+
+```nginx
+proxy_set_header Upgrade $http_upgrade;
+```
+
+`$http_upgrade` contains the incoming request’s `Upgrade` header value. When the client initiates a WebSocket connection, this is typically `websocket`. If the client is not using WebSocket, the variable is empty.
+
+That behavior is useful because a single location can proxy both standard HTTP requests and upgraded connections.
+
+## Why the `Connection` header matters
+
+The `Connection` header controls hop-by-hop connection semantics. For WebSockets, it must indicate `Upgrade`.
+
+A common configuration is:
+
+```nginx
+proxy_set_header Connection "Upgrade";
+```
+
+That is enough for a dedicated WebSocket endpoint.
+
+For mixed HTTP and WebSocket traffic on the same location, a more precise approach is to map the presence of `$http_upgrade` to the `Connection` value. This avoids sending `Connection: Upgrade` for requests that are not trying to upgrade.
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    server_name example.com;
+
+    location /ws/ {
+        proxy_pass http://backend;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+This pattern is common in production Nginx configurations because it preserves the upgrade path without forcing `Connection: Upgrade` on every request.
+
+## How the backend sees the request when the proxy is wrong
+
+When Nginx omits the upgrade headers or uses the wrong HTTP version, the upstream receives something like this:
+
+```http
+GET /ws/ HTTP/1.0
+Host: example.com
+X-Forwarded-For: 203.0.113.10
+X-Forwarded-Proto: https
+```
+
+That is a normal HTTP request. There is no `Upgrade: websocket` header and no `Connection: Upgrade` header.
+
+A WebSocket server or framework often routes this to a handler that expects a handshake. If the handshake headers are missing, the server rejects the request. The rejection is often `400 Bad Request`, because the request is syntactically valid HTTP but semantically invalid for the WebSocket endpoint.
+
+This is the core mechanism behind the failure: the proxy transforms a protocol-switch request into a plain HTTP request.
+
+## A complete Nginx example
+
+The following configuration works for a backend listening on `http://127.0.0.1:3000`.
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name example.com;
+
+    ssl_certificate     /etc/ssl/certs/example.crt;
+    ssl_certificate_key /etc/ssl/private/example.key;
+
+    location /socket/ {
+        proxy_pass http://127.0.0.1:3000;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
+}
+```
+
+A few details matter here:
+
+- `proxy_buffering off;` prevents response buffering from interfering with long-lived connections.
+- `proxy_read_timeout 3600s;` keeps idle WebSocket connections from timing out too aggressively.
+- `http2` on the `listen` line is fine for regular HTTPS traffic, but WebSocket upgrade still happens over HTTP/1.1 semantics on the proxied connection. The client-facing side and upstream-facing side are separate concerns.
+
+## How to verify the handshake
+
+You can test the endpoint directly with `curl` for a basic proxy check, but `curl` does not perform a full WebSocket session. It can still confirm whether the upgrade headers reach the server.
+
+Example:
+
+```bash
+curl -i \
+  -H 'Connection: Upgrade' \
+  -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  https://example.com/socket/
+```
+
+A successful proxy path usually responds with `101 Switching Protocols`.
+
+For a real WebSocket client test, use a tool such as `websocat`:
+
+```bash
+websocat wss://example.com/socket/
+```
+
+If the proxy is correct, the connection opens and remains active until closed by the client or server. If the proxy is wrong, the tool reports the `400` response.
+
+## Common misconfigurations
+
+### Missing `proxy_http_version 1.1`
+
+This is the most common cause. The upstream sees HTTP/1.0 and no valid upgrade path.
+
+### Forwarding `Upgrade` but not `Connection`
+
+The upstream still does not get the full handshake. WebSocket negotiation requires both headers.
+
+### Using the wrong `proxy_pass` path form
+
+If the backend expects `/socket/` but Nginx rewrites it to `/`, the route may no longer match. That can also produce `400 Bad Request` or `404 Not Found` depending on the framework.
+
+### Putting the location under a more general proxy block
+
+If a broader `location /` block handles requests before the WebSocket-specific block, the request may never inherit the correct headers. Nginx location precedence matters. The WebSocket route needs to match the intended block.
+
+### Backend-specific origin or host checks
+
+Some WebSocket servers validate `Origin` or `Host`. If `proxy_set_header Host $host;` is missing, the upstream may reject the request even when upgrade headers are correct.
+
+## A TypeScript client example
+
+A simple browser-side WebSocket client in TypeScript looks like this:
+
+```ts
+const socket = new WebSocket('wss://example.com/socket/');
+
+socket.addEventListener('open', () => {
+  socket.send(JSON.stringify({ type: 'ping' }));
+});
+
+socket.addEventListener('message', (event) => {
+  console.log('message', event.data);
+});
+
+socket.addEventListener('error', () => {
+  console.error('WebSocket error');
+});
+```
+
+If the Nginx configuration is wrong, the `open` event never fires. The browser reports a handshake failure and the network tab shows the `400` response from the proxied endpoint.
+
+## When the backend expects a dedicated WebSocket path
+
+Many servers expose WebSockets on a specific path such as `/ws`, `/socket`, or `/socket.io/`. The Nginx location should match that path exactly.
+
+For example, with a Socket.IO server:
+
+```nginx
+location /socket.io/ {
+    proxy_pass http://127.0.0.1:3000;
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Socket.IO uses an HTTP polling phase and then upgrades to WebSocket when available. That means the proxy has to preserve both normal HTTP behavior and upgrade behavior on the same endpoint family. Missing headers break the upgrade path even if polling still works.
+
+## Keep the problem from coming back
+
+Use a dedicated Nginx snippet for all WebSocket locations and reuse it. That reduces the chance that one location gets `proxy_http_version 1.1` while another forgets it.
+
+A reusable include file can help:
+
+```nginx
+# /etc/nginx/snippets/websocket-proxy.conf
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $connection_upgrade;
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_read_timeout 3600s;
+proxy_buffering off;
+```
+
+Then reference it from each WebSocket location:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    server_name example.com;
+
+    location /ws/ {
+        proxy_pass http://127.0.0.1:3000;
+        include /etc/nginx/snippets/websocket-proxy.conf;
+    }
+}
+```
+
+That is the configuration to prefer when the endpoint must support WebSockets reliably. It keeps the protocol upgrade intact, ensures the backend sees a real handshake, and avoids the `400 Bad Request` response caused by proxying WebSocket traffic as plain HTTP.
