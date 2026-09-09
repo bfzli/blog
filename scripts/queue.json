@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-06T21:49:08.001Z",
     "ideas": [
         {
-            "cell": "sveltekit-server-only-module-leak::sveltekit::prerender-build",
-            "title": "SvelteKit Breaks Prerender with \"window is not defined\" When a Server File Imports Browser Code",
-            "description": "Prerendered SvelteKit pages crash when server-side code pulls in a browser-only module that touches `window` during build.",
-            "tags": [
-                "sveltekit",
-                "prerender",
-                "ssr",
-                "window",
-                "build"
-            ],
-            "angle": "Open with the exact prerender/build error and name the file that imports the browser-only dependency. Explain how SvelteKit evaluates server modules during prerender and why `window` is missing there. Show how to move the import behind `onMount`, `if (browser)`, or a `.client` boundary so prerender can complete.",
-            "slug": "sveltekit-breaks-prerender-with-window-is-not-defined-when-a-server-file-imports-browser-code"
-        },
-        {
             "cell": "react-native-expo-asset-native-module::react-native::android-release-build",
             "title": "React Native Android Fails with \"Unable to resolve module\" After a Native Package Is Added to the Bundle",
             "description": "A release build can fail when Metro cannot bundle a dependency that imports Node or unlinked native code.",
@@ -102,18 +88,19 @@
     ],
     "drafted": [
         {
-            "cell": "nginx-websocket-upgrade::nginx::proxy-headers",
-            "title": "Nginx Proxies a WebSocket Endpoint but the Client Fails the Upgrade with `400 Bad Request`",
-            "description": "Fix WebSocket proxying by forwarding the upgrade headers and using the right HTTP version.",
+            "cell": "sveltekit-server-only-module-leak::sveltekit::prerender-build",
+            "title": "SvelteKit Breaks Prerender with \"window is not defined\" When a Server File Imports Browser Code",
+            "description": "Prerendered SvelteKit pages crash when server-side code pulls in a browser-only module that touches `window` during build.",
             "tags": [
-                "nginx",
-                "websocket",
-                "proxy",
-                "headers"
+                "sveltekit",
+                "prerender",
+                "ssr",
+                "window",
+                "build"
             ],
-            "angle": "Describe how Nginx strips upgrade semantics unless `proxy_http_version 1.1` and the `Upgrade` and `Connection` headers are forwarded correctly. Explain why the backend sees a normal HTTP request instead of a WebSocket handshake, and include the exact location block needed to preserve the upgrade.",
-            "slug": "nginx-proxies-a-websocket-endpoint-but-the-client-fails-the-upgrade-with-400-bad-request",
-            "draftedAt": "2026-09-08T23:46:51.813Z"
+            "angle": "Open with the exact prerender/build error and name the file that imports the browser-only dependency. Explain how SvelteKit evaluates server modules during prerender and why `window` is missing there. Show how to move the import behind `onMount`, `if (browser)`, or a `.client` boundary so prerender can complete.",
+            "slug": "sveltekit-breaks-prerender-with-window-is-not-defined-when-a-server-file-imports-browser-code",
+            "draftedAt": "2026-09-09T23:43:34.684Z"
         }
     ]
 }
