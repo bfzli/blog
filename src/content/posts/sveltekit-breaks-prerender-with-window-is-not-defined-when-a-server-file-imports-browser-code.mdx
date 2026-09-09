@@ -1,0 +1,354 @@
+---
+title: "SvelteKit Breaks Prerender with \"window is not defined\" When a Server File Imports Browser Code"
+description: "Prerendered SvelteKit pages crash when server-side code pulls in a browser-only module that touches `window` during build."
+tags: ["sveltekit", "prerender", "ssr", "window", "build"]
+date: Sep 10, 2026
+cell: "sveltekit-server-only-module-leak::sveltekit::prerender-build"
+---
+
+`window is not defined` aborts SvelteKit prerender during `npm run build` when `src/routes/+page.server.ts` imports a browser-only module that touches `window` at module load time.
+
+## What breaks
+
+The failure usually appears while SvelteKit is prerendering a route or generating static output. The build stops with an error similar to this:
+
+```text
+ReferenceError: window is not defined
+    at node_modules/some-browser-package/dist/index.js:1:1
+    at src/routes/+page.server.ts:1:1
+    at instantiateModule (...)
+    at Module.evaluate (...)
+    at render_page (...)
+```
+
+A common pattern is a server file such as `src/routes/+page.server.ts`, `src/routes/+layout.server.ts`, or `src/lib/server/*.ts` importing a package that assumes a browser environment. For example:
+
+```ts
+// src/routes/+page.server.ts
+import { createClient } from '@supabase/supabase-js';
+```
+
+or:
+
+```ts
+// src/routes/+page.server.ts
+import { initAnalytics } from '$lib/analytics';
+```
+
+If `$lib/analytics` imports code that reads `window` during top-level evaluation, prerender fails before the route can render.
+
+## Why prerender touches server modules
+
+SvelteKit prerendering runs route rendering on the server at build time. That means any module used by a server load function, server route, or prerendered page is executed in a Node.js environment, not in a browser.
+
+The important detail is module evaluation. When Node imports a file, all top-level code runs immediately. If an imported dependency does something like this:
+
+```ts
+const ua = window.navigator.userAgent;
+```
+
+the code crashes as soon as the module is evaluated. There is no DOM, no `window`, and no `document` during prerender.
+
+SvelteKit does not defer server imports automatically. If `src/routes/+page.server.ts` imports a module that imports a browser-only package, the whole dependency graph is evaluated on the server. That is enough to trigger the error even if the browser-only code is never called in the server request path.
+
+This is why the failure often seems disconnected from the route itself. The route may only use one exported function, but the import graph still loads the package at build time.
+
+## The mechanism in SvelteKit
+
+SvelteKit has distinct execution environments:
+
+- server modules, such as `+page.server.ts` and `+layout.server.ts`
+- universal modules, such as `+page.ts` and `+layout.ts`
+- browser-only code inside client lifecycle hooks, such as `onMount`
+
+During prerender, SvelteKit evaluates server code to obtain HTML and data. If a route is configured for prerendering, the build needs to execute the server load function and render the page without a browser.
+
+The `window is not defined` error appears when browser-specific code is loaded before runtime checks can prevent execution. An `if (browser)` check only works if the import itself is safe. If the top-level import already touches `window`, the crash happens before the condition runs.
+
+This is the key distinction:
+
+```ts
+import { browser } from '$app/environment';
+import { thing } from 'browser-only-package'; // already too late
+```
+
+The import executes first. The `browser` check does not prevent module initialization.
+
+## Example of the broken pattern
+
+Consider a library that reads `window` as soon as it is imported:
+
+```ts
+// src/lib/analytics.ts
+import { init } from 'some-browser-package';
+
+export function startAnalytics() {
+  init();
+}
+```
+
+Then a server load function imports it:
+
+```ts
+// src/routes/+page.server.ts
+import { startAnalytics } from '$lib/analytics';
+
+export const load = async () => {
+  startAnalytics();
+  return {};
+};
+```
+
+If `some-browser-package` accesses `window` during import, prerender crashes. The call to `startAnalytics()` never matters because the module has already failed to load.
+
+The same problem appears with packages that assume `document`, `localStorage`, `navigator`, or `matchMedia`.
+
+## Fix 1: move the import behind `onMount`
+
+If the code only needs to run in the browser, load it from a component and import it inside `onMount`. `onMount` does not run during SSR or prerender.
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script lang="ts">
+	import { onMount } from 'svelte';
+
+	onMount(async () => {
+		const { init } = await import('$lib/analytics');
+		init();
+	});
+</script>
+
+<h1>Home</h1>
+```
+
+This works because the dynamic `import()` only happens after the component is mounted in the browser. The module is not evaluated during server rendering.
+
+If the module itself imports a browser-only dependency, keep that import inside the dynamic boundary too:
+
+```ts
+// src/lib/analytics.ts
+export async function startAnalytics() {
+	const { init } = await import('some-browser-package');
+	init();
+}
+```
+
+Then call it from `onMount`:
+
+```svelte
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { startAnalytics } from '$lib/analytics';
+
+	onMount(() => {
+		void startAnalytics();
+	});
+</script>
+```
+
+The server now sees only a function definition. The browser-only package is loaded later, in the browser.
+
+## Fix 2: use `if (browser)` only for code, not imports
+
+`if (browser)` from `$app/environment` is useful when the problematic code can be called conditionally after module load.
+
+```ts
+import { browser } from '$app/environment';
+
+export async function startAnalytics() {
+	if (!browser) return;
+
+	const { init } = await import('some-browser-package');
+	init();
+}
+```
+
+This is safe because the `import()` is inside the condition. The browser-only package is not loaded on the server.
+
+What does not work is this:
+
+```ts
+import { browser } from '$app/environment';
+import { init } from 'some-browser-package';
+
+export function startAnalytics() {
+	if (!browser) return;
+	init();
+}
+```
+
+The import still executes during prerender. The condition is irrelevant if the module cannot be evaluated.
+
+Use `if (browser)` to guard execution, not to guard static imports.
+
+## Fix 3: move browser-only code into a `.client` file
+
+For code that is always browser-only, a `.client.ts` or `.client.js` boundary is often the cleanest option. Files with the `.client` suffix are intended for browser-only use and are excluded from the server side of the dependency graph.
+
+Example:
+
+```ts
+// src/lib/analytics.client.ts
+import { init } from 'some-browser-package';
+
+export function startAnalytics() {
+	init();
+}
+```
+
+Then only import it from browser-side code:
+
+```svelte
+<script lang="ts">
+	import { onMount } from 'svelte';
+
+	onMount(async () => {
+		const { startAnalytics } = await import('$lib/analytics.client');
+		startAnalytics();
+	});
+</script>
+```
+
+This makes the intent explicit. Anything in the `.client` file should not be reachable from `+page.server.ts`, `+layout.server.ts`, endpoints, or other server modules.
+
+If a shared helper is needed, split it into a pure module and a browser wrapper:
+
+```ts
+// src/lib/analytics-core.ts
+export function formatEventName(name: string) {
+	return name.trim().toLowerCase();
+}
+```
+
+```ts
+// src/lib/analytics.client.ts
+import { init } from 'some-browser-package';
+import { formatEventName } from './analytics-core';
+
+export function startAnalytics(name: string) {
+	init(formatEventName(name));
+}
+```
+
+Server code can import `analytics-core.ts`. Browser code can import `analytics.client.ts`.
+
+## What to check in the import graph
+
+The broken file is often not the file that directly references `window`. Start at the server entry point and trace imports outward:
+
+- `src/routes/+page.server.ts`
+- `src/routes/+layout.server.ts`
+- `src/lib/server/*.ts`
+- endpoint handlers under `src/routes/api/*`
+- any helper imported by those files
+
+A browser-only package may be nested several layers deep. For example:
+
+```ts
+// src/lib/server/session.ts
+import { loadWidget } from '$lib/widgets';
+```
+
+```ts
+// src/lib/widgets.ts
+import { createWidget } from 'widget-sdk';
+```
+
+If `widget-sdk` touches `window`, the server file crashes even though it never imports `widget-sdk` directly.
+
+Use `grep` or your editor’s dependency search to find top-level imports from packages documented as browser-only. Packages that depend on DOM globals often have hints in their README or export names. If a package name includes terms such as `widget`, `player`, `map`, `chart`, `editor`, or `analytics`, check whether it supports SSR before importing it from server code.
+
+## How to confirm the source of the crash
+
+The stack trace usually shows the first module that imports the browser-only dependency. To isolate it, temporarily remove imports from the server file until the build passes.
+
+You can also reproduce the prerender path directly with SvelteKit’s build command:
+
+```bash
+npm run build
+```
+
+or, if using a different package manager:
+
+```bash
+pnpm build
+yarn build
+```
+
+If the project is prerendering routes, the crash will happen during the render step. If the route is not meant to prerender, explicitly disable it:
+
+```ts
+// src/routes/+page.ts
+export const prerender = false;
+```
+
+That does not fix browser-only imports in server code. It only prevents the route from being prerendered. Use it when the route truly depends on runtime-only server behavior. For a page that should be static, the import graph still needs to be corrected.
+
+## Why `window` cannot be polyfilled here
+
+A Node build does not provide browser globals by default. In prerender, SvelteKit is rendering HTML on the server, not simulating a browser. Adding a fake `window` object to make the error disappear is not a reliable fix, because many browser packages expect full DOM behavior, not just the existence of a global.
+
+This also explains why conditional logic at runtime is insufficient. The crash occurs during import evaluation, before the runtime path exists.
+
+## Recommended structure
+
+A stable layout for mixed server and browser code looks like this:
+
+```text
+src/
+  lib/
+    server/
+      auth.ts
+    analytics-core.ts
+    analytics.client.ts
+  routes/
+    +page.server.ts
+    +page.svelte
+```
+
+Server files import only pure or server-safe modules:
+
+```ts
+// src/routes/+page.server.ts
+import { getSession } from '$lib/server/auth';
+
+export const load = async () => {
+	return {
+		session: await getSession()
+	};
+};
+```
+
+Browser-only code stays in `.client` modules or inside `onMount`:
+
+```svelte
+<script lang="ts">
+	import { onMount } from 'svelte';
+
+	onMount(async () => {
+		const { startAnalytics } = await import('$lib/analytics.client');
+		startAnalytics('home');
+	});
+</script>
+```
+
+This keeps prerender safe because the server never evaluates code that requires `window`.
+
+## Package-specific considerations
+
+Some packages expose SSR-safe entry points and browser-only entry points. Check the package documentation for a server build, an ESM browser build, or a separate init function that can be dynamically imported.
+
+For example, packages built around DOM APIs often have one of these patterns:
+
+- a default import that is browser-only
+- a `createClient` function that assumes `window`
+- a setup function that reads `document` immediately
+- a separate adapter or SSR-safe subpath export
+
+If the package is not designed for SSR, do not import it from a server module. Wrap it in a client-only boundary or replace it with a server-safe alternative.
+
+## Practical takeaway
+
+Prefer moving the browser-only import behind `onMount` when the code is component-local. Prefer a `.client.ts` boundary when a browser-only helper is reused in multiple components. Use `if (browser)` only around dynamic `import()` or code that is already imported safely. Do not import browser-only packages from `+page.server.ts`, `+layout.server.ts`, or `src/lib/server/*.ts`.
+
+The build fails because SvelteKit prerender evaluates server modules in Node.js, where `window` does not exist. Keeping browser dependencies out of the server import graph is the reliable way to let prerender complete.
