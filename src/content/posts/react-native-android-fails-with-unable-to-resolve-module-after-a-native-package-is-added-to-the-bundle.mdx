@@ -1,0 +1,356 @@
+---
+title: "React Native Android Fails with \"Unable to resolve module\" After a Native Package Is Added to the Bundle"
+description: "A release build can fail when Metro cannot bundle a dependency that imports Node or unlinked native code."
+tags: ["react-native", "android", "metro", "bundle", "native-modules"]
+date: Sep 11, 2026
+cell: "react-native-expo-asset-native-module::react-native::android-release-build"
+---
+
+`> Task :app:bundleReleaseJsAndAssets FAILED`
+`error: Unable to resolve module @react-native-async-storage/async-storage from src/screens/Profile.tsx: @react-native-async-storage/async-storage could not be found within the project or in these directories: node_modules`
+
+When a React Native Android release build fails with `Unable to resolve module`, Metro has stopped during bundle generation. The JavaScript bundle for `android/app/src/main/assets/index.android.bundle` cannot be produced, so the APK or AAB build fails before JavaScript ever reaches the device.
+
+This error usually appears in `:app:bundleReleaseJsAndAssets`, `react.gradle`, or the Gradle task that invokes `react-native bundle`. The package named in the message is the import Metro could not resolve. In the example above, the imported package is `@react-native-async-storage/async-storage`.
+
+## What Metro is resolving
+
+Metro does not execute your app like Node.js. It statically resolves every `import` and `require()` it sees while building the dependency graph for the bundle.
+
+For each import, Metro checks:
+
+1. The package name or relative path.
+2. The package’s `package.json`.
+3. The `main`, `react-native`, and platform-specific entry points.
+4. Extensions it supports, such as `.js`, `.jsx`, `.ts`, `.tsx`, `.json`.
+5. Platform suffixes such as `.android.tsx`, `.native.js`, or `.ios.ts`.
+
+If the import targets a package entry point that does not exist in the bundle context, Metro fails immediately.
+
+That is different from runtime failures. Metro is validating the graph before the app launches, so the build fails even if the problematic code path would never run on Android.
+
+## Why a native package can break bundling
+
+A package added for native functionality may still expose an entry point that is not usable by Metro in the current build. There are three common causes.
+
+### 1. The package imports Node-only APIs
+
+A dependency may include code that assumes a Node.js runtime, such as `fs`, `path`, `crypto`, `stream`, `buffer`, or `process`. Metro does not provide those modules by default.
+
+For example, a package might have this structure:
+
+```json
+{
+  "name": "example-package",
+  "main": "dist/index.js"
+}
+```
+
+And `dist/index.js` might import `crypto` or `fs`:
+
+```ts
+import fs from 'fs';
+import path from 'path';
+```
+
+That works in Node, but not in a standard React Native Android bundle unless the package has a React Native-compatible entry point.
+
+### 2. The package is installed but not linked or autolinked
+
+React Native native modules need native code wired into the Android project. In current React Native versions, autolinking usually handles this automatically, but only if the package is compatible with autolinking and correctly declared.
+
+If the JavaScript package is present but the native Android library is not registered, a module import can fail during bundling or at runtime, depending on how the package is authored. Some packages expose JS files that `require()` a native module name expected to exist via `NativeModules`.
+
+### 3. The package exports different files per platform
+
+A package may provide a browser build, a Node build, and a React Native build. If Metro selects the wrong one, the resolved file may reference unsupported APIs.
+
+A `package.json` might contain entries like these:
+
+```json
+{
+  "name": "example-package",
+  "main": "dist/node/index.js",
+  "react-native": "dist/native/index.js",
+  "browser": "dist/browser/index.js"
+}
+```
+
+If the `react-native` field is missing or wrong, Metro can fall back to `main` and load the Node-targeted entry point.
+
+## How Metro chooses an entry point
+
+Metro uses its resolver to select files based on platform and package metadata.
+
+The lookup order commonly includes:
+
+- A `react-native` field in `package.json`
+- A `browser` field in some configurations
+- The `main` field
+- Platform suffixes such as `.android.ts`, `.native.ts`, or `.ios.ts`
+
+For a relative import like `./nativeModule`, Metro checks:
+
+- `nativeModule.android.ts`
+- `nativeModule.native.ts`
+- `nativeModule.ts`
+- `nativeModule.js`
+
+For a package import like `some-package`, Metro checks the package entry fields first, then resolves the listed file with platform-aware suffixes.
+
+This matters because a package can be installable and still not bundle on Android if the resolved file imports unsupported modules.
+
+## Verify the imported package and its entry points
+
+Start by identifying the exact import in the failing file. The Android output often includes the source file and module name:
+
+```text
+Unable to resolve module @react-native-async-storage/async-storage from src/screens/Profile.tsx
+```
+
+Then inspect the package metadata:
+
+```bash
+cat node_modules/@react-native-async-storage/async-storage/package.json
+```
+
+Look for these fields:
+
+- `main`
+- `react-native`
+- `exports`
+- `module`
+
+If the package uses `exports`, Metro may resolve differently depending on the React Native version and Metro version.
+
+You can also inspect the files the package points to:
+
+```bash
+ls -la node_modules/@react-native-async-storage/async-storage
+```
+
+If the `main` file exists but imports Node-only APIs, that is a strong sign the package is not exporting a React Native-safe entry point.
+
+To test the resolution directly, clear Metro’s cache and bundle manually:
+
+```bash
+npx react-native start --reset-cache
+```
+
+In another terminal:
+
+```bash
+npx react-native bundle \
+  --platform android \
+  --dev false \
+  --entry-file index.js \
+  --bundle-output /tmp/index.android.bundle \
+  --assets-dest /tmp/assets
+```
+
+If Metro cannot resolve the package, the command prints the same failure without the rest of the Android build noise.
+
+## A package can be present but still unusable in Android bundle code
+
+A common source of confusion is code that is valid in one React Native target but not another.
+
+For example, this import is fine only if the package supplies a React Native-compatible entry point:
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+```
+
+But this is not fine if the package is actually a Node-oriented library:
+
+```ts
+import fs from 'fs-extra';
+```
+
+The bundler error is the same shape in both cases: Metro is unable to resolve a module or one of its transitive imports.
+
+The important distinction is whether the package is:
+
+- a proper native module that needs autolinking, or
+- a JavaScript library that was never meant for React Native, or
+- a hybrid package with incorrect entry-point metadata.
+
+## How autolinking changes the result
+
+For native modules, React Native autolinking connects the JavaScript package to the Android project and adds the native library to the build.
+
+For React Native 0.60 and later, packages with a valid `react-native.config.js` or standard native module layout are typically autolinked. The package must expose Android code under the expected structure, such as:
+
+- `android/src/main/java/...`
+- `android/build.gradle`
+- a `package` class implementing `ReactPackage` in older patterns, or
+- TurboModule-compatible registration in newer setups
+
+If autolinking is missing or broken, Metro may still find the JS file, but the package can fail to function because the native side is absent. Some libraries then throw during module initialization or attempt to import fallback code that depends on Node APIs.
+
+Check whether React Native sees the package:
+
+```bash
+npx react-native config
+```
+
+Search the output for the package name. If it is absent from the dependency list, autolinking is not picking it up.
+
+If the package should be native but is not linked, verify:
+
+- `node_modules` is installed
+- the package has an Android implementation
+- the package version supports your React Native version
+- Gradle sync completed successfully
+- the package does not require manual linking instructions that you have not applied
+
+## How platform-specific imports change the bundle
+
+If a dependency works on Android but not in another environment, use platform-specific imports so Metro resolves the correct file.
+
+For example, split an abstraction into platform files:
+
+```ts
+// storage.android.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+export async function readToken() {
+  return AsyncStorage.getItem('token');
+}
+```
+
+```ts
+// storage.web.ts
+export async function readToken() {
+  return window.localStorage.getItem('token');
+}
+```
+
+```ts
+// storage.ts
+export * from './storage.android';
+```
+
+Then import `./storage` from shared code.
+
+This works because Metro prefers platform-specific suffixes when available. On Android, it resolves `storage.android.ts`. On web builds, a different resolver may pick `storage.web.ts` or a browser-specific field.
+
+If a package includes both Node and React Native entry points, platform-specific imports can keep Metro away from the wrong file.
+
+## Check for Node-only transitive imports
+
+The broken import may not be the package you wrote directly. A dependency can pull in another package that is Node-only.
+
+Use the dependency graph in the Metro error output if it includes the chain. If not, search the package:
+
+```bash
+grep -R "from 'fs'\|from \"fs\"\|require('fs')\|require(\"fs\")" node_modules/suspect-package -n
+```
+
+Also inspect `package.json` files inside the package for entry-point hints:
+
+```bash
+cat node_modules/suspect-package/package.json
+```
+
+If a library’s `main` points to a Node bundle, but it also ships a React Native build, you need the package version or import path that selects the native build.
+
+## Replace the import with a supported module
+
+If the package is not React Native compatible, the fix is not to force Metro to accept it. Replace it with a package that supports Android bundling.
+
+### For storage
+
+Use `@react-native-async-storage/async-storage` instead of `localStorage` or a Node persistence package.
+
+```bash
+yarn add @react-native-async-storage/async-storage
+# or
+npm install @react-native-async-storage/async-storage
+```
+
+Then import it in shared code:
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+export async function saveTheme(value: string) {
+  await AsyncStorage.setItem('theme', value);
+}
+```
+
+### For filesystem access
+
+Use a React Native filesystem library with Android support, such as `react-native-fs`, instead of Node `fs`.
+
+```bash
+yarn add react-native-fs
+```
+
+Then use its Android-compatible API:
+
+```ts
+import RNFS from 'react-native-fs';
+
+export async function readConfig() {
+  const path = `${RNFS.DocumentDirectoryPath}/config.json`;
+  return RNFS.readFile(path, 'utf8');
+}
+```
+
+### For cryptography
+
+Use a React Native-compatible library rather than Node `crypto` unless the package explicitly ships RN support.
+
+### For browser-only code in a native app
+
+Do not import a web-only dependency such as one that assumes `window`, `document`, or browser storage. Wrap it behind platform files or a shared abstraction.
+
+## How to confirm the replacement is correct
+
+After replacing the import, check three things.
+
+### The package resolves in Metro
+
+Run the bundle command again:
+
+```bash
+npx react-native bundle \
+  --platform android \
+  --dev false \
+  --entry-file index.js \
+  --bundle-output /tmp/index.android.bundle \
+  --assets-dest /tmp/assets
+```
+
+No `Unable to resolve module` error should appear.
+
+### The native module is linked
+
+If the package contains native code, verify autolinking:
+
+```bash
+npx react-native config
+```
+
+The package should appear in the output with Android configuration.
+
+### The entry point is React Native-safe
+
+Inspect the imported file path from the package metadata:
+
+```bash
+node -p "require('./node_modules/package-name/package.json').main"
+node -p "require('./node_modules/package-name/package.json')['react-native']"
+```
+
+If the `react-native` field is present, confirm it points to a file that does not import `fs`, `path`, `net`, or other Node-only modules.
+
+## Practical fix order
+
+Prefer the fix that matches the package’s intent:
+
+1. If the package is a real native module, make sure it is autolinked and that you are importing the package’s React Native entry point.
+2. If the package is a hybrid library, use the platform-specific import path or upgrade to a version that ships a React Native build.
+3. If the package is Node-only or web-only, replace it with a React Native-supported alternative.
+
+That order prevents repeated bundle failures. The key is not to make Metro accept unsupported code. The package has to expose an entry point that matches Android bundling, or the import needs to be routed to one that does.
