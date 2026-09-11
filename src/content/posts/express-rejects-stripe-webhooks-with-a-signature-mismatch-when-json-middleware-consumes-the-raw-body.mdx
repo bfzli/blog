@@ -1,0 +1,367 @@
+---
+title: "Express Rejects Stripe Webhooks with a Signature Mismatch When JSON Middleware Consumes the Raw Body"
+description: "Stripe signature verification fails when Express parses the request body before you compute the webhook HMAC."
+tags: ["express", "stripe", "webhook", "raw-body", "middleware"]
+date: Sep 12, 2026
+cell: "express-raw-body-hmac-mismatch::express::webhook-signature"
+---
+
+`POST /api/stripe/webhook` fails with `StripeSignatureVerificationError: No signatures found matching the expected signature for payload. Are you passing the raw request body you received from Stripe?`
+
+## Why Stripe webhook verification fails
+
+Stripe signs webhook events with an HMAC over the exact request payload bytes. The signature in the `Stripe-Signature` header is computed from the raw body that Stripe sent, not from a parsed JavaScript object and not from a reserialized JSON string.
+
+That distinction matters because `express.json()` consumes the request stream and turns it into `req.body`. After that parsing step, the original byte sequence is gone. If you later call `stripe.webhooks.constructEvent(...)` with `JSON.stringify(req.body)` or with any body that was parsed and rebuilt, the bytes no longer match the bytes that Stripe signed.
+
+The verification flow depends on byte-for-byte equality:
+
+1. Stripe sends a JSON payload as raw bytes.
+2. Stripe computes a signature over those raw bytes.
+3. Your server must compute the same HMAC over the same raw bytes.
+4. If the payload is parsed first, the byte sequence is no longer available in its original form.
+
+Even when the parsed object looks identical, the reconstructed JSON can differ in whitespace, key order, escaping, or number formatting. HMAC verification is strict. Any change to the byte stream produces a different digest.
+
+## The error surface in Express
+
+A typical failing route looks like this:
+
+```ts
+import express from "express";
+import Stripe from "stripe";
+
+const app = express();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2024-06-20",
+});
+
+app.use(express.json());
+
+app.post("/api/stripe/webhook", (req, res) => {
+  const sig = req.header("stripe-signature");
+
+  if (!sig) {
+    return res.status(400).send("Missing Stripe-Signature header");
+  }
+
+  try {
+    const event = stripe.webhooks.constructEvent(
+      JSON.stringify(req.body),
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+
+    res.json({ received: true, type: event.type });
+  } catch (err) {
+    res.status(400).send((err as Error).message);
+  }
+});
+
+app.listen(3000);
+```
+
+With `express.json()` mounted globally, the webhook route receives a parsed object. The call to `JSON.stringify(req.body)` creates new bytes. Stripe compares the resulting signature against the original header value and rejects it.
+
+A common response is:
+
+`No signatures found matching the expected signature for payload. Are you passing the raw request body you received from Stripe?`
+
+That message is specific. It means the secret and header were provided, but the payload bytes used during verification did not match what Stripe signed.
+
+## Why `express.json()` breaks HMAC verification
+
+`express.json()` is body-parsing middleware. It reads the incoming request stream, buffers it, parses it as JSON, and assigns the result to `req.body`.
+
+That changes the handling of the stream in two important ways.
+
+First, the request body stream is consumed. A Node.js request is a readable stream. Once middleware reads it, later middleware cannot read the same bytes again unless the body parser saved them somewhere.
+
+Second, JSON parsing is not a lossless transformation. The parser discards formatting details that are part of the original byte sequence. For example:
+
+- spacing around separators may change
+- object key order may be preserved by the parser in many cases, but not as a guarantee of the original byte representation
+- Unicode escaping can be normalized differently
+- numbers can be represented with different textual forms if the object is serialized again
+
+Stripe does not verify an abstract JSON object. It verifies the exact bytes it sent. That is why the webhook route needs access to the raw body, not the parsed object.
+
+## Use `express.raw()` on the webhook route
+
+The fix is to mount raw-body parsing on the webhook route and keep JSON parsing everywhere else.
+
+`express.raw({ type: "application/json" })` tells Express to buffer the incoming request body as a `Buffer` without parsing it. That `Buffer` contains the exact bytes needed for `stripe.webhooks.constructEvent(...)`.
+
+A correct route setup looks like this:
+
+```ts
+import express, { Request, Response } from "express";
+import Stripe from "stripe";
+
+const app = express();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2024-06-20",
+});
+
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  (req: Request, res: Response) => {
+    const sig = req.header("stripe-signature");
+
+    if (!sig) {
+      return res.status(400).send("Missing Stripe-Signature header");
+    }
+
+    let event: Stripe.Event;
+
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET!
+      );
+    } catch (err) {
+      return res.status(400).send((err as Error).message);
+    }
+
+    switch (event.type) {
+      case "checkout.session.completed":
+        break;
+      case "payment_intent.succeeded":
+        break;
+      default:
+        break;
+    }
+
+    res.json({ received: true });
+  }
+);
+
+app.use(express.json());
+
+app.post("/api/other", (req, res) => {
+  res.json({ body: req.body });
+});
+
+app.listen(3000);
+```
+
+In this version, the webhook route gets raw bytes. The rest of the app still gets parsed JSON through `express.json()`.
+
+## Route ordering matters
+
+Express runs middleware in the order you register it. If `app.use(express.json())` comes before the webhook route, the body is parsed before the raw middleware can see it.
+
+That means this is wrong for Stripe webhooks:
+
+```ts
+app.use(express.json());
+
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), handler);
+```
+
+By the time the webhook route runs, the body has already been consumed by `express.json()`. The raw parser cannot reconstruct the original bytes.
+
+You need the webhook route to be registered before global JSON parsing, or you need to scope JSON parsing away from the webhook path.
+
+A safe pattern is:
+
+```ts
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  webhookHandler
+);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+```
+
+If your app uses multiple parsers, keep the webhook route above them.
+
+## Why `Buffer` is required
+
+`stripe.webhooks.constructEvent` accepts the raw payload as a `string` or `Buffer`, but for Express webhooks, `Buffer` is the safer choice.
+
+With `express.raw()`, `req.body` is a `Buffer`. That is exactly what you want because it preserves the original bytes.
+
+```ts
+const event = stripe.webhooks.constructEvent(
+  req.body,
+  sig,
+  process.env.STRIPE_WEBHOOK_SECRET!
+);
+```
+
+Using `req.body` directly avoids any accidental serialization step.
+
+If your route has already parsed the body into an object, there is no reliable way to recover the exact bytes Stripe signed. Re-stringifying the object is not equivalent.
+
+## Example with TypeScript types
+
+A minimal TypeScript route can be written like this:
+
+```ts
+import express from "express";
+import Stripe from "stripe";
+
+const app = express();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2024-06-20",
+});
+
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const signature = req.header("stripe-signature");
+
+    if (!signature) {
+      return res.status(400).send("Missing stripe-signature header");
+    }
+
+    try {
+      const event = stripe.webhooks.constructEvent(
+        req.body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET!
+      );
+
+      if (event.type === "invoice.payment_succeeded") {
+        // handle event
+      }
+
+      res.status(200).send("ok");
+    } catch (error) {
+      res.status(400).send((error as Error).message);
+    }
+  }
+);
+
+app.use(express.json());
+```
+
+This keeps the raw payload available for the webhook, then restores normal JSON handling for the rest of the application.
+
+## Local verification with the Stripe CLI
+
+The Stripe CLI can forward webhook events to your local server and sign them with a local webhook secret.
+
+Install it and listen for events:
+
+```sh
+stripe login
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
+
+The CLI prints a webhook signing secret that starts with `whsec_...`. Use that value as `STRIPE_WEBHOOK_SECRET`.
+
+Trigger an event:
+
+```sh
+stripe trigger payment_intent.succeeded
+```
+
+If the route is mounted correctly with `express.raw({ type: "application/json" })`, the event should verify and your handler should return a `200`.
+
+If verification fails, check these points:
+
+- the route path matches the forwarded path exactly
+- the `Stripe-Signature` header is present
+- `STRIPE_WEBHOOK_SECRET` matches the secret for the endpoint
+- no JSON parser runs before the raw-body middleware
+- the request body is still a `Buffer` when passed to `constructEvent`
+
+## Common mistakes
+
+A few patterns repeatedly cause this error.
+
+### Parsing globally before the webhook route
+
+This is the most common problem:
+
+```ts
+app.use(express.json());
+app.post("/api/stripe/webhook", handler);
+```
+
+The body is already parsed before the route sees it.
+
+### Calling `JSON.stringify(req.body)`
+
+This changes the payload bytes and breaks the signature check.
+
+### Mixing `express.json()` with `express.raw()` on the same route
+
+Do not attach both to the Stripe webhook route. The raw parser needs to see the request first and preserve the byte stream.
+
+### Using the wrong signing secret
+
+Stripe uses a different `whsec_...` value per endpoint. A secret from the Dashboard or CLI that belongs to another endpoint will fail verification even if the payload is correct.
+
+### Using the wrong content type
+
+`express.raw({ type: "application/json" })` only applies when the request has that content type. Stripe sends JSON webhooks with `Content-Type: application/json`, so this is usually correct. If a proxy rewrites headers, the raw parser may not run.
+
+## A complete Express setup
+
+This pattern keeps webhook verification isolated and preserves normal request handling for the rest of the app.
+
+```ts
+import express from "express";
+import Stripe from "stripe";
+
+const app = express();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2024-06-20",
+});
+
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const sig = req.get("stripe-signature");
+
+    if (!sig) {
+      return res.status(400).send("Missing stripe-signature header");
+    }
+
+    try {
+      const event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET!
+      );
+
+      if (event.type === "checkout.session.completed") {
+        // handle checkout completion
+      }
+
+      res.status(200).json({ received: true });
+    } catch (error) {
+      res.status(400).send((error as Error).message);
+    }
+  }
+);
+
+app.use(express.json());
+
+app.get("/healthz", (_req, res) => {
+  res.send("ok");
+});
+
+app.post("/api/profile", (req, res) => {
+  res.json({ received: req.body });
+});
+
+app.listen(3000, () => {
+  console.log("listening on port 3000");
+});
+```
+
+This configuration avoids the signature mismatch because only the webhook route bypasses JSON parsing.
+
+## Practical takeaway
+
+Prefer `express.raw({ type: "application/json" })` on the Stripe webhook route, and register that route before any global `express.json()` middleware. That preserves the exact request bytes required for HMAC verification while keeping JSON parsing enabled for the rest of the app.
