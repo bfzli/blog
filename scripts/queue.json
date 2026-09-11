@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-06T21:49:08.001Z",
     "ideas": [
         {
-            "cell": "express-raw-body-hmac-mismatch::express::webhook-signature",
-            "title": "Express Rejects Stripe Webhooks with a Signature Mismatch When JSON Middleware Consumes the Raw Body",
-            "description": "Stripe signature verification fails when Express parses the request body before you compute the webhook HMAC.",
-            "tags": [
-                "express",
-                "stripe",
-                "webhook",
-                "raw-body",
-                "middleware"
-            ],
-            "angle": "Open with the exact Stripe signature verification error and the route that fails. Explain why `express.json()` changes the request stream and breaks HMAC verification, since the signature must be computed from the raw bytes. Show how to mount `express.raw({ type: 'application/json' })` on the webhook route and keep JSON parsing for the rest of the app.",
-            "slug": "express-rejects-stripe-webhooks-with-a-signature-mismatch-when-json-middleware-consumes-the-raw-body"
-        },
-        {
             "cell": "hono-cookies-not-persisted-cross-origin::hono::session-auth",
             "title": "Hono Loses Session Cookies on Cross-Origin Requests Because `fetch` Never Sends Credentials",
             "description": "Cookie-based auth fails when browser requests omit credentials or the response omits the correct CORS cookie headers.",
@@ -74,19 +60,19 @@
     ],
     "drafted": [
         {
-            "cell": "react-native-expo-asset-native-module::react-native::android-release-build",
-            "title": "React Native Android Fails with \"Unable to resolve module\" After a Native Package Is Added to the Bundle",
-            "description": "A release build can fail when Metro cannot bundle a dependency that imports Node or unlinked native code.",
+            "cell": "express-raw-body-hmac-mismatch::express::webhook-signature",
+            "title": "Express Rejects Stripe Webhooks with a Signature Mismatch When JSON Middleware Consumes the Raw Body",
+            "description": "Stripe signature verification fails when Express parses the request body before you compute the webhook HMAC.",
             "tags": [
-                "react-native",
-                "android",
-                "metro",
-                "bundle",
-                "native-modules"
+                "express",
+                "stripe",
+                "webhook",
+                "raw-body",
+                "middleware"
             ],
-            "angle": "Start with the bundler error as it appears in Android build output and identify the imported package. Explain how Metro resolves dependencies, why a package with native or Node-specific entry points breaks the bundle, and how autolinking or platform-specific imports change the result. Show how to verify the package’s entry points and replace the import with a supported native module or a web-safe alternative.",
-            "slug": "react-native-android-fails-with-unable-to-resolve-module-after-a-native-package-is-added-to-the-bundle",
-            "draftedAt": "2026-09-10T23:36:13.998Z"
+            "angle": "Open with the exact Stripe signature verification error and the route that fails. Explain why `express.json()` changes the request stream and breaks HMAC verification, since the signature must be computed from the raw bytes. Show how to mount `express.raw({ type: 'application/json' })` on the webhook route and keep JSON parsing for the rest of the app.",
+            "slug": "express-rejects-stripe-webhooks-with-a-signature-mismatch-when-json-middleware-consumes-the-raw-body",
+            "draftedAt": "2026-09-11T23:45:12.853Z"
         }
     ]
 }
