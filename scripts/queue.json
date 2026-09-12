@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-06T21:49:08.001Z",
     "ideas": [
         {
-            "cell": "hono-cookies-not-persisted-cross-origin::hono::session-auth",
-            "title": "Hono Loses Session Cookies on Cross-Origin Requests Because `fetch` Never Sends Credentials",
-            "description": "Cookie-based auth fails when browser requests omit credentials or the response omits the correct CORS cookie headers.",
-            "tags": [
-                "hono",
-                "cookies",
-                "cors",
-                "session",
-                "fetch"
-            ],
-            "angle": "Open with the symptom the browser shows: the API responds, but the session cookie never persists or is never sent back. Explain the browser rules behind credentialed requests, `SameSite`, `Secure`, and the required `Access-Control-Allow-Credentials` plus exact origin header. Show how to configure Hono CORS, set cookies correctly, and verify the request includes `credentials: 'include'`.",
-            "slug": "hono-loses-session-cookies-on-cross-origin-requests-because-fetch-never-sends-credentials"
-        },
-        {
             "cell": "nuxt-ssg-nitro-clientonly-islands::nuxt::static-generation",
             "title": "Nuxt Ignores a Client-Only Widget During Static Generation Because the Page Was Rendered at Build Time",
             "description": "A widget that depends on browser APIs disappears or fails when Nuxt prerenders the page as static HTML.",
@@ -60,19 +46,19 @@
     ],
     "drafted": [
         {
-            "cell": "express-raw-body-hmac-mismatch::express::webhook-signature",
-            "title": "Express Rejects Stripe Webhooks with a Signature Mismatch When JSON Middleware Consumes the Raw Body",
-            "description": "Stripe signature verification fails when Express parses the request body before you compute the webhook HMAC.",
+            "cell": "hono-cookies-not-persisted-cross-origin::hono::session-auth",
+            "title": "Hono Loses Session Cookies on Cross-Origin Requests Because `fetch` Never Sends Credentials",
+            "description": "Cookie-based auth fails when browser requests omit credentials or the response omits the correct CORS cookie headers.",
             "tags": [
-                "express",
-                "stripe",
-                "webhook",
-                "raw-body",
-                "middleware"
+                "hono",
+                "cookies",
+                "cors",
+                "session",
+                "fetch"
             ],
-            "angle": "Open with the exact Stripe signature verification error and the route that fails. Explain why `express.json()` changes the request stream and breaks HMAC verification, since the signature must be computed from the raw bytes. Show how to mount `express.raw({ type: 'application/json' })` on the webhook route and keep JSON parsing for the rest of the app.",
-            "slug": "express-rejects-stripe-webhooks-with-a-signature-mismatch-when-json-middleware-consumes-the-raw-body",
-            "draftedAt": "2026-09-11T23:45:12.853Z"
+            "angle": "Open with the symptom the browser shows: the API responds, but the session cookie never persists or is never sent back. Explain the browser rules behind credentialed requests, `SameSite`, `Secure`, and the required `Access-Control-Allow-Credentials` plus exact origin header. Show how to configure Hono CORS, set cookies correctly, and verify the request includes `credentials: 'include'`.",
+            "slug": "hono-loses-session-cookies-on-cross-origin-requests-because-fetch-never-sends-credentials",
+            "draftedAt": "2026-09-12T23:38:56.673Z"
         }
     ]
 }
