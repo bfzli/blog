@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-09-06T21:49:08.001Z",
+    "generatedAt": "2026-09-13T21:53:40.682Z",
     "ideas": [
         {
             "cell": "nuxt-ssg-nitro-clientonly-islands::nuxt::static-generation",
@@ -42,6 +42,97 @@
             ],
             "angle": "Open with the exact Vite build error and the import path that triggers it. Explain how Vite’s root-based file serving and dependency scanning limit which files can be imported directly, and why some package asset paths work in dev but fail in build. Show how to import CSS through the package entry point, adjust `server.fs.allow` only when appropriate, or copy the asset into the app’s source tree.",
             "slug": "vite-refuses-a-css-import-from-node-modules-with-does-not-exist-under-root-during-build"
+        },
+        {
+            "cell": "pages-build-fails-node-cjs::cloudflare-pages::module-format-mismatch",
+            "title": "Cloudflare Pages Build Fails with \"require is not defined\" After a CommonJS Import",
+            "description": "Cloudflare Pages breaks when a build step loads CommonJS code in an ESM-only runtime; fix the module format mismatch.",
+            "tags": [
+                "cloudflare-pages",
+                "esm",
+                "commonjs",
+                "build"
+            ],
+            "angle": "Open with the exact build error and the file or command where it appears. Explain that Cloudflare Pages build environments run as ESM-first, so a CommonJS-only dependency or a `require()` call in an ESM file fails before deployment. Show how to switch the package to ESM, use dynamic `import()`, or move the offending code behind a compatible build step.",
+            "slug": "cloudflare-pages-build-fails-with-require-is-not-defined-after-a-commonjs-import"
+        },
+        {
+            "cell": "nuxt-nitro-cron-missed::nuxt::scheduled-task-registration",
+            "title": "Nuxt Scheduled Task Never Runs Because Nitro Cron Is Not Registered",
+            "description": "Nuxt cron jobs stay silent when Nitro never registers the scheduled route or preset; fix the task registration and deployment target.",
+            "tags": [
+                "nuxt",
+                "nitro",
+                "cron",
+                "scheduled-tasks"
+            ],
+            "angle": "Start with the symptom: the scheduled job never fires and no runtime error appears. Explain how Nitro cron hooks are wired, which deployment targets actually execute them, and why local dev can look correct while the deployed preset drops the schedule. Cover the required config, file placement, and a verification step that proves the job is registered.",
+            "slug": "nuxt-scheduled-task-never-runs-because-nitro-cron-is-not-registered"
+        },
+        {
+            "cell": "nextjs-route-handler-sse-buffering::nextjs::streaming-response-buffered",
+            "title": "Next.js Route Handler Buffers Server-Sent Events and the Client Never Receives Updates",
+            "description": "Next.js can buffer SSE responses unless the handler returns a streaming response with the right headers and runtime.",
+            "tags": [
+                "nextjs",
+                "sse",
+                "streaming",
+                "route-handlers"
+            ],
+            "angle": "Open with the client symptom: the SSE connection opens, but no events arrive. Explain how Next.js route handlers may buffer output through the wrong runtime, missing `text/event-stream`, or accidental response wrapping. Show the required `runtime = 'edge'` or Node choice, flushing headers, and a minimal event stream implementation.",
+            "slug": "next-js-route-handler-buffers-server-sent-events-and-the-client-never-receives-updates"
+        },
+        {
+            "cell": "vite-dev-server-port-bind::vite::port-in-use",
+            "title": "Vite Dev Server Fails to Start with \"Port 5173 is already in use\"",
+            "description": "Vite stops before serving when another process already binds the default port; free the port or choose a new one safely.",
+            "tags": [
+                "vite",
+                "dev-server",
+                "port",
+                "localhost"
+            ],
+            "angle": "Begin with the exact startup error and the port number Vite reports. Explain why the dev server probes a default port, how port conflicts happen, and how Vite chooses the next available one when `strictPort` is off. Cover `--port`, `strictPort`, and how to identify the process that owns the port.",
+            "slug": "vite-dev-server-fails-to-start-with-port-5173-is-already-in-use"
+        },
+        {
+            "cell": "deno-worker-denied-net::deno::missing-network-permission",
+            "title": "Deno Fails a Fetch Call with \"Requires net access\" in a Worker",
+            "description": "Deno blocks outbound requests without the right permission flags or allowlist; grant network access for the target host.",
+            "tags": [
+                "deno",
+                "permissions",
+                "fetch",
+                "workers"
+            ],
+            "angle": "Open with the exact permission error from `fetch()` or a library call. Explain Deno's permission model, why worker and script contexts still need explicit `--allow-net` or deployment-specific permission settings, and how host allowlists affect the request. Include the exact command-line flag and a safer scoped permission example.",
+            "slug": "deno-fails-a-fetch-call-with-requires-net-access-in-a-worker"
+        },
+        {
+            "cell": "postgres-migration-drift::postgres::sequence-default-mismatch",
+            "title": "Postgres Generates Duplicate IDs After a Manual Import Leaves the Sequence Behind",
+            "description": "Postgres inserts collide when an imported table’s sequence is lower than existing rows; reset the sequence to match the data.",
+            "tags": [
+                "postgres",
+                "sql",
+                "sequence",
+                "migrations"
+            ],
+            "angle": "Start with the concrete failure: `duplicate key value violates unique constraint` on an auto-increment column. Explain how `SERIAL` or identity columns depend on a sequence, why bulk imports or manual inserts can leave the sequence behind, and how that creates collisions. Show the SQL to inspect the current value and advance the sequence to `max(id)`.",
+            "slug": "postgres-generates-duplicate-ids-after-a-manual-import-leaves-the-sequence-behind"
+        },
+        {
+            "cell": "dockerfile-nextjs-node-version::docker::runtime-version-mismatch",
+            "title": "Dockerfile Builds a Next.js App, Then Node Crashes with \"ERR_OSSL_EVP_UNSUPPORTED\"",
+            "description": "A Docker image with the wrong Node or OpenSSL version can break Next.js builds; align the base image and runtime.",
+            "tags": [
+                "docker",
+                "nextjs",
+                "node",
+                "openssl"
+            ],
+            "angle": "Open with the build or startup error exactly as it appears inside the container. Explain why Next.js or its transitive dependencies can fail when the image pins an older Node/OpenSSL combo than the lockfile expects. Cover choosing a compatible base image, matching build and runtime stages, and verifying the Node version inside the container.",
+            "slug": "dockerfile-builds-a-next-js-app-then-node-crashes-with-err-ossl-evp-unsupported"
         }
     ],
     "drafted": [
