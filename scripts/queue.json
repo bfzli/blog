@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-13T21:53:40.682Z",
     "ideas": [
         {
-            "cell": "nuxt-ssg-nitro-clientonly-islands::nuxt::static-generation",
-            "title": "Nuxt Ignores a Client-Only Widget During Static Generation Because the Page Was Rendered at Build Time",
-            "description": "A widget that depends on browser APIs disappears or fails when Nuxt prerenders the page as static HTML.",
-            "tags": [
-                "nuxt",
-                "ssg",
-                "prerender",
-                "client-only",
-                "nitro"
-            ],
-            "angle": "Open with the static-generation symptom and the page or component that fails to render as expected. Explain how Nuxt prerendering runs without a browser, why client-only code is stripped or deferred, and how that affects hydration and HTML output. Show when to use `<ClientOnly>`, page-level prerender settings, or route rules so the widget survives deployment.",
-            "slug": "nuxt-ignores-a-client-only-widget-during-static-generation-because-the-page-was-rendered-at-build-time"
-        },
-        {
             "cell": "docker-published-port-loopback::docker::container-networking",
             "title": "Docker Cannot Reach Postgres on localhost Because the App Container Resolves Its Own Loopback Interface",
             "description": "A containerized app fails to connect to `localhost` because `127.0.0.1` points at the container, not the database host.",
@@ -137,19 +123,19 @@
     ],
     "drafted": [
         {
-            "cell": "hono-cookies-not-persisted-cross-origin::hono::session-auth",
-            "title": "Hono Loses Session Cookies on Cross-Origin Requests Because `fetch` Never Sends Credentials",
-            "description": "Cookie-based auth fails when browser requests omit credentials or the response omits the correct CORS cookie headers.",
+            "cell": "nuxt-ssg-nitro-clientonly-islands::nuxt::static-generation",
+            "title": "Nuxt Ignores a Client-Only Widget During Static Generation Because the Page Was Rendered at Build Time",
+            "description": "A widget that depends on browser APIs disappears or fails when Nuxt prerenders the page as static HTML.",
             "tags": [
-                "hono",
-                "cookies",
-                "cors",
-                "session",
-                "fetch"
+                "nuxt",
+                "ssg",
+                "prerender",
+                "client-only",
+                "nitro"
             ],
-            "angle": "Open with the symptom the browser shows: the API responds, but the session cookie never persists or is never sent back. Explain the browser rules behind credentialed requests, `SameSite`, `Secure`, and the required `Access-Control-Allow-Credentials` plus exact origin header. Show how to configure Hono CORS, set cookies correctly, and verify the request includes `credentials: 'include'`.",
-            "slug": "hono-loses-session-cookies-on-cross-origin-requests-because-fetch-never-sends-credentials",
-            "draftedAt": "2026-09-12T23:38:56.673Z"
+            "angle": "Open with the static-generation symptom and the page or component that fails to render as expected. Explain how Nuxt prerendering runs without a browser, why client-only code is stripped or deferred, and how that affects hydration and HTML output. Show when to use `<ClientOnly>`, page-level prerender settings, or route rules so the widget survives deployment.",
+            "slug": "nuxt-ignores-a-client-only-widget-during-static-generation-because-the-page-was-rendered-at-build-time",
+            "draftedAt": "2026-09-13T23:50:41.420Z"
         }
     ]
 }
