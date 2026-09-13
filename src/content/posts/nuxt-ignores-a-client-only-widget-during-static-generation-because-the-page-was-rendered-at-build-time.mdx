@@ -1,0 +1,354 @@
+---
+title: "Nuxt Ignores a Client-Only Widget During Static Generation Because the Page Was Rendered at Build Time"
+description: "A widget that depends on browser APIs disappears or fails when Nuxt prerenders the page as static HTML."
+tags: ["nuxt", "ssg", "prerender", "client-only", "nitro"]
+date: Sep 14, 2026
+cell: "nuxt-ssg-nitro-clientonly-islands::nuxt::static-generation"
+---
+
+Static generation fails on `pages/widgets.vue` because `<ClientOnly>` content is omitted from the prerendered HTML, and the build output shows `ERROR  [prerender] Cannot read properties of undefined (reading 'window')` when the widget code touches browser-only APIs during render.
+
+## Why the widget disappears during static generation
+
+Nuxt prerendering runs the page component in a server-side context. There is no browser, no `window`, no `document`, and no layout engine that can execute client-only behavior before HTML is written to disk.
+
+For a normal page, Nuxt renders the Vue tree to HTML during `nuxt generate` or during prerender in `nuxi build` with prerender enabled. That HTML becomes the initial response. Hydration happens later in the browser.
+
+A widget that depends on browser APIs has two common failure modes:
+
+- It throws during prerender because the code accesses `window`, `document`, `localStorage`, or `ResizeObserver` while the page is being rendered on the server.
+- It is wrapped in `ClientOnly`, so Nuxt intentionally omits it from the prerendered HTML. The widget then appears only after hydration, and if the surrounding page or CSS assumes the widget existed in the initial markup, the result can look broken or missing.
+
+The important part is the mechanism. Static generation produces HTML before any browser JavaScript runs. Anything that must exist in the first HTML response must be renderable without browser APIs.
+
+## How Nuxt handles client-only content
+
+Nuxt provides `ClientOnly` to fence off browser-dependent code.
+
+```vue
+<template>
+  <section>
+    <h1>Dashboard</h1>
+    <ClientOnly>
+      <BrowserWidget />
+      <template #fallback>
+        <div class="widget-skeleton">Loading widget…</div>
+      </template>
+    </ClientOnly>
+  </section>
+</template>
+```
+
+During server rendering and prerendering:
+
+- `BrowserWidget` is not rendered into the HTML payload.
+- The fallback slot is rendered instead, if provided.
+- After hydration in the browser, Vue mounts `BrowserWidget` and replaces the fallback.
+
+That means `ClientOnly` does not make a browser-dependent widget server-renderable. It only prevents a crash and lets you control the placeholder HTML.
+
+If the widget is inside a component that still evaluates browser-only code at module scope or in `setup()`, `ClientOnly` is not enough. Nuxt may still load the module during SSR serialization, and any top-level `window` access will fail.
+
+## Why hydration and HTML output change
+
+Hydration requires the client DOM to match the server HTML closely enough for Vue to attach event listeners and reactive state. When a widget is omitted from server HTML, hydration starts from the fallback or from nothing.
+
+This has three consequences:
+
+1. The widget does not contribute semantic HTML to the prerendered page.
+2. Any layout reserved only by the widget itself is missing until the client mounts it.
+3. SEO and social crawlers only see the prerendered markup, not the eventual client-rendered widget.
+
+For a purely interactive widget, that is fine. For content that should exist in the initial document, that is not fine.
+
+## A minimal reproduction
+
+A page that reads `window.innerWidth` during render will fail under prerender.
+
+```vue
+<!-- pages/index.vue -->
+<script setup lang="ts">
+const width = window.innerWidth
+</script>
+
+<template>
+  <p>Viewport width: {{ width }}</p>
+</template>
+```
+
+Running prerender:
+
+```bash
+npx nuxi generate
+```
+
+Produces an SSR error because `window` is undefined in the build-time render environment.
+
+A browser-only widget wrapped in `ClientOnly` avoids the crash, but does not produce widget HTML:
+
+```vue
+<!-- pages/index.vue -->
+<template>
+  <main>
+    <ClientOnly>
+      <MapWidget />
+      <template #fallback>
+        <div class="map-placeholder">Map loads in the browser</div>
+      </template>
+    </ClientOnly>
+  </main>
+</template>
+```
+
+The generated HTML includes the placeholder, not the map.
+
+## Make the widget browser-only safely
+
+Move browser access out of render-time code. Use `onMounted()` or `process.client` checks in the component, and keep module scope free of browser references.
+
+```vue
+<!-- components/BrowserWidget.vue -->
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+
+const width = ref<number | null>(null)
+
+onMounted(() => {
+  width.value = window.innerWidth
+})
+</script>
+
+<template>
+  <div>
+    <span v-if="width !== null">Viewport width: {{ width }}</span>
+    <span v-else>Loading…</span>
+  </div>
+</template>
+```
+
+This component still should be wrapped in `ClientOnly` if its template or dependencies require browser APIs during mounting.
+
+```vue
+<template>
+  <ClientOnly>
+    <BrowserWidget />
+  </ClientOnly>
+</template>
+```
+
+The mechanism here is simple. `onMounted()` runs only in the browser, after hydration. That keeps the server render from touching browser APIs.
+
+## When `ClientOnly` is the right fix
+
+Use `ClientOnly` when the widget cannot produce meaningful server HTML.
+
+Typical examples:
+
+- Maps based on `leaflet`, `mapbox-gl`, or Google Maps.
+- Chart libraries that depend on canvas sizing or `ResizeObserver`.
+- Widgets that read `localStorage`, `sessionStorage`, or `navigator`.
+- Browser extensions, embedded chat, or third-party scripts that expect a DOM.
+
+A safe pattern is to provide fallback HTML that preserves layout and communicates state.
+
+```vue
+<template>
+  <ClientOnly>
+    <AnalyticsChart :data="series" />
+    <template #fallback>
+      <div class="chart-skeleton" aria-label="Chart loading"></div>
+    </template>
+  </ClientOnly>
+</template>
+
+<script setup lang="ts">
+const series = [1, 2, 3]
+</script>
+```
+
+If the widget content matters for indexing, accessibility, or first paint, prefer server-renderable markup instead of a pure client-only widget.
+
+## When page-level prerender settings are the better fix
+
+If a page should not be prerendered at all, disable prerendering for that route. This is appropriate when the entire page depends on browser-only state or when the page is meant to be fully dynamic at runtime.
+
+In Nuxt 3, route-specific prerender behavior can be controlled with `defineRouteRules()`.
+
+```ts
+// pages/live-dashboard.vue
+<script setup lang="ts">
+defineRouteRules({
+  prerender: false,
+})
+</script>
+
+<template>
+  <main>
+    <BrowserOnlyDashboard />
+  </main>
+</template>
+```
+
+That tells Nuxt not to include the route in static prerender output.
+
+If the route must still be generated as static HTML but should be treated as a client-only application shell, use the global route rules or Nitro prerender configuration instead of hiding the widget piece by piece.
+
+`nuxt.config.ts` example:
+
+```ts
+export default defineNuxtConfig({
+  nitro: {
+    prerender: {
+      routes: ['/'],
+      crawlLinks: true,
+    },
+  },
+  routeRules: {
+    '/dashboard': {
+      prerender: false,
+    },
+  },
+})
+```
+
+This makes `/dashboard` runtime-only while other pages can still be prerendered.
+
+Use this when the whole page is a client app shell. Do not use it just to rescue one widget if the rest of the page benefits from static HTML.
+
+## How to keep the page prerendered and preserve the widget shell
+
+Sometimes the correct solution is neither full prerender disablement nor a pure `ClientOnly` fence. In that case, separate the page into two parts:
+
+- server-rendered structure and content
+- browser-only interactive widget
+
+The server-rendered part should include headings, copy, metadata, and an empty container or fallback slot. The browser-only part should mount into that container.
+
+```vue
+<template>
+  <article>
+    <h1>Project status</h1>
+    <p>Static content remains in HTML.</p>
+
+    <div class="widget-shell">
+      <ClientOnly>
+        <StatusTimeline :project-id="projectId" />
+        <template #fallback>
+          <div class="timeline-placeholder">Timeline loading…</div>
+        </template>
+      </ClientOnly>
+    </div>
+  </article>
+</template>
+
+<script setup lang="ts">
+const projectId = 'abc123'
+</script>
+```
+
+This preserves prerendered HTML while keeping browser-specific behavior isolated.
+
+## Avoid browser APIs at module scope
+
+A common source of prerender failure is top-level code in imported modules.
+
+```ts
+// components/bad-widget.ts
+const theme = localStorage.getItem('theme') // fails during prerender
+
+export function getTheme() {
+  return theme
+}
+```
+
+Anything like this can fail before Vue even gets to `ClientOnly`. Nuxt loads the module during server rendering, and top-level code executes immediately.
+
+Refactor to defer the access:
+
+```ts
+// components/good-widget.ts
+export function getTheme() {
+  if (import.meta.client) {
+    return localStorage.getItem('theme')
+  }
+  return null
+}
+```
+
+Better still, read browser state inside `onMounted()` in the component that needs it.
+
+## Use `<ClientOnly>` for third-party widgets that cannot SSR
+
+Many third-party packages are not SSR-safe. The package may be fine in a browser, but its initialization logic assumes DOM access or a real window object.
+
+For example:
+
+```vue
+<template>
+  <ClientOnly>
+    <ChartWidget />
+  </ClientOnly>
+</template>
+
+<script setup lang="ts">
+import ChartWidget from '~/components/ChartWidget.vue'
+</script>
+```
+
+If the package ships ESM code that still executes at import time, wrap the import in a client-only plugin or load it dynamically.
+
+```ts
+// plugins/chart.client.ts
+import Chart from 'chart.js/auto'
+
+export default defineNuxtPlugin(() => {
+  return {
+    provide: {
+      chart: Chart,
+    },
+  }
+})
+```
+
+The `.client.ts` suffix prevents the plugin from running during SSR. That is often the cleanest boundary when a dependency is fundamentally browser-only.
+
+## Debugging prerender output
+
+Check the generated HTML, not just the browser page.
+
+After running:
+
+```bash
+npx nuxi generate
+```
+
+inspect the static output in `.output/public/` or `dist/`, depending on deployment flow. Confirm whether the widget markup exists in the HTML file for the route.
+
+Useful checks:
+
+```bash
+grep -R "widget" .output/public
+grep -R "timeline-placeholder" .output/public
+```
+
+If the markup only appears after hydration in the browser, then it is not part of the static page.
+
+Also check server-side logs during generation. Errors such as the following point to SSR access to browser APIs:
+
+```text
+ReferenceError: window is not defined
+ReferenceError: document is not defined
+ReferenceError: localStorage is not defined
+```
+
+If the build succeeds but the widget is absent, the code is probably fenced behind `ClientOnly` or a client-only plugin. If the widget should be in HTML, it needs to be rewritten to render on the server.
+
+## Choosing between the fixes
+
+Use `ClientOnly` when the widget is inherently browser-only and an HTML fallback is acceptable.
+
+Use `defineRouteRules({ prerender: false })` or a route rule in `nuxt.config.ts` when the whole page should be runtime-rendered instead of statically generated.
+
+Use `onMounted()`, `import.meta.client`, and `.client.ts` plugins to keep browser APIs out of SSR paths.
+
+The decisive question is whether the widget must exist in the static HTML response. If yes, it cannot depend on browser-only APIs during render. If no, `ClientOnly` is the safe boundary.
