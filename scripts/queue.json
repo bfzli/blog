@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-13T21:53:40.682Z",
     "ideas": [
         {
-            "cell": "vite-css-import-outside-source::vite::build-time",
-            "title": "Vite Refuses a CSS Import from `node_modules` with \"does not exist under root\" During Build",
-            "description": "A production build can fail when a stylesheet import points outside Vite’s project root or references an unsupported path.",
-            "tags": [
-                "vite",
-                "css",
-                "build",
-                "assets",
-                "node-modules"
-            ],
-            "angle": "Open with the exact Vite build error and the import path that triggers it. Explain how Vite’s root-based file serving and dependency scanning limit which files can be imported directly, and why some package asset paths work in dev but fail in build. Show how to import CSS through the package entry point, adjust `server.fs.allow` only when appropriate, or copy the asset into the app’s source tree.",
-            "slug": "vite-refuses-a-css-import-from-node-modules-with-does-not-exist-under-root-during-build"
-        },
-        {
             "cell": "pages-build-fails-node-cjs::cloudflare-pages::module-format-mismatch",
             "title": "Cloudflare Pages Build Fails with \"require is not defined\" After a CommonJS Import",
             "description": "Cloudflare Pages breaks when a build step loads CommonJS code in an ESM-only runtime; fix the module format mismatch.",
@@ -109,19 +95,19 @@
     ],
     "drafted": [
         {
-            "cell": "docker-published-port-loopback::docker::container-networking",
-            "title": "Docker Cannot Reach Postgres on localhost Because the App Container Resolves Its Own Loopback Interface",
-            "description": "A containerized app fails to connect to `localhost` because `127.0.0.1` points at the container, not the database host.",
+            "cell": "vite-css-import-outside-source::vite::build-time",
+            "title": "Vite Refuses a CSS Import from `node_modules` with \"does not exist under root\" During Build",
+            "description": "A production build can fail when a stylesheet import points outside Vite’s project root or references an unsupported path.",
             "tags": [
-                "docker",
-                "postgres",
-                "networking",
-                "container",
-                "localhost"
+                "vite",
+                "css",
+                "build",
+                "assets",
+                "node-modules"
             ],
-            "angle": "Open with the exact connection error and the host string in the config. Explain container network namespaces, why `localhost` inside a container never means the host machine or another service, and how Compose service DNS changes the address you must use. Show how to point the app at the Postgres service name, expose ports only when needed, and confirm readiness separately from reachability.",
-            "slug": "docker-cannot-reach-postgres-on-localhost-because-the-app-container-resolves-its-own-loopback-interface",
-            "draftedAt": "2026-09-15T00:07:36.227Z"
+            "angle": "Open with the exact Vite build error and the import path that triggers it. Explain how Vite’s root-based file serving and dependency scanning limit which files can be imported directly, and why some package asset paths work in dev but fail in build. Show how to import CSS through the package entry point, adjust `server.fs.allow` only when appropriate, or copy the asset into the app’s source tree.",
+            "slug": "vite-refuses-a-css-import-from-node-modules-with-does-not-exist-under-root-during-build",
+            "draftedAt": "2026-09-15T23:52:43.324Z"
         }
     ]
 }
