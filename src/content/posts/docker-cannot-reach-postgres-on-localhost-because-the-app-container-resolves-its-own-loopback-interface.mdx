@@ -1,0 +1,319 @@
+---
+title: "Docker Cannot Reach Postgres on localhost Because the App Container Resolves Its Own Loopback Interface"
+description: "A containerized app fails to connect to `localhost` because `127.0.0.1` points at the container, not the database host."
+tags: ["docker", "postgres", "networking", "container", "localhost"]
+date: Sep 15, 2026
+cell: "docker-published-port-loopback::docker::container-networking"
+---
+
+`Error: connect ECONNREFUSED 127.0.0.1:5432` when the app container uses `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/appdb`.
+
+## Why `localhost` fails inside a container
+
+`localhost` is not a global machine name. Inside a Linux container, it means the container’s own loopback interface, `127.0.0.1`, in that container’s network namespace.
+
+A container is isolated with its own network stack:
+
+- its own `lo` interface
+- its own IP addresses
+- its own routing table
+- its own view of `127.0.0.1`
+
+That means a process in the app container that connects to `localhost:5432` is trying to reach port `5432` on the same container. Unless Postgres is running in that same container, nothing is listening there, so the TCP connection is refused.
+
+This is true even if Postgres is running on:
+
+- the host machine
+- another container
+- another VM
+- a remote machine
+
+`localhost` never means “the Docker host” from inside a normal container. It only means “this container”.
+
+The error string usually looks like one of these:
+
+- `connect ECONNREFUSED 127.0.0.1:5432`
+- `dial tcp 127.0.0.1:5432: connect: connection refused`
+- `could not connect to server: Connection refused`
+
+The exact text depends on the client library, but the underlying failure is the same: the app tried to open a TCP socket to the container’s own loopback address.
+
+## What container network namespaces change
+
+Docker creates separate network namespaces by default. A namespace is a kernel-level isolation boundary for networking state. Each container gets its own namespace unless you explicitly share one.
+
+That has two important consequences:
+
+1. `127.0.0.1` and `::1` are private to the container.
+2. Service discovery by name only works on networks Docker wires together.
+
+The practical effect is simple:
+
+- If the app and Postgres are in the same container, `localhost` can work.
+- If they are in different containers, `localhost` does not work.
+- If Postgres is on the host, `localhost` inside the container still does not work.
+
+A container can reach other containers only through an address that routes outside its own loopback interface. That can be:
+
+- the container IP on a Docker network
+- a Compose service name
+- a host gateway address such as `host.docker.internal` on supported platforms
+- a published host port from outside the container network, if the client is not itself containerized
+
+## Why Compose service names replace `localhost`
+
+Docker Compose creates a user-defined bridge network for the project by default. Every service on that network gets internal DNS resolution by service name.
+
+If your Compose file defines services named `app` and `db`, then `db` becomes a resolvable hostname inside the `app` container. Docker’s embedded DNS server maps that name to the current IP address of the `db` container on the Compose network.
+
+That is why the app should connect to:
+
+- `db:5432` in a Compose setup
+- not `localhost:5432`
+
+The service name is not the container name and not the host machine name. It is the DNS label Docker exposes on the shared network.
+
+A minimal Compose file looks like this:
+
+```yaml
+services:
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/appdb
+    depends_on:
+      db:
+        condition: service_started
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    ports:
+      - "5432:5432"
+```
+
+The important line is `DATABASE_URL: postgresql://postgres:postgres@db:5432/appdb`.
+
+That `db` host is the service name. It resolves inside the Compose network. `localhost` would resolve to the app container instead.
+
+## A runnable TypeScript example
+
+The connection problem often appears in application code rather than in the Compose file itself. For example, a Node.js app using `pg` might read the connection string from `DATABASE_URL`.
+
+Install the package:
+
+```bash
+npm install pg
+```
+
+Then use it like this:
+
+```ts
+import { Client } from 'pg';
+
+const client = new Client({
+  connectionString: process.env.DATABASE_URL,
+});
+
+async function main() {
+  await client.connect();
+  const result = await client.query('SELECT version()');
+  console.log(result.rows[0]);
+  await client.end();
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+If `DATABASE_URL` is `postgresql://postgres:postgres@localhost:5432/appdb` and this code runs in the app container, the connection attempt goes to the app container’s loopback interface. If `pg` cannot reach a server there, it throws `ECONNREFUSED`.
+
+Change the host to `db` when the database is another Compose service:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@db:5432/appdb
+```
+
+That one change usually resolves the networking failure.
+
+## When to publish ports with `ports`
+
+Docker’s `ports` directive publishes a container port on the host machine. It is useful when software outside Docker needs access to the container.
+
+For example:
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+```
+
+This binds host port `5432` to the database container’s port `5432`.
+
+Use this when you need any of the following:
+
+- connect from a GUI tool on the host
+- connect from a local process not running in Docker
+- expose the database for integration tests from outside the Compose network
+
+Do not use published ports as a workaround for container-to-container communication if both services are already on the same Compose network. The app can and should talk to `db:5432` directly.
+
+Also note the distinction between `ports` and `expose`:
+
+- `ports` publishes to the host
+- `expose` documents or advertises an internal port, but does not publish it on the host
+
+For service-to-service traffic inside the Compose network, neither is required. Containers on the same network can connect to the target container’s port as long as the target process listens on it.
+
+## Readiness is separate from reachability
+
+A successful TCP connection does not mean the database is ready for queries.
+
+Postgres can accept network connections before it is ready to process SQL. During startup, the server may be listening on `5432`, but still initializing the cluster, recovering WAL, or creating the initial database. In that state, the socket is reachable, but login or query operations can still fail.
+
+Common errors include:
+
+- `FATAL: the database system is starting up`
+- `password authentication failed`
+- `database "appdb" does not exist`
+
+`depends_on` in Compose only controls start order. It does not wait for a service to become ready to accept queries. Even with `condition: service_started`, the app may start before Postgres can answer SQL.
+
+Use a health check for the database and wait for readiness separately.
+
+```yaml
+services:
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/appdb
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+```
+
+`pg_isready` checks Postgres readiness at the protocol level. It is better than a raw port check because it verifies that the server accepts connections for the requested user and database.
+
+If your Compose version or deployment environment does not honor `condition: service_healthy`, keep readiness in the application start-up path. For example, retry the connection until the server responds successfully.
+
+Here is a small TypeScript retry loop:
+
+```ts
+import { Client } from 'pg';
+
+async function waitForDatabase(connectionString: string) {
+  for (let attempt = 1; attempt <= 20; attempt++) {
+    const client = new Client({ connectionString });
+    try {
+      await client.connect();
+      await client.end();
+      return;
+    } catch (error) {
+      if (attempt === 20) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+}
+```
+
+That does not fix a bad host name. It only handles the period after the host is correct but the database is not ready yet.
+
+## How to verify what the app is resolving
+
+If the app container still points at `localhost`, inspect the environment variable and the network from inside the container.
+
+List the effective environment:
+
+```bash
+docker compose exec app printenv DATABASE_URL
+```
+
+Check DNS resolution for the database service name:
+
+```bash
+docker compose exec app getent hosts db
+```
+
+You should see an IP address for `db`. If `getent` returns nothing, the app container is not on the same network as the database service, or the service name is wrong.
+
+Check loopback from inside the app container:
+
+```bash
+docker compose exec app sh -lc 'nc -vz localhost 5432'
+```
+
+If nothing is listening in the app container, this fails. That result is expected when Postgres is in another container.
+
+Check the Postgres container itself:
+
+```bash
+docker compose exec db pg_isready -U postgres -d appdb
+```
+
+That confirms the server is up and accepting requests inside its own container.
+
+You can also inspect the Compose network:
+
+```bash
+docker network ls
+docker network inspect "$(docker compose ls --format json | jq -r '.[0].Name')_default"
+```
+
+The specific network name varies by project, but the idea is the same: both containers must be attached to the same Docker network for `db` to resolve.
+
+## Host access from a container is a different problem
+
+If the database is not another Compose service, but something running on the host machine, `localhost` still fails from inside the container.
+
+In that case, the app container needs a host-reachable address. On Docker Desktop for macOS and Windows, `host.docker.internal` is usually available:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/appdb
+```
+
+On Linux, support varies by Docker version and configuration. A common approach is to add the host gateway mapping in Compose:
+
+```yaml
+services:
+  app:
+    build: .
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+Then the container can resolve `host.docker.internal` to the host gateway IP. That still is not `localhost`. It is a bridge from the container network to the host network.
+
+## Prefer the service name, not the published host port
+
+For container-to-container traffic in Compose, the preferred fix is to point the app at the Postgres service name and keep both services on the same network.
+
+Use:
+
+```bash
+postgresql://postgres:postgres@db:5432/appdb
+```
+
+Do not use `localhost` unless the database is actually running in the same container. Do not rely on published host ports for internal communication when Docker DNS already gives you the service name.
+
+Reserve `ports` for cases where something outside Docker must reach Postgres. Use a health check or application retries to separate “the container exists” from “the database is ready”.
+
+The durable configuration is simple: the app uses the Compose service name, Postgres exposes its port only as needed, and readiness is checked independently of network reachability. That keeps `127.0.0.1` from pointing at the wrong machine.
