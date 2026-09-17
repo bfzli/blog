@@ -1,0 +1,367 @@
+---
+title: "Cloudflare Pages Build Fails with \"require is not defined\" After a CommonJS Import"
+description: "Cloudflare Pages breaks when a build step loads CommonJS code in an ESM-only runtime; fix the module format mismatch."
+tags: ["cloudflare-pages", "esm", "commonjs", "build"]
+date: Sep 17, 2026
+cell: "pages-build-fails-node-cjs::cloudflare-pages::module-format-mismatch"
+---
+
+Cloudflare Pages build fails in `npm run build` with `ReferenceError: require is not defined` when a build step loads CommonJS code in an ESM-only runtime.
+
+## What the error means
+
+This error appears when code running in Cloudflare Pages’ build environment calls `require()` from a module that is treated as ECMAScript Module `ESM`. The runtime does not provide a CommonJS `require` binding there, so execution stops before the deployment artifact is produced.
+
+A common form looks like this:
+
+```text
+ReferenceError: require is not defined
+    at file:///opt/buildhome/repo/scripts/build.ts:12:15
+    at ModuleJob.run (node:internal/modules/esm/module_job:218:25)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:329:24)
+```
+
+Sometimes the failure is triggered by your own code. Sometimes it comes from a dependency that is CommonJS-only and gets loaded from an ESM file. In both cases, the root cause is the same: the module system used by the caller and the callee do not match.
+
+## Why Cloudflare Pages exposes this mismatch
+
+Cloudflare Pages build jobs run in a Node-based build environment that is ESM-first. That means files are often interpreted as ESM because of one of these conditions:
+
+- `package.json` contains `"type": "module"`
+- the file extension is `.mjs`
+- the build tool or framework emits ESM output and imports it directly
+- a `.ts` file is compiled to ESM and executed with Node’s ESM loader
+
+In ESM, `require` does not exist as a global. CommonJS gets `require`, `module`, `exports`, and `__dirname`; ESM does not. ESM uses `import` and `export`, and Node resolves that through a different loader path.
+
+The failure usually happens during the build phase, not only at runtime after deployment. That is because many Pages projects run a script such as `npm run build`, `pnpm build`, `next build`, `vite build`, or a custom Node script as part of the deployment pipeline. If that script imports a CommonJS-only package incorrectly, the process fails before the site is published.
+
+## Common failure patterns
+
+### `require()` inside an ESM file
+
+A file like this fails if it is executed as ESM:
+
+```ts
+// scripts/build.ts
+const fs = require("node:fs");
+
+console.log(fs.readFileSync("README.md", "utf8"));
+```
+
+If the file is treated as ESM, Node throws `ReferenceError: require is not defined`.
+
+### Importing a CommonJS-only package the ESM way
+
+A package may be published only as CommonJS, or it may expose a CommonJS entrypoint that expects `require` semantics. If an ESM file tries to use it in a way that depends on CommonJS internals, the import can fail before the code reaches the build output.
+
+Example:
+
+```ts
+// vite.config.ts
+import markdownIt from "markdown-it";
+```
+
+This often works because Node can usually synthesize a default export for CommonJS packages. But some packages access `require`, `module`, or `exports` internally in a way that is not compatible with ESM execution paths. In those cases, the error may originate inside the dependency rather than in your code.
+
+### Transitive CommonJS loaded from an ESM-only toolchain
+
+A modern toolchain may be ESM-only while a plugin or helper remains CommonJS. If the ESM entrypoint imports a CommonJS module through a path that expects `require`, the build breaks. This is common in scripts under `scripts/`, `tools/`, or `config/` directories because they are easy to forget when switching the package to ESM.
+
+## Confirm the module format first
+
+Before changing code, verify whether the failing file is being treated as ESM.
+
+Check `package.json`:
+
+```json
+{
+  "type": "module"
+}
+```
+
+Check the file extension. `*.mjs` is ESM. `*.cjs` is CommonJS. `*.ts` follows the runtime and transpiler rules used by your build system.
+
+Check the failing line. If the error points to `require(...)` in a file executed by Node ESM loader, the fix is to remove the CommonJS assumption.
+
+For a quick local reproduction, run the same command Cloudflare Pages runs:
+
+```bash
+npm run build
+```
+
+If the repository uses `pnpm`, use:
+
+```bash
+pnpm build
+```
+
+If the build script is custom, run the exact command from `package.json` locally. That keeps the module format identical to the deployment environment.
+
+## Fix 1: Convert the package or script to ESM
+
+If the codebase is already ESM-first, the cleanest fix is to replace `require()` with `import`.
+
+### Before
+
+```ts
+// scripts/build.ts
+const path = require("node:path");
+const { readFileSync } = require("node:fs");
+
+const input = readFileSync(path.join(process.cwd(), "content.md"), "utf8");
+console.log(input);
+```
+
+### After
+
+```ts
+// scripts/build.ts
+import path from "node:path";
+import { readFileSync } from "node:fs";
+
+const input = readFileSync(path.join(process.cwd(), "content.md"), "utf8");
+console.log(input);
+```
+
+If you need the equivalent of `__dirname`, derive it from `import.meta.url`:
+
+```ts
+// scripts/build.ts
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+console.log(__dirname);
+```
+
+If the package is meant to be ESM, set `package.json` accordingly:
+
+```json
+{
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.js"
+  }
+}
+```
+
+If the source is TypeScript, make sure the emitted JavaScript matches ESM expectations. For `tsconfig.json`, use an ESM-compatible module target:
+
+```json
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022"
+  }
+}
+```
+
+`NodeNext` lets TypeScript follow Node’s real ESM and CommonJS resolution rules. That reduces surprises when the same code runs in Pages build and locally.
+
+## Fix 2: Use dynamic `import()` when the dependency is only loaded conditionally
+
+If a dependency is only needed at build time or only under specific conditions, use dynamic `import()` instead of top-level `require()`.
+
+This works in ESM:
+
+```ts
+// scripts/generate.ts
+async function main() {
+  const sharp = await import("sharp");
+  const { default: markdownIt } = await import("markdown-it");
+
+  console.log(typeof sharp);
+  console.log(typeof markdownIt);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+Dynamic `import()` returns a promise and is valid in ESM and CommonJS contexts that support it. It avoids the missing `require` binding and delays loading until runtime, which is useful when the module is optional.
+
+If you need to load a CommonJS package from ESM, dynamic import is often the safest boundary. Node typically maps a CommonJS module to a namespace object, where the usable value is often under `default`:
+
+```ts
+const pkg = await import("some-commonjs-package");
+const value = pkg.default;
+```
+
+That shape depends on how the package exports its API. Check the package docs if the namespace object is not enough.
+
+## Fix 3: Keep the offending code behind a CommonJS-compatible step
+
+If the build step depends on a legacy CommonJS package that cannot be migrated immediately, isolate it.
+
+One option is to move the script to a `.cjs` file:
+
+```js
+// scripts/build.cjs
+const fs = require("node:fs");
+const path = require("node:path");
+
+const input = fs.readFileSync(path.join(process.cwd(), "content.md"), "utf8");
+console.log(input);
+```
+
+Then call it from `package.json`:
+
+```json
+{
+  "scripts": {
+    "build": "node scripts/build.cjs"
+  }
+}
+```
+
+This keeps the CommonJS file in a CommonJS loader context, where `require` exists.
+
+Another option is to run the legacy code in a separate prebuild step that produces artifacts consumed later by the ESM build:
+
+```json
+{
+  "scripts": {
+    "prebuild": "node scripts/legacy-generate.cjs",
+    "build": "vite build"
+  }
+}
+```
+
+That works when the incompatible code only prepares files, such as generated content, manifests, or config snapshots. The main build then runs with ESM-safe inputs.
+
+## When a dependency is the real problem
+
+The error may not come from your source file. A dependency may assume CommonJS and fail when loaded under an ESM-only build pipeline.
+
+Check the stack trace. If the failing line points into `node_modules`, inspect the package format.
+
+Useful commands:
+
+```bash
+node -p "require('./node_modules/some-package/package.json').type"
+```
+
+and, for package exports:
+
+```bash
+node -p "require('./node_modules/some-package/package.json').exports"
+```
+
+If the package is CommonJS-only and your build code is ESM, there are three practical paths:
+
+1. Use the package through `await import()` from ESM.
+2. Switch to an ESM-compatible alternative.
+3. Pin or patch the dependency only if no compatible release exists.
+
+A dependency that ships both ESM and CommonJS usually declares conditional exports. Example shape:
+
+```json
+{
+  "exports": {
+    "import": "./dist/index.js",
+    "require": "./dist/index.cjs"
+  }
+}
+```
+
+If the package only provides `require`, it is CommonJS-only from the perspective of ESM consumers.
+
+## Cloudflare Pages-specific places to check
+
+Cloudflare Pages commonly executes one of these as part of the build:
+
+- `npm run build`
+- `pnpm build`
+- `yarn build`
+- framework-specific commands such as `next build`, `vite build`, `astro build`, or `nuxt build`
+- custom scripts referenced from `package.json`
+
+The file that fails is often one of these:
+
+- `vite.config.ts`
+- `next.config.mjs`
+- `astro.config.mjs`
+- `nuxt.config.ts`
+- `scripts/*.ts`
+- `scripts/*.mjs`
+- `functions/` code that is imported during generation
+- any file imported by the build command
+
+If the error only appears on Pages and not in a local CommonJS shell, the local environment may be masking the mismatch. Node can tolerate some mixed-module scenarios locally depending on how the file is invoked, but Pages may run the same code through a stricter ESM path.
+
+## Example migration for a build script
+
+A typical failing build script might look like this:
+
+```ts
+// scripts/collect-content.ts
+const fs = require("node:fs");
+const path = require("node:path");
+
+const files = fs.readdirSync(path.join(process.cwd(), "content"));
+console.log(files);
+```
+
+Convert it to ESM:
+
+```ts
+// scripts/collect-content.ts
+import fs from "node:fs";
+import path from "node:path";
+
+const files = fs.readdirSync(path.join(process.cwd(), "content"));
+console.log(files);
+```
+
+If the script imports a CommonJS-only package conditionally, use dynamic import:
+
+```ts
+// scripts/collect-content.ts
+import fs from "node:fs";
+import path from "node:path";
+
+async function main() {
+  const matter = await import("gray-matter");
+  const files = fs.readdirSync(path.join(process.cwd(), "content"));
+
+  for (const file of files) {
+    const fullPath = path.join(process.cwd(), "content", file);
+    const source = fs.readFileSync(fullPath, "utf8");
+    const parsed = matter.default(source);
+    console.log(parsed.data);
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+That keeps the script compatible with ESM while preserving the CommonJS package if no alternative is available.
+
+## Guardrails to prevent recurrence
+
+Use one module system per package boundary where possible. Mixed ESM and CommonJS works, but only when the boundaries are explicit.
+
+Practical checks:
+
+- Add `"type": "module"` only if the package is intended to be ESM.
+- Name legacy scripts `*.cjs` when they must stay CommonJS.
+- Prefer `import` in source, configs, and build scripts.
+- Use `await import()` for optional or conditional dependencies.
+- Make TypeScript emit `NodeNext` or `ES2022`-compatible module output when targeting Node ESM.
+- Verify the exact Pages build command locally before pushing changes.
+- Audit `scripts/`, config files, and code generators when a new dependency is added.
+
+If a package is still CommonJS-only, keep its usage behind a boundary that matches its format. If the package can be replaced with an ESM-native alternative, that is usually simpler than maintaining interop glue.
+
+## Practical takeaway
+
+Prefer converting the build script or package to ESM first, because that matches Cloudflare Pages’ ESM-first build environment and removes the `require` mismatch at the source. Use dynamic `import()` when the dependency must stay optional or conditionally loaded. Keep truly legacy code in `.cjs` files or a separate compatible prebuild step. That combination prevents `ReferenceError: require is not defined` from reappearing during Pages builds.
