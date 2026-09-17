@@ -2,19 +2,6 @@
     "generatedAt": "2026-09-13T21:53:40.682Z",
     "ideas": [
         {
-            "cell": "pages-build-fails-node-cjs::cloudflare-pages::module-format-mismatch",
-            "title": "Cloudflare Pages Build Fails with \"require is not defined\" After a CommonJS Import",
-            "description": "Cloudflare Pages breaks when a build step loads CommonJS code in an ESM-only runtime; fix the module format mismatch.",
-            "tags": [
-                "cloudflare-pages",
-                "esm",
-                "commonjs",
-                "build"
-            ],
-            "angle": "Open with the exact build error and the file or command where it appears. Explain that Cloudflare Pages build environments run as ESM-first, so a CommonJS-only dependency or a `require()` call in an ESM file fails before deployment. Show how to switch the package to ESM, use dynamic `import()`, or move the offending code behind a compatible build step.",
-            "slug": "cloudflare-pages-build-fails-with-require-is-not-defined-after-a-commonjs-import"
-        },
-        {
             "cell": "nuxt-nitro-cron-missed::nuxt::scheduled-task-registration",
             "title": "Nuxt Scheduled Task Never Runs Because Nitro Cron Is Not Registered",
             "description": "Nuxt cron jobs stay silent when Nitro never registers the scheduled route or preset; fix the task registration and deployment target.",
@@ -95,19 +82,18 @@
     ],
     "drafted": [
         {
-            "cell": "vite-css-import-outside-source::vite::build-time",
-            "title": "Vite Refuses a CSS Import from `node_modules` with \"does not exist under root\" During Build",
-            "description": "A production build can fail when a stylesheet import points outside Vite’s project root or references an unsupported path.",
+            "cell": "pages-build-fails-node-cjs::cloudflare-pages::module-format-mismatch",
+            "title": "Cloudflare Pages Build Fails with \"require is not defined\" After a CommonJS Import",
+            "description": "Cloudflare Pages breaks when a build step loads CommonJS code in an ESM-only runtime; fix the module format mismatch.",
             "tags": [
-                "vite",
-                "css",
-                "build",
-                "assets",
-                "node-modules"
+                "cloudflare-pages",
+                "esm",
+                "commonjs",
+                "build"
             ],
-            "angle": "Open with the exact Vite build error and the import path that triggers it. Explain how Vite’s root-based file serving and dependency scanning limit which files can be imported directly, and why some package asset paths work in dev but fail in build. Show how to import CSS through the package entry point, adjust `server.fs.allow` only when appropriate, or copy the asset into the app’s source tree.",
-            "slug": "vite-refuses-a-css-import-from-node-modules-with-does-not-exist-under-root-during-build",
-            "draftedAt": "2026-09-15T23:52:43.324Z"
+            "angle": "Open with the exact build error and the file or command where it appears. Explain that Cloudflare Pages build environments run as ESM-first, so a CommonJS-only dependency or a `require()` call in an ESM file fails before deployment. Show how to switch the package to ESM, use dynamic `import()`, or move the offending code behind a compatible build step.",
+            "slug": "cloudflare-pages-build-fails-with-require-is-not-defined-after-a-commonjs-import",
+            "draftedAt": "2026-09-17T00:00:34.762Z"
         }
     ]
 }
