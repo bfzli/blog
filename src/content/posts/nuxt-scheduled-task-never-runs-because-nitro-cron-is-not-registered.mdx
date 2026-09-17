@@ -1,0 +1,301 @@
+---
+title: "Nuxt Scheduled Task Never Runs Because Nitro Cron Is Not Registered"
+description: "Nuxt cron jobs stay silent when Nitro never registers the scheduled route or preset; fix the task registration and deployment target."
+tags: ["nuxt", "nitro", "cron", "scheduled-tasks"]
+date: Sep 18, 2026
+cell: "nuxt-nitro-cron-missed::nuxt::scheduled-task-registration"
+---
+
+## Scheduled task never fires, and no runtime error appears
+
+The scheduled job never fires, and there is no runtime error.
+
+In Nuxt 3 with Nitro cron, that usually means the schedule was never registered in the deployed server build. The code can compile cleanly, the route can exist in source, and local development can look correct, while the runtime that is actually deployed never loads the cron hook or never runs the preset that supports it.
+
+## How Nitro cron registration works
+
+Nitro cron is not a standalone background scheduler. It is wired into the Nitro server lifecycle and registered during build-time discovery of server code.
+
+The key pieces are:
+
+- `server/plugins/*` and `server/tasks/*` style server-side files that are included in the Nitro server bundle
+- Nitro presets that execute server-side scheduled hooks
+- a deployment runtime that keeps the process alive long enough for the timer or platform scheduler to trigger
+
+If the cron registration code is not part of the built server bundle, no error is emitted. The route or task simply does not exist in the deployed output.
+
+A cron definition typically looks like a server task or a scheduler hook inside Nitro-compatible server code, for example:
+
+```ts
+// server/tasks/cleanup.ts
+export default defineTask({
+  meta: {
+    name: 'cleanup-old-records',
+    description: 'Remove expired records'
+  },
+  async run() {
+    await $fetch('/api/cleanup', { method: 'POST' })
+    return { result: 'ok' }
+  }
+})
+```
+
+A task file like this is only useful if Nitro includes it in the server build. If the deployment target does not support server tasks, or the file is placed outside the recognized server directories, the task never reaches runtime.
+
+The same applies to cron-style scheduling wrappers. The registration point matters more than the function body.
+
+## Why local dev can look correct
+
+`nuxi dev` runs with a development server that watches the filesystem and loads server code directly from the project. That environment is permissive. It can pick up server files quickly and may make a scheduled handler appear available even when the deployed preset will not include it.
+
+This difference comes from two layers:
+
+1. File discovery in development is broad and dynamic.
+2. Production builds are static and preset-specific.
+
+A task registered in `server/tasks/cleanup.ts` can be visible to the dev server, while the production output generated for a different preset omits the cron subsystem entirely. The dev server does not prove that the deployed artifact will execute the same schedule.
+
+The symptom is often:
+
+- no job execution in production
+- no stack trace
+- no `500` response
+- no startup warning
+- no scheduled route in the final server output
+
+That absence is expected when the registration path is missing from the deployed preset.
+
+## Which deployment targets actually execute cron hooks
+
+Nitro cron depends on the runtime preset. Not every deployment target supports scheduled execution.
+
+In practice, the important distinction is between:
+
+- a long-running Node server that stays alive
+- a serverless function platform that freezes between requests
+- a static preset that has no server process at all
+
+The following targets are the common ones to check:
+
+- `node-server`: suitable for in-process timers and tasks because the process remains alive
+- `bun`: also server-like, but only if the deployment keeps the process alive
+- serverless presets such as Vercel functions, Netlify functions, and Cloudflare Workers: these do not behave like a permanent cron host unless the platform provides its own scheduler integration
+- `static`: cannot execute server cron at all
+
+If the deployed preset is `static`, cron will never run. If the deployed preset is serverless, the schedule may not persist across invocations. If the preset is not the one that Nitro cron expects, registration can be present in source and absent at runtime.
+
+Check the preset in `nuxt.config.ts`:
+
+```ts
+export default defineNuxtConfig({
+  nitro: {
+    preset: 'node-server'
+  }
+})
+```
+
+This does not magically enable cron in every environment, but it does ensure the build target is a persistent server runtime instead of a static or request-only output.
+
+For platform-specific deployments, the preset may be inferred by the adapter. The important part is to verify the final resolved preset, not only the local config.
+
+## Required config for a registered Nitro cron task
+
+A cron task needs three things:
+
+- the task file must live under a Nitro-recognized server directory
+- the app must be built with a preset that can execute it
+- the registration code must be included in the server bundle
+
+A safe default layout is:
+
+```text
+server/
+  tasks/
+    cleanup.ts
+```
+
+A minimal task definition is:
+
+```ts
+// server/tasks/cleanup.ts
+export default defineTask({
+  meta: {
+    name: 'cleanup',
+    description: 'Cleanup expired data'
+  },
+  async run() {
+    const result = await $fetch('/api/internal/cleanup', {
+      method: 'POST'
+    })
+
+    return { result }
+  }
+})
+```
+
+If using a cron wrapper or scheduler plugin, keep it in a server file, not a client file. For example:
+
+```ts
+// server/plugins/cron.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('scheduled', async (event) => {
+    if (event.name !== 'cleanup') return
+
+    await $fetch('/api/internal/cleanup', { method: 'POST' })
+  })
+})
+```
+
+The exact hook name depends on the scheduling API in use. The important mechanism is that Nitro only loads hooks from server-side files that are part of the server build.
+
+Files outside recognized server directories are not registered.
+
+## Common placement mistakes
+
+Cron registration fails silently when the code is in the wrong place.
+
+These placements are problematic:
+
+- `plugins/cron.ts` instead of `server/plugins/cron.ts`
+- `composables/useCron.ts`
+- `utils/cron.ts`
+- `app/cron.ts`
+- `pages/cron.vue`
+
+Only server-side code is included in the Nitro server runtime. Client-side or shared code does not register a schedule.
+
+A second mistake is putting the code in the correct directory but importing it only from client-only code. If nothing in the server build references the module, it can be dropped during bundling.
+
+A third mistake is using an adapter that changes the final server output. For example, `nuxt build` with a deployment preset may generate a different Nitro bundle than `nuxi dev`, so a file that appears active locally may be excluded in production.
+
+## Why the schedule disappears after deploy
+
+The schedule disappears when the deployment target does not preserve the runtime needed for the cron system.
+
+There are two different mechanisms that often get conflated:
+
+- in-process cron timers
+- platform-managed scheduled triggers
+
+An in-process timer requires a long-lived process. That is why `node-server` works and static output does not.
+
+A platform-managed trigger requires platform support and often a separate deployment configuration. On some platforms, the cron definition must be translated into a provider-specific scheduled job. If the adapter does not do that translation, the server bundle contains no active scheduler.
+
+When the deployed preset changes, the build may still succeed because the task source is valid JavaScript. The failure is not syntax. It is runtime capability.
+
+That is why there is no error text. Nothing is thrown when a task file is simply not executed.
+
+## Verify that the task is actually registered
+
+The most useful verification is to inspect the built output and the runtime registration.
+
+First, build the app:
+
+```bash
+npx nuxi build
+```
+
+Then inspect the Nitro output directory. In a standard Nuxt 3 project, look under `.output/server` and the generated server manifest. The exact layout depends on the preset, but the task or plugin should be present in the output bundle if registration succeeded.
+
+A simple check is to search the build output for the task name:
+
+```bash
+grep -R "cleanup" .output/server
+```
+
+If nothing matches, the task file was not included in the server build.
+
+You can also inspect the generated manifest files in the output directory. The exact file names vary by Nuxt and Nitro version, but the built server artifacts should reference the scheduled module or task. If the source file never appears in output, the runtime cannot execute it.
+
+For runtime verification, add explicit logging inside the task:
+
+```ts
+// server/tasks/cleanup.ts
+export default defineTask({
+  meta: {
+    name: 'cleanup',
+    description: 'Cleanup expired data'
+  },
+  async run() {
+    console.log('[cron] cleanup registered and running')
+    return { ok: true }
+  }
+})
+```
+
+Then start the production server:
+
+```bash
+node .output/server/index.mjs
+```
+
+If the task is registered and the runtime supports it, the log line appears when the schedule triggers. If the runtime never prints the line, the task is not being executed.
+
+For platforms with scheduled triggers, run the provider's equivalent of a scheduled invocation or use the provider dashboard to confirm the job exists. Registration in source is not enough.
+
+## Check the resolved preset before chasing the task code
+
+A large fraction of silent failures come from the wrong preset, not the task implementation.
+
+Inspect the effective Nitro preset during build. Nuxt can infer a preset from the deployment environment, so a local `node-server`-style build can become a serverless target in CI or on the hosting platform.
+
+You can log the Nitro preset during build by reading the generated config or by inspecting the build output. In many cases, the simplest check is to print the environment and build target from the deployment pipeline.
+
+For example:
+
+```bash
+npx nuxi build --preset node-server
+```
+
+This forces the server runtime for local verification. If the task works under this preset but not on the deployment platform, the issue is the target, not the task code.
+
+Do not assume the adapter maps cron automatically. Verify the adapter documentation for the exact scheduled-job support it provides.
+
+## A complete working setup
+
+A minimal setup that keeps the registration path obvious looks like this:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nitro: {
+    preset: 'node-server'
+  }
+})
+```
+
+```ts
+// server/tasks/cleanup.ts
+export default defineTask({
+  meta: {
+    name: 'cleanup',
+    description: 'Cleanup expired records'
+  },
+  async run() {
+    console.log('[cron] cleanup triggered')
+    await $fetch('/api/internal/cleanup', { method: 'POST' })
+    return { result: 'done' }
+  }
+})
+```
+
+```bash
+npx nuxi build
+node .output/server/index.mjs
+```
+
+Then verify the built server bundle contains the task:
+
+```bash
+grep -R "cleanup" .output/server
+```
+
+If the name is present in the output and the process stays alive, the schedule has a real runtime path. If the name is missing, the source file is not being bundled. If the name is present but nothing fires, the runtime target is not executing the schedule.
+
+## Keep the problem from returning
+
+Prefer `server/tasks` or `server/plugins` for cron registration, and keep the deployment target aligned with the runtime model the scheduler requires.
+
+Use `node-server` for a persistent Node process when in-process scheduling is required. Avoid assuming that `static` or serverless output will execute the same cron hooks. After each deployment change, verify the built output with `grep -R "<task-name>" .output/server` or the equivalent inspection of the Nitro bundle.
+
+The practical fix is to register the cron task in Nitro server code and deploy to a preset that actually runs it. That combination prevents the silent failure where the source looks correct but the deployed runtime never loads the schedule.
