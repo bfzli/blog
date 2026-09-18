@@ -1,0 +1,373 @@
+---
+title: "Next.js Route Handler Buffers Server-Sent Events and the Client Never Receives Updates"
+description: "Next.js can buffer SSE responses unless the handler returns a streaming response with the right headers and runtime."
+tags: ["nextjs", "sse", "streaming", "route-handlers"]
+date: Sep 19, 2026
+cell: "nextjs-route-handler-sse-buffering::nextjs::streaming-response-buffered"
+---
+
+The SSE connection opens in the browser, but no events arrive, and the Network panel shows a pending `200 OK` response with no incremental body. Next.js route handlers can also fail with `Error: Response body stream is locked` or `Error: Response is not a constructor` when the handler is wrapped or executed in the wrong runtime.
+
+## Why SSE is different from a normal response
+
+Server-Sent Events use a long-lived HTTP response. The server sends a `Content-Type: text/event-stream` response, keeps the connection open, and writes chunks in the format required by the EventSource protocol.
+
+A minimal event stream looks like this:
+
+```text
+data: hello
+
+data: world
+
+```
+
+Each event is terminated by a blank line. The browser does not process the event until the chunk is flushed to the client. That is the key difference from a normal JSON route. A JSON response can be buffered until completion. SSE cannot.
+
+In Next.js, buffering can happen for three common reasons:
+
+- the route runs in the wrong runtime
+- the response does not use `Content-Type: text/event-stream`
+- the response is wrapped by a helper that consumes the stream or converts it into a non-streaming response
+
+Any of those can leave the connection open while the client sees no events.
+
+## The minimum working route handler
+
+For App Router route handlers, the simplest implementation returns a `ReadableStream` from `app/api/events/route.ts`.
+
+```ts
+// app/api/events/route.ts
+export const runtime = 'edge';
+
+export async function GET() {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('retry: 1000\n\n'));
+      controller.enqueue(encoder.encode('data: connected\n\n'));
+
+      const interval = setInterval(() => {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ time: Date.now() })}\n\n`)
+        );
+      }, 1000);
+
+      const cleanup = () => {
+        clearInterval(interval);
+        controller.close();
+      };
+
+      // Keep the stream open until the request is aborted.
+      // In a real handler, wire this to the request signal.
+      setTimeout(cleanup, 30000);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    },
+  });
+}
+```
+
+This version works because it returns a true streaming response and sets the SSE content type. The client can receive each chunk as soon as it is written.
+
+On the client:
+
+```ts
+const es = new EventSource('/api/events');
+
+es.onmessage = (event) => {
+  console.log('message', event.data);
+};
+
+es.onerror = (event) => {
+  console.error('eventsource error', event);
+};
+```
+
+If the route is correct, `onmessage` should fire repeatedly.
+
+## Why the wrong runtime buffers or breaks streaming
+
+Next.js route handlers can run in the Edge runtime or the Node.js runtime. For SSE, the runtime matters because streaming behavior depends on the platform adapters available to Next.js.
+
+`runtime = 'edge'` is the safest choice for SSE in App Router because the Edge runtime is designed around standard web streams. The response can be returned as a `ReadableStream` without Node-specific wrappers.
+
+If you leave the route in the default runtime and add code that relies on Node-only APIs or response helpers, Next.js may convert the response path in ways that defeat streaming. Some wrappers buffer the body before sending it. Others create a new `Response` from already-consumed output, which leaves the browser with a header but no incremental chunks.
+
+A route that returns `NextResponse.json(...)` is not SSE. It serializes the payload and completes the response. A route that creates a `Response` from a string in a loop is also not SSE. The browser will only see the final body if the framework or adapter buffers it.
+
+Use a streaming body from the beginning.
+
+## Missing `text/event-stream` causes buffering at the client and intermediaries
+
+The `Content-Type` header tells the browser and proxies how to treat the payload. For SSE, it must be `text/event-stream`.
+
+Without it, several things can happen:
+
+- the browser treats the response as a generic fetch body rather than an EventSource stream
+- proxies or middleware may buffer the body because it looks like an ordinary HTTP response
+- some deployments compress or transform the body, which breaks the chunk boundaries SSE depends on
+
+This header should be paired with `Cache-Control: no-cache, no-transform`. The `no-transform` directive matters because intermediaries such as CDNs and reverse proxies may try to buffer or re-chunk the response.
+
+Use these headers together:
+
+```ts
+headers: {
+  'Content-Type': 'text/event-stream; charset=utf-8',
+  'Cache-Control': 'no-cache, no-transform',
+  Connection: 'keep-alive',
+}
+```
+
+`Connection: keep-alive` is mainly relevant for HTTP/1.1 paths and proxies. It is harmless in most cases and often included for compatibility.
+
+## Accidental response wrapping turns a stream into a buffer
+
+A common failure mode is to build a stream and then pass it through a helper that expects a complete body. Any helper that serializes, clones, or parses the response can consume the stream.
+
+Examples of risky patterns:
+
+```ts
+// Do not do this if the body is a stream.
+return NextResponse.json({ stream });
+```
+
+```ts
+// Also problematic if the helper reads the body first.
+return new NextResponse(await response.text());
+```
+
+```ts
+// Wrapping a streamed response in another Response can be safe only if
+// the original body is still a live stream and has not been read.
+return new Response(await someAsyncFunction());
+```
+
+The safe rule is simple: return the stream directly from the handler. Do not convert it to text, JSON, or an intermediate object first.
+
+If a helper is needed for headers or status codes, make sure it accepts a streaming `Response` unchanged.
+
+```ts
+export const runtime = 'edge';
+
+function withSseHeaders(response: Response) {
+  const headers = new Headers(response.headers);
+  headers.set('Content-Type', 'text/event-stream; charset=utf-8');
+  headers.set('Cache-Control', 'no-cache, no-transform');
+  headers.set('Connection', 'keep-alive');
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+```
+
+This is safe only if `response.body` is still a stream and no code has consumed it.
+
+## A minimal route handler with abort handling
+
+A production-safe SSE route should stop producing events when the client disconnects. In App Router, you can wire the request signal into the stream.
+
+```ts
+// app/api/events/route.ts
+export const runtime = 'edge';
+
+export async function GET(request: Request) {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('data: ready\n\n'));
+
+      const interval = setInterval(() => {
+        controller.enqueue(
+          encoder.encode(`data: ${new Date().toISOString()}\n\n`)
+        );
+      }, 1000);
+
+      const abort = () => {
+        clearInterval(interval);
+        controller.close();
+      };
+
+      if (request.signal.aborted) {
+        abort();
+        return;
+      }
+
+      request.signal.addEventListener('abort', abort, { once: true });
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    },
+  });
+}
+```
+
+The `Request.signal` aborts when the browser closes the connection or navigates away. Without this, the server may keep timers or background tasks running after the client is gone.
+
+## Node.js runtime can work, but only with the right streaming path
+
+`runtime = 'edge'` is the simplest choice, but SSE can also work in the Node.js runtime if the route returns a native stream and avoids buffering helpers.
+
+If you choose Node, keep the implementation strictly streaming. Avoid `res.send`, `NextResponse.json`, and any helper that reads the entire body.
+
+A Node-compatible route handler still uses the Web `Response` API in App Router:
+
+```ts
+// app/api/events/route.ts
+export const runtime = 'nodejs';
+
+export async function GET() {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('data: hello\n\n'));
+      const interval = setInterval(() => {
+        controller.enqueue(encoder.encode('data: ping\n\n'));
+      }, 1000);
+
+      setTimeout(() => {
+        clearInterval(interval);
+        controller.close();
+      }, 15000);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    },
+  });
+}
+```
+
+If this still buffers, the likely cause is not the runtime itself but some middleware, proxy, or wrapper in front of the route.
+
+## Middleware, proxies, and compression can interfere
+
+Even if the route is correct, the response can still be buffered outside Next.js.
+
+Check for these:
+
+- `middleware.ts` rewriting or cloning the response
+- reverse proxies such as Nginx buffering upstream responses
+- hosting platforms that apply compression or body transformation
+- route-level helpers that set `Content-Encoding`
+
+For Nginx, disable proxy buffering for SSE endpoints:
+
+```nginx
+location /api/events {
+  proxy_pass http://app;
+  proxy_http_version 1.1;
+  proxy_set_header Connection '';
+  proxy_buffering off;
+  chunked_transfer_encoding on;
+}
+```
+
+If a platform applies gzip automatically, SSE can stall because the compressed response is not flushed in the same incremental way. `Cache-Control: no-transform` reduces the chance of that, but platform-specific compression settings may still need to be disabled.
+
+## Verifying that the response is actually streaming
+
+You can verify the endpoint with `curl` before testing in the browser.
+
+```bash
+curl -N -i http://localhost:3000/api/events
+```
+
+The `-N` flag disables curl’s output buffering. If the endpoint is working, each SSE event should appear as it is sent.
+
+Expected output:
+
+```text
+HTTP/1.1 200 OK
+content-type: text/event-stream; charset=utf-8
+cache-control: no-cache, no-transform
+connection: keep-alive
+
+data: ready
+
+data: 2026-09-18T12:00:00.000Z
+
+data: 2026-09-18T12:00:01.000Z
+```
+
+If `curl -N` shows the body only at the end, the response is still being buffered somewhere.
+
+For browser testing, the Network tab should show the request as pending and the response preview should grow over time. If the request completes immediately, it is not a live SSE stream.
+
+## Common incorrect implementations
+
+These patterns look close but do not work as SSE.
+
+### Returning JSON
+
+```ts
+export async function GET() {
+  return Response.json({ status: 'ok' });
+}
+```
+
+This completes immediately. It does not keep the connection open.
+
+### Building a string and returning it once
+
+```ts
+export async function GET() {
+  let body = '';
+
+  body += 'data: one\n\n';
+  body += 'data: two\n\n';
+
+  return new Response(body, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+    },
+  });
+}
+```
+
+This sends both events as one completed payload. The client receives them only after the handler finishes.
+
+### Reading the stream before returning it
+
+```ts
+export async function GET() {
+  const response = new Response('data: hello\n\n', {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+    },
+  });
+
+  const text = await response.text();
+
+  return new Response(text, response);
+}
+```
+
+This consumes the body. A consumed stream is no longer available to the client.
+
+## Practical fix order
+
+Use `runtime = 'edge'` first unless there is a hard requirement for Node.js. Return a `ReadableStream` directly from the route handler. Set `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache, no-transform`, and `Connection: keep-alive`. Do not wrap the stream in `NextResponse.json`, `Response.json`, or any helper that reads the body. Test with `curl -N -i` before checking the browser.
+
+If the route still buffers, inspect middleware, compression, and reverse proxy settings. The SSE protocol depends on incremental chunk delivery, so any layer that aggregates the body will prevent the client from receiving updates.
