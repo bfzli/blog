@@ -2,19 +2,6 @@
     "generatedAt": "2026-09-13T21:53:40.682Z",
     "ideas": [
         {
-            "cell": "nextjs-route-handler-sse-buffering::nextjs::streaming-response-buffered",
-            "title": "Next.js Route Handler Buffers Server-Sent Events and the Client Never Receives Updates",
-            "description": "Next.js can buffer SSE responses unless the handler returns a streaming response with the right headers and runtime.",
-            "tags": [
-                "nextjs",
-                "sse",
-                "streaming",
-                "route-handlers"
-            ],
-            "angle": "Open with the client symptom: the SSE connection opens, but no events arrive. Explain how Next.js route handlers may buffer output through the wrong runtime, missing `text/event-stream`, or accidental response wrapping. Show the required `runtime = 'edge'` or Node choice, flushing headers, and a minimal event stream implementation.",
-            "slug": "next-js-route-handler-buffers-server-sent-events-and-the-client-never-receives-updates"
-        },
-        {
             "cell": "vite-dev-server-port-bind::vite::port-in-use",
             "title": "Vite Dev Server Fails to Start with \"Port 5173 is already in use\"",
             "description": "Vite stops before serving when another process already binds the default port; free the port or choose a new one safely.",
@@ -69,18 +56,18 @@
     ],
     "drafted": [
         {
-            "cell": "nuxt-nitro-cron-missed::nuxt::scheduled-task-registration",
-            "title": "Nuxt Scheduled Task Never Runs Because Nitro Cron Is Not Registered",
-            "description": "Nuxt cron jobs stay silent when Nitro never registers the scheduled route or preset; fix the task registration and deployment target.",
+            "cell": "nextjs-route-handler-sse-buffering::nextjs::streaming-response-buffered",
+            "title": "Next.js Route Handler Buffers Server-Sent Events and the Client Never Receives Updates",
+            "description": "Next.js can buffer SSE responses unless the handler returns a streaming response with the right headers and runtime.",
             "tags": [
-                "nuxt",
-                "nitro",
-                "cron",
-                "scheduled-tasks"
+                "nextjs",
+                "sse",
+                "streaming",
+                "route-handlers"
             ],
-            "angle": "Start with the symptom: the scheduled job never fires and no runtime error appears. Explain how Nitro cron hooks are wired, which deployment targets actually execute them, and why local dev can look correct while the deployed preset drops the schedule. Cover the required config, file placement, and a verification step that proves the job is registered.",
-            "slug": "nuxt-scheduled-task-never-runs-because-nitro-cron-is-not-registered",
-            "draftedAt": "2026-09-17T23:50:29.201Z"
+            "angle": "Open with the client symptom: the SSE connection opens, but no events arrive. Explain how Next.js route handlers may buffer output through the wrong runtime, missing `text/event-stream`, or accidental response wrapping. Show the required `runtime = 'edge'` or Node choice, flushing headers, and a minimal event stream implementation.",
+            "slug": "next-js-route-handler-buffers-server-sent-events-and-the-client-never-receives-updates",
+            "draftedAt": "2026-09-18T23:48:06.111Z"
         }
     ]
 }
