@@ -1,0 +1,354 @@
+---
+title: "Vite Dev Server Fails to Start with \"Port 5173 is already in use\""
+description: "Vite stops before serving when another process already binds the default port; free the port or choose a new one safely."
+tags: ["vite", "dev-server", "port", "localhost"]
+date: Sep 20, 2026
+cell: "vite-dev-server-port-bind::vite::port-in-use"
+---
+
+Vite dev server fails to start on port `5173` with the exact error text `Port 5173 is already in use`.
+
+## What the error means
+
+Vite’s development server binds to a TCP port before it can serve modules, transform source files, or open the browser. By default, that port is `5173`.
+
+When another process already owns `5173`, the bind fails. Vite then stops startup and prints the port conflict message. The failure happens before the server is ready, so the app never reaches the usual dev endpoint.
+
+The problem is not specific to Vite code. It is a standard OS-level socket conflict. A port can only be actively bound by one process on a given IP address and transport combination at a time, unless the platform supports a special sharing mode and the application opts into it. Vite does not rely on that. It expects the port to be free or, if configured, it will try the next free port.
+
+## Why Vite probes a default port
+
+Vite’s dev server is designed to start quickly with a predictable local URL. The default `5173` is chosen so `npm run dev` works without extra flags in most projects.
+
+Startup flow is roughly:
+
+1. Read the resolved server options.
+2. Attempt to bind the configured port, default `5173`.
+3. If the port is occupied and `strictPort` is `false`, probe the next port.
+4. Repeat until a free port is found.
+5. If `strictPort` is `true`, fail immediately on the configured port.
+
+This makes local development convenient, but it also means a second Vite instance, another web server, or any unrelated service already listening on `5173` changes startup behavior.
+
+## How port conflicts happen
+
+A conflict can come from many sources:
+
+- Another Vite dev server is still running.
+- A different frontend tool is using the same default port, such as `webpack-dev-server`, `next dev` with a custom port, or another local server.
+- A previous process did not exit cleanly and still holds the socket.
+- A system service, container, or tunnel agent is bound to the port.
+- A shell script starts more than one server and one of them grabs `5173` first.
+
+On macOS and Linux, you can also see stale parent processes or zombie-like workflow behavior where the terminal session is closed but the underlying Node process keeps running in the background. On Windows, a service or another terminal session can own the port.
+
+The key point is that the error is not usually about your source code. It is about the endpoint Vite wants to listen on.
+
+## How Vite chooses the next available port
+
+When `strictPort` is disabled, Vite does not give up at the first conflict. It searches upward from the configured port and chooses the first free one.
+
+If `5173` is taken, Vite may start on `5174`, then `5175`, and so on, depending on what is available. The exact fallback port is not fixed because it depends on the local machine at startup time.
+
+That behavior is useful when the exact port does not matter. It is less useful when your tooling expects a stable address, such as:
+
+- browser sync configuration
+- reverse proxies
+- local OAuth redirect URLs
+- integration tests that hardcode the dev server URL
+- firewall or allowlist rules
+
+In those cases, you usually want either to free `5173` or to pin a different explicit port.
+
+## Check which process owns port `5173`
+
+Before changing configuration, identify the process that is already listening on the port.
+
+### macOS and Linux
+
+Use `lsof`:
+
+```sh
+lsof -iTCP:5173 -sTCP:LISTEN -n -P
+```
+
+Typical output looks like this:
+
+```text
+COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+node     42191 you   21u  IPv6 0x...      0t0  TCP *:5173 (LISTEN)
+```
+
+The `PID` is the process ID. The `COMMAND` column tells you what owns the socket.
+
+You can inspect the process:
+
+```sh
+ps -p 42191 -o pid=,ppid=,command=
+```
+
+If the process is safe to stop, terminate it:
+
+```sh
+kill 42191
+```
+
+If it ignores a normal termination request, use `SIGKILL` as a last resort:
+
+```sh
+kill -9 42191
+```
+
+### Linux alternatives
+
+`ss` can also show listeners:
+
+```sh
+ss -ltnp 'sport = :5173'
+```
+
+On many distributions, `netstat` is available too, though `ss` is the more modern tool.
+
+### Windows
+
+Use `netstat` with `findstr`:
+
+```bat
+netstat -ano | findstr :5173
+```
+
+Output includes the PID in the last column:
+
+```text
+  TCP    0.0.0.0:5173     0.0.0.0:0      LISTENING     22840
+```
+
+Then inspect the process:
+
+```bat
+tasklist /FI "PID eq 22840"
+```
+
+If needed, terminate it:
+
+```bat
+taskkill /PID 22840 /F
+```
+
+## Start Vite on a different port
+
+If `5173` must stay occupied, set a different port explicitly.
+
+### CLI
+
+```sh
+vite --port 5174
+```
+
+If you run Vite through the package scripts, use the package manager’s passthrough syntax.
+
+With npm:
+
+```json
+{
+  "scripts": {
+    "dev": "vite"
+  }
+}
+```
+
+Run:
+
+```sh
+npm run dev -- --port 5174
+```
+
+With pnpm:
+
+```sh
+pnpm dev --port 5174
+```
+
+With Yarn:
+
+```sh
+yarn dev --port 5174
+```
+
+### `vite.config.ts`
+
+You can set the port in configuration:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  server: {
+    port: 5174
+  }
+})
+```
+
+This is useful when the project should always use the same local port for documentation, proxying, or a companion service.
+
+## Understand `strictPort`
+
+`strictPort` changes the fallback behavior.
+
+When `strictPort` is `false` or omitted, Vite probes upward until it finds a free port.
+
+When `strictPort` is `true`, Vite refuses to switch ports. If `5173` is occupied, startup fails immediately.
+
+Configuration example:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  server: {
+    port: 5173,
+    strictPort: true
+  }
+})
+```
+
+With that configuration, Vite will not silently move to `5174`. That is important when the port is part of another system’s contract.
+
+If you want to guarantee one exact URL, `strictPort: true` is the right control. If you want local convenience and do not care about the exact number, leave it off.
+
+## Why the same conflict can appear after a clean shutdown
+
+The port can remain occupied even if the terminal that started Vite is gone. Several patterns cause that:
+
+- The process was launched by a different terminal tab or editor integration.
+- A parent process launched Vite and kept it alive.
+- A shell script started Vite in the background with `&`, `nohup`, or a task runner.
+- An IDE’s integrated terminal restarted the session but left the child process running.
+- A container or VM forwarded the host port and is still active.
+
+Because the conflict is at the socket layer, Vite can only see that the port is busy. It cannot infer whether the other listener is another dev server, an unrelated service, or a stale background process.
+
+## Confirm the port is free before retrying
+
+After stopping the process, verify that `5173` is no longer listening.
+
+On macOS and Linux:
+
+```sh
+lsof -iTCP:5173 -sTCP:LISTEN -n -P
+```
+
+If there is no output, nothing is listening on that port.
+
+On Windows:
+
+```bat
+netstat -ano | findstr :5173
+```
+
+No output means the port is free.
+
+Then restart Vite:
+
+```sh
+npm run dev
+```
+
+## Use a stable port when other tools depend on it
+
+If browser automation, reverse proxies, or an OAuth provider expects a specific callback URL, configure a fixed port and fail on conflict.
+
+Example:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  server: {
+    port: 5173,
+    strictPort: true
+  }
+})
+```
+
+This makes port ownership explicit. If another process collides with the configured port, the failure is immediate and visible.
+
+If no external tool depends on the exact port, allowing fallback can be acceptable:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  server: {
+    port: 5173,
+    strictPort: false
+  }
+})
+```
+
+That setup keeps development moving, but the URL can change whenever `5173` is occupied.
+
+## Common mistakes when fixing the error
+
+Do not change the port blindly in one place and forget the rest of the toolchain. If the app uses a different dev port, update anything that points at the server:
+
+- proxy settings
+- environment variables
+- browser launch scripts
+- Cypress or Playwright config
+- OAuth redirect URIs
+- local documentation that mentions `http://localhost:5173`
+
+Do not rely on killing a process by name if multiple Node processes are running. Always confirm the PID and the command line before terminating it.
+
+Do not assume the problem is inside Vite itself. The error text is accurate: the port is already in use.
+
+## Example configuration patterns
+
+### Let Vite pick the next free port
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  server: {
+    port: 5173,
+    strictPort: false
+  }
+})
+```
+
+This is the default-style behavior. It avoids startup failure when the exact port is not important.
+
+### Force one exact port and fail if occupied
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  server: {
+    port: 5173,
+    strictPort: true
+  }
+})
+```
+
+Use this when a fixed local URL is required.
+
+### Choose a different explicit port
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  server: {
+    port: 4173
+  }
+})
+```
+
+Use this when `5173` is intentionally reserved by another service.
+
+## Practical takeaway
+
+Prefer freeing `5173` if the port should belong to Vite, because that preserves the default URL and avoids stale configuration. If another tool must keep `5173`, set an explicit alternative port and update dependent tooling. Use `strictPort: true` when you need a fixed address and want startup to fail instead of silently switching ports.
