@@ -2,19 +2,6 @@
     "generatedAt": "2026-09-13T21:53:40.682Z",
     "ideas": [
         {
-            "cell": "vite-dev-server-port-bind::vite::port-in-use",
-            "title": "Vite Dev Server Fails to Start with \"Port 5173 is already in use\"",
-            "description": "Vite stops before serving when another process already binds the default port; free the port or choose a new one safely.",
-            "tags": [
-                "vite",
-                "dev-server",
-                "port",
-                "localhost"
-            ],
-            "angle": "Begin with the exact startup error and the port number Vite reports. Explain why the dev server probes a default port, how port conflicts happen, and how Vite chooses the next available one when `strictPort` is off. Cover `--port`, `strictPort`, and how to identify the process that owns the port.",
-            "slug": "vite-dev-server-fails-to-start-with-port-5173-is-already-in-use"
-        },
-        {
             "cell": "deno-worker-denied-net::deno::missing-network-permission",
             "title": "Deno Fails a Fetch Call with \"Requires net access\" in a Worker",
             "description": "Deno blocks outbound requests without the right permission flags or allowlist; grant network access for the target host.",
@@ -56,18 +43,18 @@
     ],
     "drafted": [
         {
-            "cell": "nextjs-route-handler-sse-buffering::nextjs::streaming-response-buffered",
-            "title": "Next.js Route Handler Buffers Server-Sent Events and the Client Never Receives Updates",
-            "description": "Next.js can buffer SSE responses unless the handler returns a streaming response with the right headers and runtime.",
+            "cell": "vite-dev-server-port-bind::vite::port-in-use",
+            "title": "Vite Dev Server Fails to Start with \"Port 5173 is already in use\"",
+            "description": "Vite stops before serving when another process already binds the default port; free the port or choose a new one safely.",
             "tags": [
-                "nextjs",
-                "sse",
-                "streaming",
-                "route-handlers"
+                "vite",
+                "dev-server",
+                "port",
+                "localhost"
             ],
-            "angle": "Open with the client symptom: the SSE connection opens, but no events arrive. Explain how Next.js route handlers may buffer output through the wrong runtime, missing `text/event-stream`, or accidental response wrapping. Show the required `runtime = 'edge'` or Node choice, flushing headers, and a minimal event stream implementation.",
-            "slug": "next-js-route-handler-buffers-server-sent-events-and-the-client-never-receives-updates",
-            "draftedAt": "2026-09-18T23:48:06.111Z"
+            "angle": "Begin with the exact startup error and the port number Vite reports. Explain why the dev server probes a default port, how port conflicts happen, and how Vite chooses the next available one when `strictPort` is off. Cover `--port`, `strictPort`, and how to identify the process that owns the port.",
+            "slug": "vite-dev-server-fails-to-start-with-port-5173-is-already-in-use",
+            "draftedAt": "2026-09-19T23:49:41.297Z"
         }
     ]
 }
