@@ -1,0 +1,300 @@
+---
+title: "Deno Fails a Fetch Call with \"Requires net access\" in a Worker"
+description: "Deno blocks outbound requests without the right permission flags or allowlist; grant network access for the target host."
+tags: ["deno", "permissions", "fetch", "workers"]
+date: Sep 21, 2026
+cell: "deno-worker-denied-net::deno::missing-network-permission"
+---
+
+`fetch()` in Deno fails with `Requires net access` in a worker, and the runtime returns a permission error similar to `error: Requires net access to "example.com", run again with the --allow-net flag or allowlist the host`.
+
+## What the error means
+
+Deno does not let network access happen by default. A script, a module, or a worker can create a `fetch()` request, but the request is still subject to the runtime permission model. If the process does not have network permission for the target host, the request is blocked before any outbound connection is made.
+
+The error is usually reported from one of these paths:
+
+- direct `fetch()` calls
+- libraries that call `fetch()` internally, such as HTTP clients or SDKs
+- workers created with `new Worker(...)`, whether they run inline code or load a module
+
+The important part is that workers do not get a separate escape hatch. They run inside the same Deno permission system as the parent process. If the parent runtime lacks network access, the worker cannot create it on its own.
+
+## Deno’s permission model
+
+Deno uses explicit permissions instead of broad ambient access. Common flags include:
+
+- `--allow-net`
+- `--allow-read`
+- `--allow-write`
+- `--allow-env`
+- `--allow-run`
+
+Network access is denied unless you grant it. The runtime checks every network operation against the active permission set. For `fetch()`, the target host is validated against that set.
+
+This matters in both of the following cases:
+
+1. A top-level script calls `fetch()`.
+2. A worker, created from that script, calls `fetch()`.
+
+In both cases, the permission decision is made by Deno at runtime. Workers are not a sandbox bypass. They inherit the permissions available to the parent process, and they still must satisfy host restrictions.
+
+## The simplest fix: allow network access
+
+If the code needs unrestricted outbound network access, run Deno with `--allow-net`.
+
+```bash
+deno run --allow-net main.ts
+```
+
+For a worker-based program, the same flag is required on the parent process:
+
+```bash
+deno run --allow-net main.ts
+```
+
+A worker that calls `fetch()` against `https://api.example.com/v1/users` will succeed only if `api.example.com` is permitted.
+
+A minimal example:
+
+```ts
+// main.ts
+const worker = new Worker(new URL("./worker.ts", import.meta.url).href, {
+  type: "module",
+});
+
+worker.onmessage = (event) => {
+  console.log(event.data);
+};
+
+worker.postMessage("start");
+```
+
+```ts
+// worker.ts
+self.onmessage = async () => {
+  const response = await fetch("https://api.example.com/v1/users");
+  const json = await response.json();
+  self.postMessage(json);
+};
+```
+
+Run it with:
+
+```bash
+deno run --allow-net main.ts
+```
+
+Without `--allow-net`, the request is denied.
+
+## Why worker code still needs the flag
+
+A worker does not run outside the process permission boundary. The worker thread, isolate, or module graph may be separate, but the runtime permission check is still centralized.
+
+That means:
+
+- loading code in a worker does not grant access by itself
+- `fetch()` in a worker is not exempt from host checks
+- imported libraries in a worker remain subject to the same network policy
+
+This is especially important when the worker is used as an execution compartment for untrusted or semi-trusted code. The compartment does not automatically inherit unrestricted access. Deno keeps permissions explicit so a worker cannot silently make outbound requests unless the host permits them.
+
+## Use a host allowlist instead of unrestricted network access
+
+`--allow-net` can be narrowed to specific hosts. This is the safer form when the code only needs a known API endpoint.
+
+Example:
+
+```bash
+deno run --allow-net=api.example.com main.ts
+```
+
+This allows requests to `api.example.com` and blocks other hosts.
+
+If the code also needs a port, include it explicitly when needed:
+
+```bash
+deno run --allow-net=api.example.com:443 main.ts
+```
+
+For multiple hosts, separate them with commas:
+
+```bash
+deno run --allow-net=api.example.com,auth.example.com main.ts
+```
+
+This matters because `fetch()` can redirect, and libraries often contact more than one host. A scoped allowlist makes the permitted network surface visible and testable.
+
+## How the host check works
+
+Deno evaluates the destination host against the allowlist before the request is sent. If the destination does not match, the runtime throws a permission error.
+
+This is why a request to `https://api.example.com/users` can work while a request to `https://cdn.example.com/assets.json` fails under the same process. The network permission is not “internet access” in the abstract. It is a host-based permission, and the requested endpoint must match.
+
+That applies to:
+
+- the URL passed directly to `fetch()`
+- URLs constructed dynamically
+- requests issued by libraries inside `fetch()` wrappers
+- worker code that resolves modules or performs runtime HTTP requests
+
+If the code follows redirects to another host, the redirected target must also be allowed.
+
+## Reproducing the failure
+
+A minimal reproduction is a worker that fetches a URL without `--allow-net`.
+
+```ts
+// main.ts
+const worker = new Worker(new URL("./worker.ts", import.meta.url).href, {
+  type: "module",
+});
+
+worker.onmessage = (event) => console.log(event.data);
+worker.onerror = (event) => console.error(event.message);
+
+worker.postMessage(null);
+```
+
+```ts
+// worker.ts
+self.onmessage = async () => {
+  const response = await fetch("https://example.com");
+  self.postMessage(await response.text());
+};
+```
+
+Run it without network permission:
+
+```bash
+deno run main.ts
+```
+
+The worker’s `fetch()` fails with a permission error indicating that network access is required.
+
+Run it with permission:
+
+```bash
+deno run --allow-net=example.com main.ts
+```
+
+The request succeeds because the host is now in the allowlist.
+
+## Libraries that call `fetch()` internally
+
+The visible call site is not always the place where the network request happens. Many Deno-compatible libraries make outbound requests under the hood.
+
+Examples include:
+
+- API clients
+- OpenID Connect and OAuth helpers
+- registry clients
+- SDKs that use `fetch()` for transport
+
+If such a library runs in a worker, the worker still needs the proper network permission from the parent runtime. The error can look like a library failure even though the cause is permission denial.
+
+The fix is the same: identify the host the library contacts, then grant that host explicitly.
+
+For example:
+
+```bash
+deno run --allow-net=api.example.com,auth.example.com app.ts
+```
+
+If the library reaches multiple services, each one must be included.
+
+## Deployment-specific permission settings
+
+The same rule applies outside `deno run`. Deployment environments that execute Deno code usually provide their own permission configuration.
+
+That can include:
+
+- Deno Deploy permission settings
+- container runtime flags
+- platform-level environment policies
+- worker settings in a managed Deno platform
+
+The core requirement does not change. The runtime must be configured to allow the request target.
+
+If the code runs in a deployment that uses its own config file or dashboard settings, the network allowlist needs to be set there rather than only on a local command line. A local `--allow-net` flag does not affect a remote runtime.
+
+## Scoped permissions for safer execution
+
+The safer pattern is to grant only the exact hosts needed by the program.
+
+For a single API:
+
+```bash
+deno run --allow-net=api.example.com app.ts
+```
+
+For a read-only data endpoint and an auth endpoint:
+
+```bash
+deno run --allow-net=api.example.com,auth.example.com app.ts
+```
+
+For a worker that fetches a package manifest and nothing else:
+
+```bash
+deno run --allow-net=registry.example.com worker-main.ts
+```
+
+If the program needs access to a development proxy on a port:
+
+```bash
+deno run --allow-net=localhost:8080 app.ts
+```
+
+This is preferable to `--allow-net` with no allowlist when the required hosts are known in advance. It limits the blast radius of an accidental or malicious request.
+
+## Verifying which host is blocked
+
+When the error text says `Requires net access to "host"`, that host is the first check to confirm. Compare it with the permission string passed to `--allow-net`.
+
+Common mismatches include:
+
+- using `api.example.com` in the allowlist but requesting `www.api.example.com`
+- allowing `localhost` but requesting `127.0.0.1`
+- allowing `example.com:443` but requesting the host without the port, or vice versa depending on the platform’s normalization
+- allowing one host while a redirect reaches a second host
+
+If the request is generated dynamically, log the exact URL before calling `fetch()`.
+
+```ts
+const url = new URL("/v1/users", "https://api.example.com");
+console.log(url.href);
+const response = await fetch(url);
+```
+
+That makes it easier to compare the runtime destination with the configured permission.
+
+## Workers, module loading, and the same boundary
+
+Workers often load code from another module URL. Module loading itself can also be subject to Deno’s permission checks depending on how the worker is started and where the module comes from. The same principle applies: permissions are explicit, and the worker does not bypass them.
+
+For network calls, the key boundary is the actual request host. Whether the request originates in the main thread, in a worker, or in a library called by either one, Deno checks the permission before the connection is made.
+
+If the code architecture uses workers for isolation, that isolation is about execution structure, not privilege escalation.
+
+## Practical troubleshooting checklist
+
+First, check the exact host in the error text.
+
+Then verify that the runtime was started with the matching network permission:
+
+```bash
+deno run --allow-net=that-host.example main.ts
+```
+
+If the code runs in a worker, keep the permission on the parent process. Do not expect the worker to gain network access just because it is separate code.
+
+If the code is deployed, update the platform’s Deno permission settings or environment configuration, not only the local command line.
+
+If the program uses a library, identify the outbound host the library contacts and add that host to the allowlist.
+
+If redirects are involved, include every host that can appear in the request path.
+
+## Closing practical takeaway
+
+Prefer a host-scoped `--allow-net=host1,host2` configuration over unrestricted `--allow-net`, because it fixes the permission error while keeping the network surface minimal. Use full network access only when the code genuinely needs it. For worker-based code, keep the permission on the parent runtime or deployment config, since workers inherit Deno’s permission model and cannot bypass it.
