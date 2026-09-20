@@ -1,1 +1,1 @@
-npm run web:check && npm run web:lint
+bun run web:check && bun run web:lint

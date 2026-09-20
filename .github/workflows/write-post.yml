@@ -23,14 +23,13 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - uses: actions/setup-node@v4
+            - uses: oven-sh/setup-bun@v2
               with:
-                  node-version: 22
-                  cache: npm
+                  bun-version: latest
 
-            - run: npm ci
+            - run: bun install --frozen-lockfile
 
-            - run: npm run posts:write
+            - run: bun run posts:write
               id: write
               env:
                   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -40,7 +39,7 @@ jobs:
             - name: Set the advanced queue aside
               run: cp scripts/queue.json "$RUNNER_TEMP/queue.json"
 
-            - run: npm run web:build
+            - run: bun run web:build
 
             - uses: peter-evans/create-pull-request@v7
               id: draft

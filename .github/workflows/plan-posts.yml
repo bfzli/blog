@@ -22,14 +22,13 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - uses: actions/setup-node@v4
+            - uses: oven-sh/setup-bun@v2
               with:
-                  node-version: 22
-                  cache: npm
+                  bun-version: latest
 
-            - run: npm ci
+            - run: bun install --frozen-lockfile
 
-            - run: npm run posts:plan
+            - run: bun run posts:plan
               env:
                   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
