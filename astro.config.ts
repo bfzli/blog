@@ -23,5 +23,5 @@ export default defineConfig({
         syntaxHighlight: false,
         rehypePlugins: [[prism(refractor), { ignoreMissing: true }]]
     },
-    integrations: [mdx(), sitemap(), solid(), tailwind(), partytown({ config: { forward: ['dataLayer.push'] } })],
+    integrations: [mdx(), sitemap({ customPages: ['https://bfzli.com/me.pdf'] }), solid(), tailwind(), partytown({ config: { forward: ['dataLayer.push'] } })],
 })
