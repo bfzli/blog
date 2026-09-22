@@ -2,19 +2,6 @@
     "generatedAt": "2026-09-20T22:00:11.660Z",
     "ideas": [
         {
-            "cell": "dockerfile-nextjs-node-version::docker::runtime-version-mismatch",
-            "title": "Dockerfile Builds a Next.js App, Then Node Crashes with \"ERR_OSSL_EVP_UNSUPPORTED\"",
-            "description": "A Docker image with the wrong Node or OpenSSL version can break Next.js builds; align the base image and runtime.",
-            "tags": [
-                "docker",
-                "nextjs",
-                "node",
-                "openssl"
-            ],
-            "angle": "Open with the build or startup error exactly as it appears inside the container. Explain why Next.js or its transitive dependencies can fail when the image pins an older Node/OpenSSL combo than the lockfile expects. Cover choosing a compatible base image, matching build and runtime stages, and verifying the Node version inside the container.",
-            "slug": "dockerfile-builds-a-next-js-app-then-node-crashes-with-err-ossl-evp-unsupported"
-        },
-        {
             "cell": "jsdom-undefined::sveltekit::test-env-on-server-only-code",
             "title": "SvelteKit Tests Throw ReferenceError: window is not defined in JSDOM",
             "description": "Why browser globals are missing in SvelteKit tests and how to run server-only code under a DOM-aware test environment.",
@@ -115,18 +102,18 @@
     ],
     "drafted": [
         {
-            "cell": "postgres-migration-drift::postgres::sequence-default-mismatch",
-            "title": "Postgres Generates Duplicate IDs After a Manual Import Leaves the Sequence Behind",
-            "description": "Postgres inserts collide when an imported table’s sequence is lower than existing rows; reset the sequence to match the data.",
+            "cell": "dockerfile-nextjs-node-version::docker::runtime-version-mismatch",
+            "title": "Dockerfile Builds a Next.js App, Then Node Crashes with \"ERR_OSSL_EVP_UNSUPPORTED\"",
+            "description": "A Docker image with the wrong Node or OpenSSL version can break Next.js builds; align the base image and runtime.",
             "tags": [
-                "postgres",
-                "sql",
-                "sequence",
-                "migrations"
+                "docker",
+                "nextjs",
+                "node",
+                "openssl"
             ],
-            "angle": "Start with the concrete failure: `duplicate key value violates unique constraint` on an auto-increment column. Explain how `SERIAL` or identity columns depend on a sequence, why bulk imports or manual inserts can leave the sequence behind, and how that creates collisions. Show the SQL to inspect the current value and advance the sequence to `max(id)`.",
-            "slug": "postgres-generates-duplicate-ids-after-a-manual-import-leaves-the-sequence-behind",
-            "draftedAt": "2026-09-22T00:27:21.520Z"
+            "angle": "Open with the build or startup error exactly as it appears inside the container. Explain why Next.js or its transitive dependencies can fail when the image pins an older Node/OpenSSL combo than the lockfile expects. Cover choosing a compatible base image, matching build and runtime stages, and verifying the Node version inside the container.",
+            "slug": "dockerfile-builds-a-next-js-app-then-node-crashes-with-err-ossl-evp-unsupported",
+            "draftedAt": "2026-09-22T23:56:23.562Z"
         }
     ]
 }
