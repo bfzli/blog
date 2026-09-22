@@ -2,19 +2,6 @@
     "generatedAt": "2026-09-20T22:00:11.660Z",
     "ideas": [
         {
-            "cell": "postgres-migration-drift::postgres::sequence-default-mismatch",
-            "title": "Postgres Generates Duplicate IDs After a Manual Import Leaves the Sequence Behind",
-            "description": "Postgres inserts collide when an imported table’s sequence is lower than existing rows; reset the sequence to match the data.",
-            "tags": [
-                "postgres",
-                "sql",
-                "sequence",
-                "migrations"
-            ],
-            "angle": "Start with the concrete failure: `duplicate key value violates unique constraint` on an auto-increment column. Explain how `SERIAL` or identity columns depend on a sequence, why bulk imports or manual inserts can leave the sequence behind, and how that creates collisions. Show the SQL to inspect the current value and advance the sequence to `max(id)`.",
-            "slug": "postgres-generates-duplicate-ids-after-a-manual-import-leaves-the-sequence-behind"
-        },
-        {
             "cell": "dockerfile-nextjs-node-version::docker::runtime-version-mismatch",
             "title": "Dockerfile Builds a Next.js App, Then Node Crashes with \"ERR_OSSL_EVP_UNSUPPORTED\"",
             "description": "A Docker image with the wrong Node or OpenSSL version can break Next.js builds; align the base image and runtime.",
@@ -128,18 +115,18 @@
     ],
     "drafted": [
         {
-            "cell": "deno-worker-denied-net::deno::missing-network-permission",
-            "title": "Deno Fails a Fetch Call with \"Requires net access\" in a Worker",
-            "description": "Deno blocks outbound requests without the right permission flags or allowlist; grant network access for the target host.",
+            "cell": "postgres-migration-drift::postgres::sequence-default-mismatch",
+            "title": "Postgres Generates Duplicate IDs After a Manual Import Leaves the Sequence Behind",
+            "description": "Postgres inserts collide when an imported table’s sequence is lower than existing rows; reset the sequence to match the data.",
             "tags": [
-                "deno",
-                "permissions",
-                "fetch",
-                "workers"
+                "postgres",
+                "sql",
+                "sequence",
+                "migrations"
             ],
-            "angle": "Open with the exact permission error from `fetch()` or a library call. Explain Deno's permission model, why worker and script contexts still need explicit `--allow-net` or deployment-specific permission settings, and how host allowlists affect the request. Include the exact command-line flag and a safer scoped permission example.",
-            "slug": "deno-fails-a-fetch-call-with-requires-net-access-in-a-worker",
-            "draftedAt": "2026-09-20T23:46:10.291Z"
+            "angle": "Start with the concrete failure: `duplicate key value violates unique constraint` on an auto-increment column. Explain how `SERIAL` or identity columns depend on a sequence, why bulk imports or manual inserts can leave the sequence behind, and how that creates collisions. Show the SQL to inspect the current value and advance the sequence to `max(id)`.",
+            "slug": "postgres-generates-duplicate-ids-after-a-manual-import-leaves-the-sequence-behind",
+            "draftedAt": "2026-09-22T00:27:21.520Z"
         }
     ]
 }
