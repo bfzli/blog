@@ -1,0 +1,328 @@
+---
+title: "Dockerfile Builds a Next.js App, Then Node Crashes with \"ERR_OSSL_EVP_UNSUPPORTED\""
+description: "A Docker image with the wrong Node or OpenSSL version can break Next.js builds; align the base image and runtime."
+tags: ["docker", "nextjs", "node", "openssl"]
+date: Sep 23, 2026
+cell: "dockerfile-nextjs-node-version::docker::runtime-version-mismatch"
+---
+
+Next.js build fails inside the container, and Node aborts with `ERR_OSSL_EVP_UNSUPPORTED`:
+
+```text
+Error: error:0308010C:digital envelope routines::unsupported
+    at new Hash (node:internal/crypto/hash:71:19)
+    ...
+Node.js v17.x.x
+```
+
+In Docker, that error usually means the image is running a Node/OpenSSL combination that does not match what the app’s build expects. Next.js and its transitive dependencies may still call hashing APIs that were accepted by older OpenSSL behavior but are rejected by newer defaults or by a mismatched runtime. If the Dockerfile pins an older base image for one stage and a different Node version for another, the build can fail during `next build`, or the container can start and fail immediately on startup.
+
+## What the error means
+
+`ERR_OSSL_EVP_UNSUPPORTED` comes from OpenSSL, not from Next.js itself. The common trigger is a crypto hash operation that webpack, `next build`, or a dependency in the toolchain tries to perform with a digest or provider setup that the current Node binary does not allow.
+
+The most common pattern is this:
+
+- the project was built against one Node major version locally
+- the Docker image uses another Node major version
+- the lockfile pulls in a package stack that expects the older hashing behavior
+- OpenSSL 3 is active in the container runtime, and the requested algorithm is blocked or unavailable
+
+This is why the same code can work on a developer machine and fail in Docker. The container is not just packaging the app; it is also defining the Node runtime and the OpenSSL implementation used during `next build`.
+
+The problem often appears with older Next.js and webpack-based builds on Node `17` and newer, but it can also happen when a Dockerfile mixes versions across stages. For example, the build stage may use `node:16`, while the final runtime stage uses `node:18-alpine`, or vice versa. Even if the app is built successfully in one stage, the runtime stage may crash when Next.js initializes server-side code, generates hashes, or loads native dependencies.
+
+## Why Next.js hits this path
+
+Next.js does not usually call OpenSSL directly. The failure generally comes from transitive build-time code.
+
+The most common path is webpack’s hashing pipeline. Older webpack versions and older Next.js releases can default to algorithms that depend on Node’s `crypto` module, which in turn uses OpenSSL. When Node changes the OpenSSL backend or default provider behavior, a hash call such as `crypto.createHash('md4')` can fail with `ERR_OSSL_EVP_UNSUPPORTED`.
+
+That is why the stack trace often points into `node:internal/crypto/hash` rather than into application code. The app code is not the root cause. The build toolchain is asking Node for a hash algorithm that the current container image does not permit.
+
+A second failure mode is more direct: the Docker image pins a Node version that is older than what the lockfile and dependencies were resolved against. The `package-lock.json` or `pnpm-lock.yaml` may have been generated under a newer Node release, while the image still uses an older base image. That mismatch can produce a different set of transitive versions, and one of those versions may rely on crypto behavior unavailable in the container.
+
+In short, the failure is a compatibility issue between:
+
+- Node major version
+- OpenSSL version or provider behavior
+- Next.js and webpack versions
+- the lockfile that resolved the dependency tree
+
+## Confirm the exact Node version inside the container
+
+Before changing anything, verify the Node version in the container, not on the host.
+
+Run the image and print the runtime details:
+
+```bash
+docker run --rm your-image-name node -v
+docker run --rm your-image-name node -p "process.versions"
+```
+
+The `process.versions` output shows the Node and OpenSSL versions together. That is important because the problem is usually about the combination, not just `node -v`.
+
+Example output:
+
+```text
+{
+  node: '18.20.3',
+  openssl: '3.0.13',
+  uv: '1.46.0',
+  ...
+}
+```
+
+If the app was built with a lockfile and package set that expects another runtime, that difference is enough to trigger the error.
+
+You can also inspect the version during the Docker build itself:
+
+```dockerfile
+RUN node -v && node -p "process.versions.openssl"
+```
+
+Put that line in both the build stage and the runtime stage. If the versions differ, the container image is not internally consistent.
+
+## Choose a base image that matches the app
+
+The most reliable fix is to align the Docker base image with the Node version that the app and lockfile expect.
+
+For modern Next.js projects, `node:18` or `node:20` is usually a safer choice than older LTS branches. The exact choice should match the project’s `package.json` `engines` field, the CI environment, and the lockfile generation environment.
+
+A minimal multi-stage Dockerfile for a Next.js app can look like this:
+
+```dockerfile
+FROM node:20-bookworm-slim AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM node:20-bookworm-slim AS builder
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:20-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
+
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+This keeps the Node major version identical in all stages. That matters because Next.js build artifacts, native modules, and transitive dependencies are all sensitive to the runtime they were produced under.
+
+If your project uses `pnpm`, the same principle applies:
+
+```dockerfile
+FROM node:20-bookworm-slim AS deps
+WORKDIR /app
+
+RUN corepack enable
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+FROM node:20-bookworm-slim AS builder
+WORKDIR /app
+
+RUN corepack enable
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN pnpm build
+
+FROM node:20-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
+
+EXPOSE 3000
+CMD ["pnpm", "start"]
+```
+
+The important part is not the package manager. It is the fact that the build and runtime stages use the same Node image family and version.
+
+## Avoid mixing build and runtime Node versions
+
+A common Dockerfile pattern is to build on a larger image and run on a smaller one. That is valid, but the Node major version should stay the same unless there is a specific compatibility reason.
+
+This is a risky pattern:
+
+```dockerfile
+FROM node:16 AS builder
+WORKDIR /app
+COPY . .
+RUN npm ci && npm run build
+
+FROM node:18-alpine AS runner
+WORKDIR /app
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+CMD ["npm", "start"]
+```
+
+The build succeeded under Node `16`, but the runtime is Node `18`. If a transitive dependency compiled or resolved behavior differently under the first image, the second image may fail at startup.
+
+The reverse is also a problem:
+
+```dockerfile
+FROM node:18 AS builder
+WORKDIR /app
+COPY . .
+RUN npm ci && npm run build
+
+FROM node:16 AS runner
+WORKDIR /app
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+CMD ["npm", "start"]
+```
+
+That can fail because the runtime image may not support features or dependencies that were selected during the build.
+
+The safe rule is simple: use the same major Node version in all stages. Prefer the same tag family as well, such as `node:20-bookworm-slim` for both build and runtime.
+
+## Check the lockfile and engines field
+
+The lockfile is part of the compatibility contract. If the lockfile was generated with one Node major version and then installed under another, the resolved tree can change.
+
+Check `package.json` for an `engines` field:
+
+```json
+{
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}
+```
+
+If that field exists, use a Docker base image that satisfies it. If it says `>=20`, do not use `node:18`.
+
+Also check the package manager lockfile in use:
+
+- `package-lock.json` for `npm ci`
+- `pnpm-lock.yaml` for `pnpm install --frozen-lockfile`
+- `yarn.lock` for `yarn --frozen-lockfile`
+
+Then make sure the Dockerfile uses the matching command. Mixing `npm install` with a `pnpm-lock.yaml`, or copying the wrong lockfile, can change dependency resolution and pull in a version of webpack or Next.js that behaves differently under OpenSSL.
+
+## If you need a short-term workaround, use the legacy OpenSSL provider
+
+There is a temporary workaround for Node `17` and some older Next.js builds:
+
+```bash
+NODE_OPTIONS=--openssl-legacy-provider npm run build
+```
+
+Or in Docker:
+
+```dockerfile
+ENV NODE_OPTIONS=--openssl-legacy-provider
+RUN npm run build
+```
+
+This works by enabling the legacy OpenSSL provider so algorithms like the old webpack hash path can run.
+
+However, it is a workaround, not the preferred fix. It can mask an outdated dependency stack and it ties the build to an OpenSSL compatibility flag. If you can change the base image and dependency versions, that is better than relying on the flag indefinitely.
+
+If you do use it, scope it carefully. It should be applied only where the build needs it, not as a blanket setting for all runtime containers.
+
+## Verify the build container before copying artifacts
+
+Use explicit version checks in the Dockerfile while debugging.
+
+```dockerfile
+FROM node:20-bookworm-slim AS builder
+WORKDIR /app
+
+RUN node -v && node -p "process.versions.openssl"
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+```
+
+Then build with plain output:
+
+```bash
+docker build --no-cache --progress=plain -t next-app .
+```
+
+If the build output shows the wrong Node version, fix the base image before changing application code.
+
+You can also inspect the final image interactively:
+
+```bash
+docker run --rm -it next-app sh
+node -v
+node -p "process.versions.openssl"
+npm ls next webpack
+```
+
+That last command is useful when the failure depends on a transitive package. If `next` or `webpack` is older than expected, the lockfile or install command may be pulling in an outdated tree.
+
+## Check whether Next.js or webpack needs an upgrade
+
+Some versions of Next.js have explicit fixes for OpenSSL-related hash behavior. If the project is pinned to an older Next.js release, upgrading may remove the need for the legacy provider flag.
+
+Inspect the installed version:
+
+```bash
+npm ls next webpack
+```
+
+Then compare it with the Node version used in Docker. Older Next.js releases are more likely to break under Node `17+` with OpenSSL `3`. Newer releases usually handle the hashing path correctly, but the compatibility target still needs to match the Docker image.
+
+If you must keep an older Next.js version for now, make the base image match the environment that version supports. That is often simpler than trying to retrofit the runtime with compatibility flags.
+
+## Practical Dockerfile pattern that avoids the mismatch
+
+A stable pattern is:
+
+- use one Node major version for all stages
+- use the same distro family for build and runtime
+- install dependencies with the lockfile-specific command
+- print Node and OpenSSL versions during the build
+- avoid `NODE_OPTIONS=--openssl-legacy-provider` unless there is no immediate upgrade path
+
+Example:
+
+```dockerfile
+FROM node:20-bookworm-slim AS base
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM base AS build
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN node -v && node -p "process.versions.openssl" && npm run build
+
+FROM base AS runtime
+ENV NODE_ENV=production
+COPY --from=build /app/.next ./.next
+COPY --from=build /app/public ./public
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/node_modules ./node_modules
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+That layout keeps the runtime predictable and reduces the chance that a future lockfile update or base image change will reintroduce the issue.
+
+## Practical takeaway
+
+Prefer a single compatible Node base image across build and runtime, and match it to the project’s declared `engines` range and lockfile. Verify `node -v` and `process.versions.openssl` inside the container before debugging application code. If the app still hits `ERR_OSSL_EVP_UNSUPPORTED`, use `NODE_OPTIONS=--openssl-legacy-provider` only as a temporary build workaround while you align Next.js, webpack, and the Docker base image.
