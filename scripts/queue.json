@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-20T22:00:11.660Z",
     "ideas": [
         {
-            "cell": "jsdom-undefined::sveltekit::test-env-on-server-only-code",
-            "title": "SvelteKit Tests Throw ReferenceError: window is not defined in JSDOM",
-            "description": "Why browser globals are missing in SvelteKit tests and how to run server-only code under a DOM-aware test environment.",
-            "tags": [
-                "sveltekit",
-                "testing",
-                "jsdom",
-                "vitest",
-                "node"
-            ],
-            "angle": "Cover how SvelteKit test files can execute modules in Node before JSDOM is installed, which leaves `window` undefined. Explain the boundary between server-only modules and browser-only code, then show how to configure Vitest, move DOM access behind `onMount`, or mock globals when the code must stay server-side.",
-            "slug": "sveltekit-tests-throw-referenceerror-window-is-not-defined-in-jsdom"
-        },
-        {
             "cell": "require-esm::node::cli-startup-interoperability",
             "title": "Node CLI Fails with ERR_REQUIRE_ESM When `require()` Loads an ESM Dependency",
             "description": "Why a published Node CLI crashes on startup when CommonJS reaches an ESM-only package, and how to fix the import boundary.",
@@ -102,18 +88,19 @@
     ],
     "drafted": [
         {
-            "cell": "dockerfile-nextjs-node-version::docker::runtime-version-mismatch",
-            "title": "Dockerfile Builds a Next.js App, Then Node Crashes with \"ERR_OSSL_EVP_UNSUPPORTED\"",
-            "description": "A Docker image with the wrong Node or OpenSSL version can break Next.js builds; align the base image and runtime.",
+            "cell": "jsdom-undefined::sveltekit::test-env-on-server-only-code",
+            "title": "SvelteKit Tests Throw ReferenceError: window is not defined in JSDOM",
+            "description": "Why browser globals are missing in SvelteKit tests and how to run server-only code under a DOM-aware test environment.",
             "tags": [
-                "docker",
-                "nextjs",
-                "node",
-                "openssl"
+                "sveltekit",
+                "testing",
+                "jsdom",
+                "vitest",
+                "node"
             ],
-            "angle": "Open with the build or startup error exactly as it appears inside the container. Explain why Next.js or its transitive dependencies can fail when the image pins an older Node/OpenSSL combo than the lockfile expects. Cover choosing a compatible base image, matching build and runtime stages, and verifying the Node version inside the container.",
-            "slug": "dockerfile-builds-a-next-js-app-then-node-crashes-with-err-ossl-evp-unsupported",
-            "draftedAt": "2026-09-22T23:56:23.562Z"
+            "angle": "Cover how SvelteKit test files can execute modules in Node before JSDOM is installed, which leaves `window` undefined. Explain the boundary between server-only modules and browser-only code, then show how to configure Vitest, move DOM access behind `onMount`, or mock globals when the code must stay server-side.",
+            "slug": "sveltekit-tests-throw-referenceerror-window-is-not-defined-in-jsdom",
+            "draftedAt": "2026-09-24T00:09:33.517Z"
         }
     ]
 }
