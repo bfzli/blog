@@ -1,0 +1,390 @@
+---
+title: "SvelteKit Tests Throw ReferenceError: window is not defined in JSDOM"
+description: "Why browser globals are missing in SvelteKit tests and how to run server-only code under a DOM-aware test environment."
+tags: ["sveltekit", "testing", "jsdom", "vitest", "node"]
+date: Sep 24, 2026
+cell: "jsdom-undefined::sveltekit::test-env-on-server-only-code"
+---
+
+SvelteKit test modules fail under Vitest with `ReferenceError: window is not defined` when code that expects a browser runs before JSDOM has been installed.
+
+## Why this happens
+
+SvelteKit tests usually run in Vitest. Vitest can execute files in a Node environment or in a DOM-like environment powered by JSDOM. The important detail is when module code runs.
+
+ECMAScript modules are evaluated as soon as they are imported. If a test file imports a module that touches `window`, `document`, or `localStorage` at the top level, that code runs during module initialization. If the file is loaded in Node, or if JSDOM has not been selected for that file, `window` does not exist and module evaluation throws immediately.
+
+The error is typically one of these:
+
+```text
+ReferenceError: window is not defined
+```
+
+or, when `window` is referenced indirectly:
+
+```text
+TypeError: Cannot read properties of undefined
+```
+
+This is not specific to SvelteKit itself. It is a module-loading problem plus an environment boundary problem.
+
+## The boundary in SvelteKit
+
+SvelteKit code can belong to two different execution environments:
+
+- server-only code, which runs in Node during rendering, load functions, form actions, endpoints, and some test setups
+- browser-only code, which runs after hydration in the client and can access `window`, `document`, and other DOM globals
+
+SvelteKit exposes this boundary through `import { browser } from '$app/environment'`. That value is `true` only in the browser. It is the correct guard for code paths that must not run on the server.
+
+The problem appears when browser-only access leaks into modules that are imported by server-side code or by tests that start in Node.
+
+A common pattern is this:
+
+```ts
+// src/lib/storage.ts
+export const theme = window.localStorage.getItem('theme') ?? 'light';
+```
+
+Any import of `theme` evaluates `window.localStorage.getItem(...)` immediately. If that module is imported in a Node context, the import itself fails.
+
+The same issue can happen in Svelte components if browser APIs are used outside lifecycle hooks:
+
+```svelte
+<script lang="ts">
+  const width = window.innerWidth;
+</script>
+```
+
+That line runs during server rendering and during test module evaluation, not only in the browser.
+
+## How Vitest and JSDOM interact
+
+Vitest supports per-file environments. If `environment` is `node`, no DOM globals exist. If `environment` is `jsdom`, Vitest creates a DOM-like environment for the test file.
+
+The subtle part is that a file can still import modules before the environment is appropriate for the code inside them, depending on where the import is placed and how the test suite is structured. Top-level imports are evaluated before the test body runs, so any side effects in imported modules happen immediately.
+
+A basic Vitest config for SvelteKit typically looks like this:
+
+```ts
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+import { sveltekit } from '@sveltejs/kit/vite';
+
+export default defineConfig({
+  plugins: [sveltekit()],
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts']
+  }
+});
+```
+
+With that configuration, browser APIs are available in test files that run under JSDOM. But this does not make every module safe. A module that runs during build-time, server rendering, or a Node-only test file can still fail if it touches browser globals at import time.
+
+## A concrete failing example
+
+Consider this utility:
+
+```ts
+// src/lib/theme.ts
+export const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+```
+
+And this test:
+
+```ts
+// src/lib/theme.test.ts
+import { describe, it, expect } from 'vitest';
+import { prefersDark } from './theme';
+
+describe('prefersDark', () => {
+  it('returns a boolean', () => {
+    expect(typeof prefersDark).toBe('boolean');
+  });
+});
+```
+
+If the test file runs in Node, the import of `./theme` throws before the test starts. If the test file runs in JSDOM, it may still fail if `matchMedia` is not provided by that JSDOM version or by your setup. In either case, the problem is module-level browser access.
+
+The fix is not “use JSDOM everywhere”. The fix is to move browser access behind a browser-only boundary.
+
+## Prefer `onMount` for browser-only work
+
+In Svelte components, browser-only code belongs in `onMount`. That hook runs only on the client, after the component has been mounted in the browser. It does not run during server-side rendering.
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  let width = 0;
+
+  onMount(() => {
+    width = window.innerWidth;
+  });
+</script>
+
+<p>Window width: {width}</p>
+```
+
+This pattern avoids server rendering failures because `window` is never accessed while the component is rendered on the server.
+
+If the value is needed in a reusable module, split the code so the DOM access stays inside a function that is called only from the browser:
+
+```ts
+// src/lib/browser.ts
+export function getWindowWidth(): number {
+  return window.innerWidth;
+}
+```
+
+Then call it from `onMount`:
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { getWindowWidth } from '$lib/browser';
+
+  let width = 0;
+
+  onMount(() => {
+    width = getWindowWidth();
+  });
+</script>
+```
+
+This separation keeps the module import safe. The function is only executed in the browser.
+
+## Use `browser` when shared code can run on both sides
+
+Some code paths are shared between server and client. In that case, use the `browser` flag from `$app/environment` to gate DOM-specific logic.
+
+```ts
+// src/lib/storage.ts
+import { browser } from '$app/environment';
+
+export function getTheme(): string {
+  if (!browser) return 'light';
+  return window.localStorage.getItem('theme') ?? 'light';
+}
+```
+
+This pattern is useful when code must be imported by both server and browser modules. The `browser` check prevents `window` access on the server.
+
+Do not destructure `window` or `document` before checking `browser`. This is still unsafe:
+
+```ts
+import { browser } from '$app/environment';
+
+const { localStorage } = window; // still throws immediately
+```
+
+The access itself must be inside the guarded branch.
+
+## Configure Vitest for DOM-aware tests
+
+If a test needs DOM APIs, configure Vitest to use JSDOM. The configuration can be global or scoped to specific test files.
+
+Global setup:
+
+```ts
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+import { sveltekit } from '@sveltejs/kit/vite';
+
+export default defineConfig({
+  plugins: [sveltekit()],
+  test: {
+    environment: 'jsdom',
+    globals: true
+  }
+});
+```
+
+Install the required packages if they are not already present:
+
+```bash
+npm install -D vitest jsdom @sveltejs/kit @sveltejs/vite-plugin-svelte
+```
+
+If only some tests need DOM access, keep the default environment as `node` and annotate specific files:
+
+```ts
+// src/lib/theme.test.ts
+// @vitest-environment jsdom
+
+import { describe, it, expect } from 'vitest';
+import { prefersDark } from './theme';
+
+describe('prefersDark', () => {
+  it('returns a boolean', () => {
+    expect(typeof prefersDark).toBe('boolean');
+  });
+});
+```
+
+That comment tells Vitest to run this file under JSDOM without changing the entire suite.
+
+Use JSDOM for tests that assert browser behavior. Keep Node for pure logic tests. That separation helps expose accidental browser coupling.
+
+## When modules must stay server-side, mock browser globals
+
+Sometimes code needs to remain server-side, but a dependency or utility expects a browser global during testing. In that case, mock the missing pieces in the test environment.
+
+A minimal example using `vi.stubGlobal`:
+
+```ts
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+
+describe('localStorage-dependent code', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: vi.fn(() => 'dark'),
+        setItem: vi.fn()
+      }
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reads from localStorage', () => {
+    const value = window.localStorage.getItem('theme');
+    expect(value).toBe('dark');
+  });
+});
+```
+
+This approach is a test-only substitute, not a production fix. It works when the goal is to isolate code that cannot be refactored immediately.
+
+For APIs such as `matchMedia`, `ResizeObserver`, or `IntersectionObserver`, provide the specific global that code expects:
+
+```ts
+import { vi } from 'vitest';
+
+vi.stubGlobal('matchMedia', (query: string) => ({
+  matches: false,
+  media: query,
+  onchange: null,
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+  dispatchEvent: vi.fn()
+}));
+```
+
+If the code uses `window.matchMedia`, stub `window` with the method. If it calls `matchMedia` directly, stub the global name itself. Match the shape of the real API closely enough for the code under test.
+
+## Avoid top-level browser access in shared modules
+
+The safest structure is to keep browser access out of module initialization entirely.
+
+Unsafe:
+
+```ts
+// src/lib/config.ts
+export const isSmallScreen = window.innerWidth < 768;
+```
+
+Safe:
+
+```ts
+// src/lib/config.ts
+export function isSmallScreen(): boolean {
+  return window.innerWidth < 768;
+}
+```
+
+Then call the function only in a browser context, or guard it:
+
+```ts
+import { browser } from '$app/environment';
+
+export function isSmallScreen(): boolean {
+  if (!browser) return false;
+  return window.innerWidth < 768;
+}
+```
+
+The rule applies to imported constants, helper functions, and third-party modules with side effects. If a module performs browser work at import time, importing it from a server path will fail regardless of how the rest of the code is written.
+
+## Common SvelteKit places where this shows up
+
+Several SvelteKit files can execute without a browser:
+
+- `+page.server.ts`
+- `+layout.server.ts`
+- `+server.ts`
+- `load` functions that run on the server
+- server-rendered component code before hydration
+- test files that run in `node`
+
+Browser-only code should not be imported directly into these paths. If a function needs `window`, put it in a browser-only module and call it only from client code or `onMount`.
+
+A useful split is:
+
+- `src/lib/server/*` for Node-only utilities
+- `src/lib/browser/*` for DOM utilities
+- shared code that contains no direct browser access
+
+That structure makes accidental imports easier to spot.
+
+## Debugging the failure path
+
+When `window is not defined` appears, inspect the stack trace and the first imported module that touches browser globals. The failure is often not in the test file itself. It can be in a transitive dependency.
+
+Check for:
+
+- top-level `window`, `document`, `navigator`, `localStorage`, `sessionStorage`, `location`, `history`
+- `onMount` code accidentally moved into module scope
+- browser-only library imports inside `+server.ts` or `*.server.ts`
+- test files missing `// @vitest-environment jsdom`
+
+If the error happens before any test body runs, the culprit is usually module initialization.
+
+## Practical setup that prevents the error
+
+A stable setup usually combines three rules:
+
+1. Use `onMount` for browser-only access in components.
+2. Use `browser` checks in shared modules that can run on both server and client.
+3. Use JSDOM only for tests that need it.
+
+A minimal configuration might look like this:
+
+```ts
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+import { sveltekit } from '@sveltejs/kit/vite';
+
+export default defineConfig({
+  plugins: [sveltekit()],
+  test: {
+    environment: 'node',
+    setupFiles: ['./src/test/setup.ts']
+  }
+});
+```
+
+And a DOM-specific test file:
+
+```ts
+// src/lib/theme.test.ts
+// @vitest-environment jsdom
+
+import { describe, it, expect } from 'vitest';
+import { getTheme } from './theme';
+
+describe('getTheme', () => {
+  it('returns a string', () => {
+    expect(typeof getTheme()).toBe('string');
+  });
+});
+```
+
+This keeps the default suite fast and exposes browser coupling where it belongs.
+
+## Takeaway
+
+Prefer moving `window` access behind `onMount` or a `browser` guard. That fixes the root cause by respecting the server/client boundary in SvelteKit. Use `jsdom` for tests that genuinely need a DOM, and use `vi.stubGlobal` only when server-side code must be tested with browser-shaped dependencies. Keeping browser APIs out of module scope is the most reliable way to stop `ReferenceError: window is not defined` from returning.
