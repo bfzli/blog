@@ -1,0 +1,397 @@
+---
+title: "Node CLI Fails with ERR_REQUIRE_ESM When `require()` Loads an ESM Dependency"
+description: "Why a published Node CLI crashes on startup when CommonJS reaches an ESM-only package, and how to fix the import boundary."
+tags: ["node", "cli", "esm", "commonjs", "package-json"]
+date: Sep 25, 2026
+cell: "require-esm::node::cli-startup-interoperability"
+---
+
+`node ./bin/cli.js` crashes before the CLI starts with `Error [ERR_REQUIRE_ESM]: require() of ES Module ... not supported.`
+
+## What the error means
+
+This error appears when CommonJS code calls `require()` on a package that Node has classified as ESM-only. Node does not allow `require()` to load an ES module synchronously. The module loader stops before the rest of the CLI can run, so the failure happens during startup, not inside the command implementation.
+
+A typical stack trace looks like this:
+
+```text
+Error [ERR_REQUIRE_ESM]: require() of ES Module /path/to/node_modules/some-package/index.js from /path/to/bin/cli.js not supported.
+Instead change the require of index.js in /path/to/bin/cli.js to a dynamic import() which is available in all CommonJS modules.
+```
+
+The important part is the boundary. The CLI entry file is being loaded by the CommonJS loader, and one of its transitive dependencies is ESM-only.
+
+## Why `require()` fails here
+
+CommonJS and ESM are separate module systems in Node. `require()` is synchronous and returns the exports object immediately. ESM loading is asynchronous under the hood because Node must resolve the module graph, parse `import` and `export` syntax, and handle top-level `await` when present.
+
+Because of that, Node does not let `require()` directly load an ESM-only module. The error is not about syntax alone. Even if the ESM file contains no syntax that CommonJS cannot parse, the loader still rejects the import path because the module type does not match the caller’s loading mechanism.
+
+The failure often occurs before the CLI’s own command handler runs because the dependency is imported at the top level:
+
+```js
+// bin/cli.js
+#!/usr/bin/env node
+const meow = require('meow');
+const cosmiconfig = require('cosmiconfig'); // ESM-only in newer releases
+
+// command setup never runs if require() fails above
+```
+
+If `cosmiconfig` ships as ESM-only in the installed version, Node raises `ERR_REQUIRE_ESM` as soon as it reaches that `require()` statement.
+
+## How Node decides whether a file is CommonJS or ESM
+
+Node uses several signals to classify a file.
+
+### The `package.json` `type` field
+
+The `type` field sets the default module format for `.js` files in that package scope.
+
+```json
+{
+  "name": "my-cli",
+  "type": "module"
+}
+```
+
+With `"type": "module"`:
+
+- `.js` files are ESM
+- `.cjs` files are CommonJS
+- `.mjs` files are ESM
+
+With no `type` field, or with `"type": "commonjs"`:
+
+- `.js` files are CommonJS
+- `.cjs` files are CommonJS
+- `.mjs` files are ESM
+
+This matters because the CLI entry point and its dependencies may be in different formats even inside the same repository.
+
+### `.cjs` and `.mjs` extensions
+
+Extensions override the default classification:
+
+- `.cjs` is always CommonJS
+- `.mjs` is always ESM
+
+That means a published CLI can have a CommonJS entry point in `bin/cli.cjs` while the package also contains ESM source files elsewhere. If `bin/cli.cjs` uses `require()` to pull in an ESM-only package, the loader error still occurs.
+
+### Package `exports`
+
+The `exports` field controls which subpaths consumers are allowed to import.
+
+```json
+{
+  "name": "some-package",
+  "exports": {
+    ".": "./index.js",
+    "./utils": "./utils.js"
+  }
+}
+```
+
+This can create two different failure modes:
+
+1. The package is ESM-only, so `require()` fails with `ERR_REQUIRE_ESM`.
+2. The package hides old CommonJS entry points behind `exports`, so deep imports like `require('some-package/dist/index.js')` fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
+For this problem, the first case is the usual one: the dependency is published as ESM-only, and CommonJS tries to load it synchronously.
+
+## Conditions that trigger the crash
+
+The error appears when all of these are true:
+
+- The CLI entry point is running as CommonJS.
+- The entry point or one of its dependencies uses `require()`.
+- A required dependency is ESM-only.
+- The module is resolved through normal package resolution, including `exports`, `main`, and the file extension rules above.
+
+A few common configurations lead to this:
+
+### CommonJS CLI entry point
+
+```json
+{
+  "name": "my-cli",
+  "bin": {
+    "my-cli": "./bin/cli.js"
+  }
+}
+```
+
+```js
+// bin/cli.js
+const chalk = require('chalk');
+```
+
+If `chalk` is version 5, it is ESM-only. `require('chalk')` throws `ERR_REQUIRE_ESM`.
+
+### CommonJS source compiled from TypeScript
+
+TypeScript can emit CommonJS even if the source uses modern syntax.
+
+```json
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+    "target": "ES2020",
+    "outDir": "dist"
+  }
+}
+```
+
+```ts
+// src/cli.ts
+import { execa } from 'execa';
+```
+
+If the compiler transpiles that import to `require('execa')`, and the installed `execa` version is ESM-only, startup fails.
+
+### Mixed file extensions under the wrong package type
+
+```json
+{
+  "type": "commonjs"
+}
+```
+
+```js
+// src/index.js
+import { readFile } from 'node:fs/promises';
+```
+
+That file is parsed as CommonJS and will fail for syntax reasons if executed directly. The fix is to make the whole boundary consistent. The `ERR_REQUIRE_ESM` case usually occurs when the CommonJS side is valid, but one dependency is ESM-only.
+
+## Reproduce the failure
+
+A minimal reproduction uses an ESM-only package such as `node-fetch@3`.
+
+```bash
+npm init -y
+npm install node-fetch@3
+```
+
+```js
+// cli.cjs
+const fetch = require('node-fetch');
+
+console.log(fetch);
+```
+
+Run it:
+
+```bash
+node cli.cjs
+```
+
+You get:
+
+```text
+Error [ERR_REQUIRE_ESM]: require() of ES Module .../node_modules/node-fetch/src/index.js from .../cli.cjs not supported.
+Instead change the require of index.js in .../cli.cjs to a dynamic import() which is available in all CommonJS modules.
+```
+
+The same pattern appears in published CLIs when a dependency changes from CommonJS to ESM in a major release.
+
+## Fix 1: Switch the CLI to ESM
+
+This is the cleanest fix when the CLI can move to ESM end to end.
+
+### Set the package type
+
+```json
+{
+  "name": "my-cli",
+  "type": "module",
+  "bin": {
+    "my-cli": "./bin/cli.js"
+  }
+}
+```
+
+### Use ESM imports
+
+```js
+#!/usr/bin/env node
+import chalk from 'chalk';
+import { execa } from 'execa';
+
+console.log(chalk.green('ready'));
+```
+
+### If you publish TypeScript, emit ESM
+
+```json
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "outDir": "dist"
+  }
+}
+```
+
+And use the matching extensions in the compiled output. If you keep the source as `src/cli.ts`, the emitted JavaScript should be ESM-compatible, and the `bin` field should point to the built `.js` file under `"type": "module"` or to a `.mjs` file.
+
+### Why this works
+
+An ESM CLI can import ESM dependencies directly. The loader no longer needs to cross the module-system boundary, so `require()` is removed from the path that loads the dependency.
+
+## Fix 2: Use dynamic `import()` from CommonJS
+
+If the CLI must remain CommonJS, dynamic `import()` is the supported bridge to ESM.
+
+```js
+#!/usr/bin/env node
+async function main() {
+  const { default: chalk } = await import('chalk');
+  const { execa } = await import('execa');
+
+  console.log(chalk.green('ready'));
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+```
+
+### Important details
+
+`import()` returns a promise. That means you cannot use it as a drop-in replacement for `require()` at top level in CommonJS without wrapping the CLI in an async function.
+
+If the module has a default export, use `mod.default`. If it has named exports, destructure them from the resolved module object.
+
+```js
+const mod = await import('node-fetch');
+const fetch = mod.default;
+```
+
+### Why this works
+
+The dynamic import path invokes the ESM loader, which can load ESM-only packages. CommonJS is still the outer format, but the actual dependency crosses through the supported async bridge.
+
+### Limitation
+
+This only helps when the ESM dependency is loaded after startup begins. If a top-level `require()` remains anywhere in the static dependency chain, the process still fails before `main()` runs.
+
+## Fix 3: Pin a CommonJS-compatible version
+
+If the CLI must stay CommonJS and the dependency has a last CommonJS release, pin to that version.
+
+Examples:
+
+- `node-fetch@2`
+- `chalk@4`
+- `got@11`
+- `execa@5`
+
+Install the compatible version explicitly:
+
+```bash
+npm install chalk@4
+npm install node-fetch@2
+npm install execa@5
+```
+
+Or in `package.json`:
+
+```json
+{
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "node-fetch": "^2.7.0"
+  }
+}
+```
+
+### Why this works
+
+The older release still exports CommonJS, so `require()` can load it synchronously. The package boundary stays inside one module system.
+
+### Limitation
+
+This is a compatibility lock, not a structural fix. It avoids the error, but it also blocks upgrades that assume ESM. If another dependency later flips to ESM-only, the same problem can return.
+
+## Package export boundaries can hide the real source
+
+The error message often names the package being required, not the package that started the chain. For example:
+
+```js
+// bin/cli.cjs
+const plugin = require('@scope/plugin');
+```
+
+`@scope/plugin` might internally `require()` `chalk`, `nanoid`, or another ESM-only dependency. The CLI still fails before its own command logic runs, but the top-level `require()` in your code is only the trigger. The actual incompatible dependency can sit several layers down.
+
+To identify it, inspect the stack trace and the installed package versions:
+
+```bash
+node -p "require('./package.json').dependencies"
+npm ls chalk execa node-fetch
+```
+
+If a package has a major version known to be ESM-only, verify whether the installed version matches that release line.
+
+## Common implementation patterns
+
+### CommonJS CLI with async bootstrap
+
+```js
+#!/usr/bin/env node
+async function bootstrap() {
+  const { default: chalk } = await import('chalk');
+  const { execa } = await import('execa');
+
+  const args = process.argv.slice(2);
+  console.log(chalk.blue(`args: ${args.join(' ')}`));
+}
+
+bootstrap().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+### ESM CLI entry point
+
+```js
+#!/usr/bin/env node
+import chalk from 'chalk';
+
+const args = process.argv.slice(2);
+console.log(chalk.blue(`args: ${args.join(' ')}`));
+```
+
+### TypeScript source targeting ESM
+
+```ts
+import chalk from 'chalk';
+
+export async function run(): Promise<void> {
+  console.log(chalk.blue('ready'));
+}
+```
+
+## Choosing the right fix
+
+Prefer switching the CLI to ESM when the codebase can accept it. That keeps the runtime model consistent and avoids wrapping every new ESM dependency in `import()`.
+
+Use dynamic `import()` when the published CLI must stay CommonJS for compatibility reasons, such as existing consumers or a legacy toolchain.
+
+Pin a CommonJS-compatible version when the dependency is incidental and you need the smallest possible change. That is the least invasive option, but it should be treated as temporary if the package is actively moving to ESM.
+
+## Preventing the error from returning
+
+Keep the module format explicit in the package boundary. Check these items when adding or upgrading dependencies:
+
+- Verify whether the package release is ESM-only before upgrading.
+- Check the package README and `package.json` for `"type": "module"` and `exports`.
+- Keep `.cjs` and `.mjs` files deliberate, not accidental.
+- Avoid top-level `require()` for packages that may switch to ESM in a major release.
+- If the CLI is intended to be modern, set `"type": "module"` and keep the whole entry path ESM.
+
+When the CLI crashes with `ERR_REQUIRE_ESM`, the cause is not the command itself. The cause is a module-format mismatch at startup. The valid fixes are to make the CLI ESM, cross the boundary with dynamic `import()`, or stay on a CommonJS-compatible dependency version.
