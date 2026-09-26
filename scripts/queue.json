@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-20T22:00:11.660Z",
     "ideas": [
         {
-            "cell": "stream-response::hono::missing-return-from-handler",
-            "title": "Hono Sends an Empty Response When a Handler Forgets to Return `c.text()`",
-            "description": "How a Hono route can finish without a body when the handler does not return the response object.",
-            "tags": [
-                "hono",
-                "http",
-                "routing",
-                "response",
-                "middleware"
-            ],
-            "angle": "Describe how Hono expects the handler to return a `Response` and how falling through leaves the framework with no payload to send. Explain the control flow, especially inside async handlers and middleware chains, then show the fix: return the result of `c.text()`, `c.json()`, or `await next()` appropriately.",
-            "slug": "hono-sends-an-empty-response-when-a-handler-forgets-to-return-c-text"
-        },
-        {
             "cell": "scheduled-work::cloudflare-workers::cron-trigger-registration",
             "title": "Cloudflare Workers Scheduled Triggers Never Run Because the Cron Pattern Is Missing from `wrangler.toml`",
             "description": "Why a Worker deploys successfully but its scheduled job never fires, and how to register the cron trigger correctly.",
@@ -74,19 +60,19 @@
     ],
     "drafted": [
         {
-            "cell": "require-esm::node::cli-startup-interoperability",
-            "title": "Node CLI Fails with ERR_REQUIRE_ESM When `require()` Loads an ESM Dependency",
-            "description": "Why a published Node CLI crashes on startup when CommonJS reaches an ESM-only package, and how to fix the import boundary.",
+            "cell": "stream-response::hono::missing-return-from-handler",
+            "title": "Hono Sends an Empty Response When a Handler Forgets to Return `c.text()`",
+            "description": "How a Hono route can finish without a body when the handler does not return the response object.",
             "tags": [
-                "node",
-                "cli",
-                "esm",
-                "commonjs",
-                "package-json"
+                "hono",
+                "http",
+                "routing",
+                "response",
+                "middleware"
             ],
-            "angle": "Explain that `require()` cannot load an ESM-only dependency, so the CLI breaks before its entry point runs. Cover the conditions that trigger the error, including `type`, `.cjs` and `.mjs` files, and package exports, then show the valid fixes: switch the CLI to ESM, use dynamic `import()`, or pin a CommonJS-compatible version.",
-            "slug": "node-cli-fails-with-err-require-esm-when-require-loads-an-esm-dependency",
-            "draftedAt": "2026-09-25T00:11:46.147Z"
+            "angle": "Describe how Hono expects the handler to return a `Response` and how falling through leaves the framework with no payload to send. Explain the control flow, especially inside async handlers and middleware chains, then show the fix: return the result of `c.text()`, `c.json()`, or `await next()` appropriately.",
+            "slug": "hono-sends-an-empty-response-when-a-handler-forgets-to-return-c-text",
+            "draftedAt": "2026-09-26T00:18:06.660Z"
         }
     ]
 }
