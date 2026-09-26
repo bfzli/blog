@@ -1,0 +1,393 @@
+---
+title: "Hono Sends an Empty Response When a Handler Forgets to Return `c.text()`"
+description: "How a Hono route can finish without a body when the handler does not return the response object."
+tags: ["hono", "http", "routing", "response", "middleware"]
+date: Sep 26, 2026
+cell: "stream-response::hono::missing-return-from-handler"
+---
+
+`GET /api/hello` returns an empty body from Hono, and the route can finish with no payload at all. In the browser this often shows up as a blank response. In server logs or tests it can surface as `Response body is null` or as an application-level failure when code expects a `Response` object but the handler fell through without returning one.
+
+## What Hono expects from a handler
+
+Hono route handlers are expected to return a `Response` or a promise that resolves to a `Response`. The framework uses that returned value as the HTTP response for the request.
+
+A minimal handler looks like this:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.get('/hello', (c) => {
+  return c.text('hello')
+})
+
+export default app
+```
+
+`c.text()`, `c.json()`, `c.html()`, and similar helpers construct a `Response`. Returning that object tells Hono what to send.
+
+If the handler does not return anything, the function result is `undefined`. Hono then has no response object to send, so the request completes without the intended body.
+
+## How the empty response happens
+
+A route handler can finish without returning a `Response` in several ways:
+
+- it calls `c.text()` or `c.json()` but omits `return`
+- it uses `async` and awaits work, then reaches the end of the function without returning
+- it branches and one branch returns a `Response` while another branch falls through
+- middleware calls `await next()` but does not return the downstream response
+
+The key point is that Hono does not infer that `c.text('ok')` should be sent just because it was called. The returned `Response` object is what matters.
+
+Consider this handler:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.get('/hello', (c) => {
+  c.text('hello')
+})
+
+export default app
+```
+
+This compiles, but the handler returns `undefined`. The `Response` object created by `c.text('hello')` is discarded. Hono reaches the end of the handler without a payload.
+
+The same issue appears with `async` handlers:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.get('/user/:id', async (c) => {
+  const user = await fetchUser(c.req.param('id'))
+  c.json(user)
+})
+
+export default app
+```
+
+Even though the fetch completes, the handler still returns `undefined` because `c.json(user)` is not returned.
+
+## Why this is a control-flow problem
+
+A Hono handler is just a function. In JavaScript and TypeScript, a function returns the value from the `return` statement or `undefined` if no value is returned.
+
+This matters more in Hono because the response object is not a side effect. Calling `c.text()` does not write directly to the socket in the middle of the handler. It creates a `Response` instance. Hono later uses the handler's returned value to finalize the HTTP exchange.
+
+That means the following two snippets are not equivalent:
+
+```ts
+return c.text('ok')
+```
+
+and
+
+```ts
+c.text('ok')
+```
+
+The first one returns a `Response`. The second one discards it.
+
+This is also why the problem is easy to miss in `async` functions. `async` does not change the requirement to return a response. It only wraps the function result in a promise. If the function ends without a `return`, the resolved value is still `undefined`.
+
+```ts
+app.get('/ping', async (c) => {
+  await doWork()
+  return c.text('pong')
+})
+```
+
+This is correct.
+
+```ts
+app.get('/ping', async (c) => {
+  await doWork()
+  c.text('pong')
+})
+```
+
+This is not.
+
+## Middleware makes the same rule more visible
+
+Hono middleware must also return the downstream response when it calls `await next()`.
+
+A middleware function often looks like this:
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.use('*', async (c, next) => {
+  console.log(c.req.path)
+  await next()
+})
+
+app.get('/hello', (c) => c.text('hello'))
+
+export default app
+```
+
+This can work in simple cases, but `await next()` only advances the chain. It does not automatically become the returned response unless the middleware returns it.
+
+The correct version is:
+
+```ts
+app.use('*', async (c, next) => {
+  console.log(c.req.path)
+  return await next()
+})
+```
+
+In middleware chains, `next()` resolves to the response from the downstream handler or middleware. Returning that value preserves the payload and status code.
+
+If middleware needs to short-circuit, it should return its own response directly:
+
+```ts
+app.use('*', async (c, next) => {
+  if (!isAuthorized(c)) {
+    return c.text('unauthorized', 401)
+  }
+
+  return await next()
+})
+```
+
+If the middleware neither returns a response nor returns `await next()`, the chain can finish with `undefined`, which leaves the framework without a body to send.
+
+## Branches and early exits
+
+Conditional logic is another common source of the issue.
+
+```ts
+app.get('/profile', (c) => {
+  const authed = isAuthorized(c)
+
+  if (!authed) {
+    c.text('unauthorized', 401)
+    return
+  }
+
+  return c.json({ ok: true })
+})
+```
+
+This route returns a `Response` only on the authorized branch. The unauthorized branch calls `c.text()` and then returns `undefined`.
+
+The fix is to return from both branches:
+
+```ts
+app.get('/profile', (c) => {
+  const authed = isAuthorized(c)
+
+  if (!authed) {
+    return c.text('unauthorized', 401)
+  }
+
+  return c.json({ ok: true })
+})
+```
+
+This same pattern applies to `switch` statements, guard clauses, and exception handlers. Every execution path needs to produce a `Response` or throw an error that Hono handles.
+
+## What happens with `async` and promises
+
+In an `async` handler, `return` still matters even though the function already returns a promise.
+
+```ts
+app.get('/posts/:id', async (c) => {
+  const post = await getPost(c.req.param('id'))
+  return c.json(post)
+})
+```
+
+The promise resolves to a `Response`.
+
+If `return` is omitted, the promise resolves to `undefined`:
+
+```ts
+app.get('/posts/:id', async (c) => {
+  const post = await getPost(c.req.param('id'))
+  c.json(post)
+})
+```
+
+That means the failure is not about timing. It is about the resolved value of the handler. Awaiting work does not send anything by itself.
+
+This also affects helper functions. If a route delegates to another function, that helper must return the response object too.
+
+```ts
+function sendUser(c: Context, user: User) {
+  return c.json(user)
+}
+
+app.get('/users/:id', async (c) => {
+  const user = await getUser(c.req.param('id'))
+  return sendUser(c, user)
+})
+```
+
+Without the `return`, the route handler can again finish with `undefined`.
+
+## A runnable minimal reproduction
+
+Install `hono` and run a tiny app:
+
+```bash
+npm install hono
+```
+
+```ts
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.get('/broken', (c) => {
+  c.text('this is never returned')
+})
+
+app.get('/fixed', (c) => {
+  return c.text('this is returned')
+})
+
+export default app
+```
+
+With a Node adapter or a platform adapter that serves this app, `/broken` will not produce the expected response body because the handler returns nothing. `/fixed` sends `"this is returned"`.
+
+If you are using `curl`, the difference is visible immediately:
+
+```bash
+curl -i http://localhost:3000/broken
+curl -i http://localhost:3000/fixed
+```
+
+The `/fixed` endpoint includes the body. The `/broken` endpoint may appear empty or incomplete depending on the adapter and runtime.
+
+## How to fix route handlers
+
+The direct fix is straightforward: return the response helper call.
+
+Use `return c.text(...)` for plain text:
+
+```ts
+app.get('/status', (c) => {
+  return c.text('ok')
+})
+```
+
+Use `return c.json(...)` for JSON:
+
+```ts
+app.get('/status', (c) => {
+  return c.json({ ok: true })
+})
+```
+
+Use `return c.html(...)` for HTML:
+
+```ts
+app.get('/page', (c) => {
+  return c.html('<h1>Hello</h1>')
+})
+```
+
+If the handler has multiple branches, each branch should return a response:
+
+```ts
+app.get('/resource/:id', (c) => {
+  const id = c.req.param('id')
+
+  if (!id) {
+    return c.text('missing id', 400)
+  }
+
+  const resource = lookup(id)
+  if (!resource) {
+    return c.text('not found', 404)
+  }
+
+  return c.json(resource)
+})
+```
+
+The same rule applies to `async` handlers:
+
+```ts
+app.get('/resource/:id', async (c) => {
+  const resource = await lookupAsync(c.req.param('id'))
+
+  if (!resource) {
+    return c.text('not found', 404)
+  }
+
+  return c.json(resource)
+})
+```
+
+## How to fix middleware chains
+
+Middleware should return `await next()` when it does not short-circuit.
+
+```ts
+app.use('*', async (c, next) => {
+  addRequestId(c)
+  return await next()
+})
+```
+
+If middleware modifies headers or does logging, still return the downstream response:
+
+```ts
+app.use('*', async (c, next) => {
+  const res = await next()
+  res.headers.set('X-Request-Id', getRequestId(c))
+  return res
+})
+```
+
+If middleware decides to end the request early, return a response directly:
+
+```ts
+app.use('*', async (c, next) => {
+  if (!isAllowed(c)) {
+    return c.text('forbidden', 403)
+  }
+
+  return await next()
+})
+```
+
+Do not call `await next()` and then fall through without returning its value.
+
+## Preventing the bug in larger codebases
+
+TypeScript can help, but only if the handler signature is respected. A route handler that returns `void` is structurally valid in many cases, so the compiler may not complain. That makes the control-flow rule more important than the type checker.
+
+A few practices reduce the chance of recurrence:
+
+- always `return` `c.text()`, `c.json()`, `c.html()`, or `await next()`
+- make helper functions return `Response` when they construct one
+- keep each branch in a handler explicit
+- treat middleware as part of the response pipeline, not as detached side work
+
+A useful pattern is to write handlers so the final statement is the returned response:
+
+```ts
+app.get('/health', (c) => {
+  return c.json({ status: 'ok' })
+})
+```
+
+That keeps the response path obvious and avoids accidental fall-through.
+
+## Closing point
+
+Prefer returning the `Response` object directly from every Hono handler and returning `await next()` from middleware unless the middleware intentionally short-circuits. That matches how Hono resolves control flow: the framework can only send what the handler returns. If a branch falls through, the response becomes `undefined`, and the endpoint can complete without the body you expected.
