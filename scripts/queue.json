@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-20T22:00:11.660Z",
     "ideas": [
         {
-            "cell": "scheduled-work::cloudflare-workers::cron-trigger-registration",
-            "title": "Cloudflare Workers Scheduled Triggers Never Run Because the Cron Pattern Is Missing from `wrangler.toml`",
-            "description": "Why a Worker deploys successfully but its scheduled job never fires, and how to register the cron trigger correctly.",
-            "tags": [
-                "cloudflare-workers",
-                "cron",
-                "wrangler",
-                "scheduled-triggers",
-                "edge"
-            ],
-            "angle": "Cover how Cloudflare only attaches scheduled events when the cron expression is declared in `wrangler.toml` or the dashboard, so the worker deploys without any trigger. Explain the runtime mechanism for `scheduled()` and the difference between a deployed script and an active schedule, then show the exact configuration and verification steps.",
-            "slug": "cloudflare-workers-scheduled-triggers-never-run-because-the-cron-pattern-is-missing-from-wrangler-toml"
-        },
-        {
             "cell": "cli-packaging::bun::binary-entrypoint",
             "title": "Bun Publishes a CLI That Runs Without `node_modules/.bin` When the Binary Field Is Wrong",
             "description": "How a Bun package can ship successfully but expose no working command because the bin entry points at the wrong file.",
@@ -60,19 +46,19 @@
     ],
     "drafted": [
         {
-            "cell": "stream-response::hono::missing-return-from-handler",
-            "title": "Hono Sends an Empty Response When a Handler Forgets to Return `c.text()`",
-            "description": "How a Hono route can finish without a body when the handler does not return the response object.",
+            "cell": "scheduled-work::cloudflare-workers::cron-trigger-registration",
+            "title": "Cloudflare Workers Scheduled Triggers Never Run Because the Cron Pattern Is Missing from `wrangler.toml`",
+            "description": "Why a Worker deploys successfully but its scheduled job never fires, and how to register the cron trigger correctly.",
             "tags": [
-                "hono",
-                "http",
-                "routing",
-                "response",
-                "middleware"
+                "cloudflare-workers",
+                "cron",
+                "wrangler",
+                "scheduled-triggers",
+                "edge"
             ],
-            "angle": "Describe how Hono expects the handler to return a `Response` and how falling through leaves the framework with no payload to send. Explain the control flow, especially inside async handlers and middleware chains, then show the fix: return the result of `c.text()`, `c.json()`, or `await next()` appropriately.",
-            "slug": "hono-sends-an-empty-response-when-a-handler-forgets-to-return-c-text",
-            "draftedAt": "2026-09-26T00:18:06.660Z"
+            "angle": "Cover how Cloudflare only attaches scheduled events when the cron expression is declared in `wrangler.toml` or the dashboard, so the worker deploys without any trigger. Explain the runtime mechanism for `scheduled()` and the difference between a deployed script and an active schedule, then show the exact configuration and verification steps.",
+            "slug": "cloudflare-workers-scheduled-triggers-never-run-because-the-cron-pattern-is-missing-from-wrangler-toml",
+            "draftedAt": "2026-09-27T00:05:03.242Z"
         }
     ]
 }
