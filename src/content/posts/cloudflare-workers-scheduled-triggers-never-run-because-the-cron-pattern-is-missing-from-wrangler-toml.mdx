@@ -1,0 +1,332 @@
+---
+title: "Cloudflare Workers Scheduled Triggers Never Run Because the Cron Pattern Is Missing from `wrangler.toml`"
+description: "Why a Worker deploys successfully but its scheduled job never fires, and how to register the cron trigger correctly."
+tags: ["cloudflare-workers", "cron", "wrangler", "scheduled-triggers", "edge"]
+date: Sep 27, 2026
+cell: "scheduled-work::cloudflare-workers::cron-trigger-registration"
+---
+
+A Cloudflare Worker deploys successfully, but its scheduled job never fires because the cron pattern is missing from `wrangler.toml`. There is no runtime error from the Worker itself. The symptom is that the `scheduled()` handler is never invoked, and the deployment completes without any active scheduled event attached to the script.
+
+## What is actually broken
+
+Cloudflare Workers scheduled triggers are not enabled by the presence of a `scheduled()` export alone. A Worker can be deployed as a script and still have no schedule attached to it.
+
+That means two separate things must exist:
+
+1. A deployed Worker script.
+2. At least one active schedule registered for that script.
+
+If the cron expression is not declared in `wrangler.toml` under `triggers.crons`, or added in the dashboard, the deployment creates only the script. No cron trigger is attached, so Cloudflare never enqueues the scheduled event.
+
+The result is easy to misread:
+
+- `wrangler deploy` succeeds.
+- The script is present in the dashboard.
+- The `scheduled()` handler compiles.
+- Nothing ever runs on a schedule.
+
+## How Cloudflare scheduled events work
+
+A Workers cron trigger is metadata attached to the deployed script. It is not inferred from exported code.
+
+The runtime path looks like this:
+
+1. You deploy a Worker.
+2. Cloudflare stores the script bundle.
+3. Cloudflare checks whether any triggers are associated with that script.
+4. If a cron trigger exists, Cloudflare creates an internal scheduler entry.
+5. When the cron expression matches, Cloudflare invokes the Worker with a scheduled event.
+
+The `scheduled()` handler only runs when Cloudflare dispatches that event. Without a trigger, the Worker is just a callable script. It can still respond to HTTP requests or other bindings, but nothing wakes it up on a timer.
+
+The important distinction is between:
+
+- a deployed script: code exists in Cloudflare’s edge runtime
+- an active schedule: Cloudflare’s scheduler knows when to invoke `scheduled()`
+
+That distinction is the source of the missing-trigger problem.
+
+## The `scheduled()` handler alone is not enough
+
+A Worker that handles cron events typically exports a `scheduled()` function like this:
+
+```ts
+export interface Env {
+  // bindings go here
+}
+
+export default {
+  async scheduled(
+    controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    console.log(`scheduled run at ${controller.cron}`);
+    ctx.waitUntil(doWork(env));
+  },
+};
+
+async function doWork(env: Env): Promise<void> {
+  // real work here
+}
+```
+
+This code defines what should happen when a scheduled event arrives. It does not register the schedule.
+
+Cloudflare only calls `scheduled()` if the Worker has at least one cron expression configured. Without that configuration, the handler is dead code from the scheduler’s point of view.
+
+## Where the cron expression must be declared
+
+The supported places are:
+
+- `wrangler.toml`
+- the Cloudflare dashboard
+
+For `wrangler.toml`, the schedule belongs under `triggers.crons`.
+
+Example:
+
+```toml
+name = "my-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-26"
+
+triggers = { crons = ["0 * * * *"] }
+```
+
+This attaches one cron schedule that runs every hour.
+
+You can also use the more explicit TOML array form:
+
+```toml
+name = "my-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-26"
+
+[triggers]
+crons = ["0 * * * *"]
+```
+
+Both forms express the same configuration. The key requirement is that the cron expression exists in the deployment configuration, not only in the code.
+
+If the schedule is created in the dashboard, the Worker can still run on cron even if `wrangler.toml` does not list it. But that creates a configuration split. For most projects, keeping the trigger in `wrangler.toml` is easier to review and deploy consistently.
+
+## Minimal working example
+
+A minimal Worker scheduled setup has three parts:
+
+### `wrangler.toml`
+
+```toml
+name = "scheduled-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-26"
+
+[triggers]
+crons = ["*/5 * * * *"]
+```
+
+### `src/index.ts`
+
+```ts
+export interface Env {}
+
+export default {
+  async scheduled(
+    controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    console.log(`Triggered by cron: ${controller.cron}`);
+    ctx.waitUntil(runJob());
+  },
+};
+
+async function runJob(): Promise<void> {
+  console.log("Job started");
+}
+```
+
+### Deploy
+
+```sh
+npx wrangler deploy
+```
+
+After deployment, Cloudflare has both the script and the schedule. Every five minutes, the platform invokes `scheduled()`.
+
+## Why deployment can succeed without a schedule
+
+Wrangler deploys two different categories of configuration:
+
+- script bundle and metadata required to run the Worker
+- trigger metadata that tells Cloudflare when to invoke it
+
+If the cron list is empty or omitted, the Worker is still a valid deployable artifact. There is no syntax error in the Worker code because the scheduler configuration is external to the module. The platform has no reason to fail deployment simply because a `scheduled()` export exists without a trigger.
+
+That behavior is intentional. Many Workers are HTTP-only. A `scheduled()` handler can exist in shared code, feature branches, or templates. Cloudflare does not automatically assign an execution schedule unless you explicitly register one.
+
+## How to verify the trigger is attached
+
+After deployment, verify the trigger at the platform level. There are several ways to do that.
+
+### Check `wrangler.toml`
+
+Make sure the cron entry is present and valid:
+
+```toml
+[triggers]
+crons = ["0 2 * * *"]
+```
+
+A missing `triggers.crons` field means no scheduled event will be created during deploy.
+
+### Use `wrangler deploy` and inspect the output
+
+Wrangler typically reports the deploy target, but the decisive check is the dashboard or the Worker details page. The script can show as deployed even if no trigger is configured.
+
+### Check the Cloudflare dashboard
+
+In the Worker’s settings, confirm that a cron trigger exists. If it is absent, the Worker has no schedule.
+
+If the dashboard shows a trigger but the schedule still does not fire, verify the cron expression itself and the timezone semantics. Cloudflare cron triggers use standard cron syntax. An invalid expression should be corrected, not inferred.
+
+### Confirm the schedule is present through configuration management
+
+If you use CI/CD, ensure the deployed artifact includes `wrangler.toml` with the `triggers.crons` entry. A common failure mode is deploying from a path that contains the Worker code but not the updated config file.
+
+## Common configuration mistakes
+
+### Forgetting `triggers.crons`
+
+This is the core problem.
+
+```toml
+name = "scheduled-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-26"
+```
+
+This deploys a Worker, but no cron trigger exists.
+
+### Defining `scheduled()` in code without the cron entry
+
+This is also insufficient.
+
+```ts
+export default {
+  async scheduled() {
+    console.log("runs on schedule");
+  },
+};
+```
+
+The handler is correct, but the schedule is not registered.
+
+### Editing the wrong environment
+
+If you deploy multiple environments, verify that the cron is attached to the environment you are actually running.
+
+A `wrangler.toml` file may have separate `env` sections:
+
+```toml
+name = "scheduled-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-26"
+
+[triggers]
+crons = ["0 * * * *"]
+
+[env.production]
+name = "scheduled-worker-prod"
+```
+
+If the wrong environment is deployed, the active Worker may not be the one with the schedule you expect.
+
+### Assuming the dashboard and config are synchronized
+
+If the trigger is added in the dashboard but later removed from `wrangler.toml`, a deploy may overwrite the dashboard state depending on how the deployment is performed. Keep one source of truth.
+
+## Runtime details of `scheduled()`
+
+Cloudflare passes a `ScheduledController` object to the handler. Its `cron` property contains the cron string that fired the event.
+
+A typical signature looks like this:
+
+```ts
+async scheduled(
+  controller: ScheduledController,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<void>
+```
+
+The `ctx` object lets you continue work after the event handler returns by using `ctx.waitUntil()`. That matters for jobs that perform asynchronous operations, such as fetches, writes, or queueing.
+
+Example:
+
+```ts
+export default {
+  async scheduled(
+    controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    ctx.waitUntil(
+      fetch("https://example.com/health", {
+        method: "POST",
+      }),
+    );
+  },
+};
+```
+
+If the schedule is missing, none of this runtime logic is invoked. The Worker is loaded only when some other event type calls it.
+
+## Verifying a deployed trigger end to end
+
+A practical verification flow is:
+
+1. Add `triggers.crons` to `wrangler.toml`.
+2. Confirm the Worker exports `scheduled()`.
+3. Deploy with `npx wrangler deploy`.
+4. Check the Worker settings in the Cloudflare dashboard.
+5. Wait for the next cron boundary.
+6. Inspect logs for output from `scheduled()`.
+
+For a five-minute schedule:
+
+```toml
+[triggers]
+crons = ["*/5 * * * *"]
+```
+
+Add a log line:
+
+```ts
+console.log(`cron fired: ${controller.cron}`);
+```
+
+Then use the worker logs in the dashboard or `wrangler tail` to confirm execution.
+
+If the log never appears and the schedule exists in the dashboard, the next places to inspect are the cron syntax, the target environment, and whether the deployed script is the one with the trigger.
+
+## Prefer config-as-code for the fix
+
+The most reliable fix is to declare the cron pattern in `wrangler.toml` under `triggers.crons` and deploy through the same configuration path every time.
+
+Example:
+
+```toml
+name = "scheduled-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-26"
+
+[triggers]
+crons = ["0 0 * * *"]
+```
+
+This keeps the schedule alongside the code, makes the trigger visible in review, and avoids a deployed-script-with-no-schedule mismatch.
+
+If the trigger is managed in the dashboard, document that explicitly and avoid letting `wrangler deploy` overwrite it without checking the resulting schedule. The underlying mechanism is simple: no cron registration means no scheduled event, even if `scheduled()` exists and the Worker deploys cleanly.
