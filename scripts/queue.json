@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-09-20T22:00:11.660Z",
+    "generatedAt": "2026-09-27T22:38:12.912Z",
     "ideas": [
         {
             "cell": "cli-packaging::bun::binary-entrypoint",
@@ -42,6 +42,76 @@
             ],
             "angle": "Explain the fetch body model: a request stream can be consumed only once, so a second `request.json()`, `text()`, or `formData()` call throws. Cover why this happens in route handlers and middleware, then show the fix by reading once, cloning before consumption when needed, or passing the parsed object through.",
             "slug": "next-js-route-handlers-throw-typeerror-body-has-already-been-read-after-parsing-request-json-twice"
+        },
+        {
+            "cell": "nextjs-unoptimized-font-self-hosting::nextjs::layout-font-loading-without-fouc",
+            "title": "Next.js Loads a Self-Hosted Font with FOIT After `next/font` Is Skipped",
+            "description": "How a self-hosted font flashes or swaps late in Next.js when it bypasses `next/font` optimization.",
+            "tags": [
+                "nextjs",
+                "fonts",
+                "performance",
+                "css",
+                "layout"
+            ],
+            "angle": "Explain why manually loading a local font file can produce invisible text or late swapping, and how `next/font/local` changes preload behavior, CSS generation, and fallback metrics. Cover the rendering path, the mechanism behind FOIT/FOUT, and the exact code shape that avoids it.",
+            "slug": "next-js-loads-a-self-hosted-font-with-foit-after-next-font-is-skipped"
+        },
+        {
+            "cell": "nuxt-server-only-composable-client-use::nuxt::client-component-imports-server-composable",
+            "title": "Nuxt Breaks in the Browser When a Client Component Imports a Server-Only Composable",
+            "description": "Why a browser component crashes after importing a composable that touches server-only APIs in Nuxt.",
+            "tags": [
+                "nuxt",
+                "vue",
+                "ssr",
+                "composables",
+                "runtime"
+            ],
+            "angle": "Explain how Nuxt composables can rely on request-scoped or server-only context and why importing them into client code produces runtime failures or missing data. Cover module boundaries, the difference between universal and server-only composables, and the supported patterns for moving the shared logic behind `useAsyncData()`, plugins, or server routes.",
+            "slug": "nuxt-breaks-in-the-browser-when-a-client-component-imports-a-server-only-composable"
+        },
+        {
+            "cell": "react-native-android-gradle-duplicate-classpath::react-native::android-build-duplicate-class",
+            "title": "React Native Android Fails with \"Duplicate class\" During Gradle Compilation",
+            "description": "Why Android builds stop on duplicate classes in React Native and how to identify the conflicting dependency.",
+            "tags": [
+                "react-native",
+                "android",
+                "gradle",
+                "dependencies",
+                "build"
+            ],
+            "angle": "Explain how two transitive dependencies can contribute the same Java/Kotlin class to the Android classpath and trigger the Gradle duplicate-class error. Cover how to inspect the dependency graph, find the conflicting artifact, and resolve it with version alignment, exclusions, or a package upgrade.",
+            "slug": "react-native-android-fails-with-duplicate-class-during-gradle-compilation"
+        },
+        {
+            "cell": "docker-compose-missing-service-network-alias::docker::inter-container-name-resolution",
+            "title": "Docker Compose Cannot Resolve a Service Name Because the Container Is on the Wrong Network",
+            "description": "Why one Compose service cannot reach another by name and how network membership controls DNS resolution.",
+            "tags": [
+                "docker",
+                "docker-compose",
+                "networking",
+                "dns",
+                "containers"
+            ],
+            "angle": "Explain the built-in DNS behavior in Docker Compose and why service-name lookup fails when containers are attached to different networks or when the target service is only on an external network. Cover the name-resolution rules, the effect of custom networks and aliases, and the configuration that makes service-to-service traffic work reliably.",
+            "slug": "docker-compose-cannot-resolve-a-service-name-because-the-container-is-on-the-wrong-network"
+        },
+        {
+            "cell": "bun-executable-permission-missing::bun::package-binary-launch",
+            "title": "Bun Starts a Package Binary but the Command Is Not Found in `node_modules/.bin`",
+            "description": "Why a Bun-installed CLI fails to launch from a package binary and how to expose the executable correctly.",
+            "tags": [
+                "bun",
+                "cli",
+                "package-json",
+                "bin",
+                "packaging"
+            ],
+            "angle": "Explain how Bun installs package executables, how the `bin` field maps to a launcher, and why a wrong or missing path leaves no usable command in `node_modules/.bin`. Cover the packaging rules, the generated wrapper, and the exact `package.json` structure that makes the binary discoverable.",
+            "slug": "bun-starts-a-package-binary-but-the-command-is-not-found-in-node-modules-bin"
         }
     ],
     "drafted": [
