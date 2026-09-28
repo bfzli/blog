@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-27T22:38:12.912Z",
     "ideas": [
         {
-            "cell": "cli-packaging::bun::binary-entrypoint",
-            "title": "Bun Publishes a CLI That Runs Without `node_modules/.bin` When the Binary Field Is Wrong",
-            "description": "How a Bun package can ship successfully but expose no working command because the bin entry points at the wrong file.",
-            "tags": [
-                "bun",
-                "cli",
-                "publishing",
-                "package-json",
-                "npm"
-            ],
-            "angle": "Explain how package managers resolve the `bin` field and why a bad path or missing shebang leaves the installed command unusable. Cover Bun-specific publishing details, the executable bit, and the difference between local test runs and installed package behavior, then show how to point `bin` at the real entry file and verify it after packing.",
-            "slug": "bun-publishes-a-cli-that-runs-without-node-modules-bin-when-the-binary-field-is-wrong"
-        },
-        {
             "cell": "build-artifact::vite::deployed-from-wrong-output-directory",
             "title": "Vite Builds Succeed but the Server Serves the Wrong `dist` Folder",
             "description": "Why a deployment can show an old or empty app after a successful Vite build, and how to point the server at the right output.",
@@ -116,19 +102,19 @@
     ],
     "drafted": [
         {
-            "cell": "scheduled-work::cloudflare-workers::cron-trigger-registration",
-            "title": "Cloudflare Workers Scheduled Triggers Never Run Because the Cron Pattern Is Missing from `wrangler.toml`",
-            "description": "Why a Worker deploys successfully but its scheduled job never fires, and how to register the cron trigger correctly.",
+            "cell": "cli-packaging::bun::binary-entrypoint",
+            "title": "Bun Publishes a CLI That Runs Without `node_modules/.bin` When the Binary Field Is Wrong",
+            "description": "How a Bun package can ship successfully but expose no working command because the bin entry points at the wrong file.",
             "tags": [
-                "cloudflare-workers",
-                "cron",
-                "wrangler",
-                "scheduled-triggers",
-                "edge"
+                "bun",
+                "cli",
+                "publishing",
+                "package-json",
+                "npm"
             ],
-            "angle": "Cover how Cloudflare only attaches scheduled events when the cron expression is declared in `wrangler.toml` or the dashboard, so the worker deploys without any trigger. Explain the runtime mechanism for `scheduled()` and the difference between a deployed script and an active schedule, then show the exact configuration and verification steps.",
-            "slug": "cloudflare-workers-scheduled-triggers-never-run-because-the-cron-pattern-is-missing-from-wrangler-toml",
-            "draftedAt": "2026-09-27T00:05:03.242Z"
+            "angle": "Explain how package managers resolve the `bin` field and why a bad path or missing shebang leaves the installed command unusable. Cover Bun-specific publishing details, the executable bit, and the difference between local test runs and installed package behavior, then show how to point `bin` at the real entry file and verify it after packing.",
+            "slug": "bun-publishes-a-cli-that-runs-without-node-modules-bin-when-the-binary-field-is-wrong",
+            "draftedAt": "2026-09-28T00:11:34.579Z"
         }
     ]
 }
