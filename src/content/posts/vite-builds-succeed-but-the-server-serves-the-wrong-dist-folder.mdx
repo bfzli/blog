@@ -1,0 +1,365 @@
+---
+title: "Vite Builds Succeed but the Server Serves the Wrong `dist` Folder"
+description: "Why a deployment can show an old or empty app after a successful Vite build, and how to point the server at the right output."
+tags: ["vite", "deployment", "dist", "hosting", "build"]
+date: Sep 29, 2026
+cell: "build-artifact::vite::deployed-from-wrong-output-directory"
+---
+
+Deployment serves an old or empty app from `dist`, and the browser shows stale assets instead of the freshly built Vite output. The common browser-side symptom is `GET /assets/index-<hash>.js 404 (Not Found)`, or the page loads HTML but the bundle URLs point at files that are no longer present in the directory the host is serving.
+
+## What Vite actually writes
+
+A Vite production build does not “deploy the app.” It creates a static output tree under `build.outDir`, which defaults to `dist`. That tree usually contains:
+
+- `index.html`
+- hashed JavaScript and CSS files under `assets/`
+- optional copied static files from `publicDir`
+
+The important part is that Vite emits filenames with content hashes. For example, a build may write `assets/index-B3k7m9.js` and `assets/index-f41c2a.css`. Those names are not stable across builds.
+
+That is the mechanism that keeps browser caching safe. When the source changes, the output filenames change too, so the browser can fetch fresh assets instead of reusing old ones.
+
+The problem appears when the build output and the server root are not the same directory.
+
+## Why the wrong folder gets served
+
+A successful `vite build` only means the files were written to the configured output path. It says nothing about which directory the host, adapter, or static server reads from.
+
+Common mismatches look like this:
+
+- Vite writes to `dist`, but the server serves `build`
+- Vite writes to `dist/client`, but the host serves `dist`
+- Vite writes `dist`, but an adapter copies a previous `dist` from another step
+- `root` points at a subdirectory, but the deploy target is still the repository root
+- `outDir` changed in `vite.config.ts`, but the hosting config still points at the default `dist`
+
+When that happens, the server can continue serving stale files from an older build directory or a completely empty folder. Because `index.html` and asset filenames are hashed, even a small mismatch can produce a broken page rather than an obvious build failure.
+
+## How the mismatch happens in practice
+
+A minimal Vite config might look like this:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  build: {
+    outDir: 'dist/client',
+  },
+})
+```
+
+That build writes files to `dist/client`.
+
+If the deployment config still serves `dist`, the server may expose:
+
+- an older `dist/index.html`
+- no matching `assets/*` files
+- a previous build that no longer matches the new hashes
+
+The build succeeds because `vite build` only validates the asset pipeline inside Vite. The server fails later because it is reading a different directory.
+
+This also happens in the other direction. If a static host is configured to publish `public/`, `build/`, or `docs/`, but Vite is still writing to `dist`, the published folder can remain empty even though the build output exists elsewhere.
+
+## Where `root` changes the output path
+
+`root` changes the directory Vite treats as the project root for resolving `index.html`, source files, and config-relative paths.
+
+For example:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  root: 'src',
+  build: {
+    outDir: '../dist',
+  },
+})
+```
+
+In this setup:
+
+- Vite reads `src/index.html`
+- source imports are resolved from `src`
+- output goes to `dist` at the project root
+
+If `outDir` is not adjusted, Vite will place output under `src/dist`, because `outDir` is resolved relative to `root` unless you use an absolute path or carefully manage the path relative to the config file. That is a common source of confusion.
+
+The key point is that `root` affects resolution, while `outDir` controls where the built files land. Deployment needs to point at the final resolved output directory, not the directory that seems convenient by convention.
+
+## How Vite emits assets
+
+Vite processes `index.html` as an entry point. During build it:
+
+- parses module imports
+- bundles JavaScript through Rollup
+- rewrites asset URLs
+- fingerprints assets with content hashes
+- copies or inlines static references depending on size and type
+
+The output HTML references the generated files by exact filename. A built page might contain:
+
+```html
+<script type="module" crossorigin src="/assets/index-B3k7m9.js"></script>
+<link rel="stylesheet" crossorigin href="/assets/index-f41c2a.css">
+```
+
+If the server is serving an older build directory, those filenames may not exist there anymore. If the server serves a folder with different filenames from a previous build, the page can still load, but it loads the wrong code.
+
+This is why stale directories matter. A leftover file with the same base name but a different hash is not a match. The browser asks for exactly what `index.html` references.
+
+## Check the output path first
+
+Before changing config, confirm where Vite is writing files.
+
+Run:
+
+```sh
+npm run build
+```
+
+Then inspect the configured output path:
+
+```sh
+ls -la dist
+```
+
+or, if `outDir` was changed:
+
+```sh
+ls -la dist/client
+```
+
+If your deployment points at `dist` but the files are in `dist/client`, the server is serving the wrong directory.
+
+If the directory exists but contains old files, the build may not be cleaning the target.
+
+By default, Vite removes the previous contents of `outDir` before building. If `build.emptyOutDir` is `false`, stale files can remain.
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  build: {
+    emptyOutDir: false,
+  },
+})
+```
+
+With that setting, old assets can survive alongside new ones. The server may still reference a file from a previous build if the deployment pipeline copies the wrong subset of files or if a cached `index.html` points at stale hashes.
+
+## Align `root`, `outDir`, and the deployment target
+
+The fix is to make the build output and the server root refer to the same place.
+
+### Case 1: Standard Vite app
+
+Use the default layout unless there is a concrete reason to change it.
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  // default root is project root
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
+})
+```
+
+Deploy the contents of `dist` and configure the host to serve `dist` as the static root.
+
+For example, with `serve`:
+
+```sh
+npm install -D serve
+npm run build
+npx serve dist
+```
+
+### Case 2: `root` is a subdirectory
+
+If the app lives in `web/`, keep the output aligned.
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  root: 'web',
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+  },
+})
+```
+
+This produces files in `dist` at the repository root. The host should serve `dist`, not `web`.
+
+If you want the output to remain inside the app folder instead, choose:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  root: 'web',
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
+})
+```
+
+In that case the final path is `web/dist`, because `outDir` is relative to `root`.
+
+### Case 3: Framework adapter expects a specific folder
+
+Some deployment adapters wrap Vite and expect a fixed output path. For example, a framework may expect client assets in `dist/client` and server artifacts in `dist/server`.
+
+The build config must match the adapter’s contract. If the adapter publishes `dist/client`, then the static host or CDN must serve that exact directory. If the host serves `dist`, the adapter output is ignored.
+
+This is especially important in monorepos, where a root-level deployment step may publish a different package’s `dist` directory.
+
+## Make stale files impossible to ignore
+
+A wrong directory is one problem. A correct directory with stale content is another.
+
+Keep these settings in sync:
+
+- `build.emptyOutDir: true`
+- the deployment step copies the current output only
+- the host serves the same directory that the build wrote
+- old build artifacts are removed before upload
+
+For example:
+
+```json
+{
+  "scripts": {
+    "build": "vite build",
+    "predeploy": "rm -rf dist",
+    "deploy": "npm run build && cp -R dist /var/www/my-app"
+  }
+}
+```
+
+On CI, use the clean workspace provided by the runner rather than reusing an artifact directory between jobs.
+
+If a platform caches build artifacts, verify that it invalidates the correct path. A cache keyed on the wrong directory can keep serving an older `dist` even when the build is correct.
+
+## Verify the actual runtime path
+
+When the app loads the wrong output, inspect the HTML served by the host, not just the local build directory.
+
+Open the deployed page source and look at the asset URLs. They should match the files present in the deployed directory.
+
+If the HTML references:
+
+```html
+<script type="module" src="/assets/index-B3k7m9.js"></script>
+```
+
+then the deployment target must contain:
+
+```text
+dist/assets/index-B3k7m9.js
+```
+
+If not, the host is pointed at the wrong directory or the upload step missed files.
+
+You can also compare local build output to the deployed artifact:
+
+```sh
+find dist -type f | sort
+```
+
+Then compare it with the server-side tree if you have access.
+
+For a static server, this simple check often reveals the mismatch immediately:
+
+```sh
+npx serve dist
+```
+
+If the app works with `serve dist` but fails on the host, the host configuration is serving a different folder or an older artifact.
+
+## Common misconfigurations
+
+### Wrong `outDir`
+
+```ts
+export default defineConfig({
+  build: {
+    outDir: 'build',
+  },
+})
+```
+
+If the host still serves `dist`, the page is stale or empty. Change the host to serve `build`, or change `outDir` back to `dist`.
+
+### Wrong `root`
+
+```ts
+export default defineConfig({
+  root: 'app',
+})
+```
+
+If deployment copies from the repository root, but Vite now resolves and builds from `app/`, the output path may not match the publish step.
+
+### `emptyOutDir` disabled
+
+```ts
+export default defineConfig({
+  build: {
+    emptyOutDir: false,
+  },
+})
+```
+
+Old files can remain in the output tree and be served accidentally. Re-enable cleaning unless there is a specific reason not to.
+
+### Host configured for the wrong artifact directory
+
+A static host may be configured to publish `public/` or `build/` while Vite writes `dist/`. The deployment succeeds, but the published folder never changes.
+
+## The reliable configuration pattern
+
+For a plain Vite app, keep the defaults unless there is a deployment constraint:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
+})
+```
+
+Then deploy `dist` and point the static host at `dist`.
+
+If the app lives in a subdirectory, make the build and publish paths explicit:
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  root: 'web',
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+  },
+})
+```
+
+Then deploy the repository root `dist` folder, not `web/dist`.
+
+If an adapter requires a custom path, configure the build and the adapter together so they agree on the same artifact directory.
+
+## Practical takeaway
+
+Prefer the simplest arrangement: let Vite build to `dist`, keep `build.emptyOutDir` enabled, and configure the server or deployment target to serve that same `dist` directory. If `root` is changed, recalculate `outDir` deliberately and verify the published folder matches the built folder exactly. The failure mode is not in Vite itself; it is a path mismatch between emitted assets and the directory the host serves.
