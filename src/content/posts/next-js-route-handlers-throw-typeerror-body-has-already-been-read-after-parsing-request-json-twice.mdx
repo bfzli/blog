@@ -1,0 +1,328 @@
+---
+title: "Next.js Route Handlers Throw TypeError: Body has already been read After Parsing `request.json()` Twice"
+description: "Why a Next.js route handler fails after the request body is consumed more than once, and how to preserve the stream."
+tags: ["nextjs", "route-handlers", "request-body", "fetch", "streaming"]
+date: Sep 30, 2026
+cell: "typeerror-body-stream::nextjs::double-reading-request-body"
+---
+
+Next.js route handlers throw `TypeError: Body has already been read` after `request.json()` is called twice in `app/api/*/route.ts`. The same failure appears with `request.text()` and `request.formData()` when the same `Request` body is consumed more than once.
+
+## Why this happens
+
+Next.js route handlers run on the Web `Request` API, not on Node’s legacy `IncomingMessage` stream. In the `app` router, the handler receives a `Request` object whose body is a readable stream. That stream can be consumed only once.
+
+Methods such as `request.json()`, `request.text()`, `request.arrayBuffer()`, and `request.formData()` all read from that stream. After one of them finishes, the body is marked as disturbed and cannot be read again. A second read attempts to consume an already-drained stream, and the runtime throws `TypeError: Body has already been read`.
+
+This is not a Next.js-only rule. It comes from the Fetch standard and applies anywhere the Web `Request` and `Response` bodies are used.
+
+## What triggers it in Next.js
+
+A route handler often needs to inspect the incoming body and then pass data to another function. The failure appears when the body is parsed in more than one place.
+
+A minimal example:
+
+```ts
+// app/api/webhook/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(request: NextRequest) {
+  const first = await request.json();
+  const second = await request.json(); // TypeError: Body has already been read
+
+  return NextResponse.json({ first, second });
+}
+```
+
+The first `request.json()` consumes the body stream. The second call tries to read the same stream again and fails.
+
+The same pattern also breaks with different readers:
+
+```ts
+export async function POST(request: NextRequest) {
+  const raw = await request.text();
+  const parsed = await request.json(); // TypeError: Body has already been read
+
+  return Response.json({ raw, parsed });
+}
+```
+
+```ts
+export async function POST(request: NextRequest) {
+  const data = await request.formData();
+  const raw = await request.text(); // TypeError: Body has already been read
+
+  return Response.json({ data: Array.from(data.entries()), raw });
+}
+```
+
+The body reader does not matter. The first read wins.
+
+## The fetch body model
+
+A `Request` body is a stream, not a reusable buffer by default. A stream is designed to be read forward once. That is true for network efficiency and memory usage.
+
+When you call `request.json()`, the runtime:
+
+1. Reads the body stream to completion.
+2. Decodes the bytes as UTF-8.
+3. Parses the text as JSON.
+4. Returns the parsed value.
+
+The body is now consumed. There is no rewind unless the request was explicitly cloned before any read occurred.
+
+This behavior is shared by `Response` bodies too. The same rule applies to `response.json()`, `response.text()`, and similar methods.
+
+## Why it shows up in route handlers and middleware
+
+Route handlers commonly centralize request processing in multiple layers:
+
+- one function logs the request
+- another validates the payload
+- another applies authentication or signature checks
+- another persists the data
+
+If each layer calls `request.json()` independently, the first one consumes the stream and the rest fail.
+
+Middleware can also trigger the same issue if code reads the body before handing the request onward. In Next.js, middleware has stricter runtime constraints and often should not parse request bodies at all unless that is the only consumer. If you need the body later in a route handler, the request must remain unread until that point, or it must be cloned before consumption.
+
+A common anti-pattern looks like this:
+
+```ts
+async function logPayload(request: Request) {
+  console.log(await request.json());
+}
+
+async function validatePayload(request: Request) {
+  const payload = await request.json();
+  if (typeof payload.email !== 'string') {
+    throw new Error('Invalid payload');
+  }
+  return payload;
+}
+
+export async function POST(request: Request) {
+  await logPayload(request);
+  const payload = await validatePayload(request); // fails here
+  return Response.json({ ok: true });
+}
+```
+
+The second consumer cannot read a body that was already used by the first consumer.
+
+## Fix 1: Read once and reuse the parsed value
+
+The most reliable fix is to read the body once, assign it to a variable, and pass that variable through the rest of the code.
+
+```ts
+// app/api/users/route.ts
+import { NextResponse } from 'next/server';
+
+type CreateUserBody = {
+  email: string;
+  name: string;
+};
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as CreateUserBody;
+
+  if (typeof body.email !== 'string' || typeof body.name !== 'string') {
+    return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+  }
+
+  const user = await createUser(body);
+
+  return NextResponse.json({ user }, { status: 201 });
+}
+
+async function createUser(input: CreateUserBody) {
+  return {
+    id: crypto.randomUUID(),
+    ...input,
+  };
+}
+```
+
+This works because the stream is consumed once, then the parsed object is reused as plain data.
+
+If multiple functions need the same payload, pass the parsed object, not the `Request`:
+
+```ts
+function auditPayload(payload: unknown) {
+  console.log(payload);
+}
+
+function handlePayload(payload: { email: string }) {
+  return payload.email.toLowerCase();
+}
+
+export async function POST(request: Request) {
+  const payload = await request.json();
+
+  auditPayload(payload);
+  const email = handlePayload(payload as { email: string });
+
+  return Response.json({ email });
+}
+```
+
+The `Request` should stay at the boundary. Downstream code should receive already-parsed data.
+
+## Fix 2: Clone the request before reading, if you truly need two consumers
+
+If two independent consumers must both read the raw body, clone the request before any body read occurs.
+
+```ts
+export async function POST(request: Request) {
+  const copy = request.clone();
+
+  const raw = await request.text();
+  const parsed = await copy.json();
+
+  return Response.json({ raw, parsed });
+}
+```
+
+`request.clone()` creates a second `Request` with its own body stream. Both bodies can then be read once.
+
+This is useful when one consumer needs the raw bytes and another needs structured parsing, or when a signature check requires the exact raw payload before JSON parsing.
+
+The clone must happen before either body is consumed. Cloning after `request.json()` has already run is too late.
+
+### When cloning is a bad fit
+
+Cloning duplicates stream consumption and can increase memory use. For large uploads, multipart forms, or streaming bodies, cloning can be expensive. It also does not solve cases where the body is intended to be processed incrementally. In those cases, a single consumer should own the stream and forward only derived data.
+
+For ordinary JSON webhook payloads, cloning is acceptable when a raw-body verifier and a JSON parser both need access. For most app code, reading once and passing the parsed object is simpler and safer.
+
+## Fix 3: Pass the raw text through your own parsing pipeline
+
+If you need both the raw string and structured data, read the body as text once, then parse it yourself.
+
+```ts
+export async function POST(request: Request) {
+  const raw = await request.text();
+  const payload = JSON.parse(raw) as { event: string; data: unknown };
+
+  return Response.json({
+    rawLength: raw.length,
+    event: payload.event,
+  });
+}
+```
+
+This avoids multiple body reads and gives direct access to the exact raw content. It is especially useful when a signature algorithm requires the original text bytes and your application still needs parsed JSON afterward.
+
+Be careful with this approach if the incoming data might not be valid JSON. `JSON.parse` will throw on invalid input, so validation and error handling should be explicit.
+
+```ts
+export async function POST(request: Request) {
+  const raw = await request.text();
+
+  try {
+    const payload = JSON.parse(raw);
+    return Response.json({ ok: true, payload });
+  } catch {
+    return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+}
+```
+
+## Why `request.clone()` is different from calling `json()` twice
+
+Calling `request.json()` twice asks the same body stream to serve two consumers after it has already been drained. That cannot work.
+
+Cloning creates a second body stream from the original before consumption starts. Each clone can then be consumed once.
+
+Conceptually:
+
+- `request.json()` twice: one stream, two readers, failure
+- `request.clone()` then `request.json()` and `copy.json()`: two streams, one reader each, success
+
+That difference is the core mechanism behind the error.
+
+## Practical patterns for Next.js code
+
+A route handler should usually parse the body exactly once at the top level.
+
+```ts
+export async function POST(request: Request) {
+  const payload = await request.json();
+
+  const verified = await verifyPayload(payload);
+  if (!verified) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return Response.json({ ok: true });
+}
+```
+
+If a helper needs the body, give it the parsed payload:
+
+```ts
+async function verifyPayload(payload: unknown) {
+  return Boolean(payload);
+}
+
+export async function POST(request: Request) {
+  const payload = await request.json();
+  const verified = await verifyPayload(payload);
+
+  if (!verified) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return Response.json({ ok: true });
+}
+```
+
+If you need both the raw body and the parsed form, choose one of these:
+
+- `request.clone()` before any read
+- `await request.text()` once, then `JSON.parse(raw)`
+
+If you need multipart data, read `formData()` once and pass the `FormData` object through.
+
+```ts
+export async function POST(request: Request) {
+  const form = await request.formData();
+  const file = form.get('file');
+
+  return Response.json({ hasFile: file instanceof File });
+}
+```
+
+## How to avoid the error in shared code
+
+The main rule is simple: do not pass the `Request` object into utility functions unless they are the only body consumer.
+
+Prefer this:
+
+```ts
+export async function POST(request: Request) {
+  const payload = await request.json();
+  return savePayload(payload);
+}
+
+async function savePayload(payload: unknown) {
+  // ...
+}
+```
+
+Avoid this:
+
+```ts
+async function savePayload(request: Request) {
+  const payload = await request.json();
+  // ...
+}
+```
+
+The first pattern makes body ownership clear. The second pattern makes body consumption implicit and easy to duplicate in another layer.
+
+For logging, log the parsed payload or the cloned raw text, not the original `Request` body again.
+
+## Closing the loop
+
+`TypeError: Body has already been read` means the request stream was consumed more than once. In Next.js route handlers, the fix is to read once and reuse the parsed value whenever possible. If two consumers genuinely need access, clone the request before any body read, or read the raw text once and parse from that single source. For most handlers, passing the parsed object through the call chain is the preferred approach because it keeps stream ownership in one place and prevents the body from being consumed again.
