@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-27T22:38:12.912Z",
     "ideas": [
         {
-            "cell": "typeerror-body-stream::nextjs::double-reading-request-body",
-            "title": "Next.js Route Handlers Throw TypeError: Body has already been read After Parsing `request.json()` Twice",
-            "description": "Why a Next.js route handler fails after the request body is consumed more than once, and how to preserve the stream.",
-            "tags": [
-                "nextjs",
-                "route-handlers",
-                "request-body",
-                "fetch",
-                "streaming"
-            ],
-            "angle": "Explain the fetch body model: a request stream can be consumed only once, so a second `request.json()`, `text()`, or `formData()` call throws. Cover why this happens in route handlers and middleware, then show the fix by reading once, cloning before consumption when needed, or passing the parsed object through.",
-            "slug": "next-js-route-handlers-throw-typeerror-body-has-already-been-read-after-parsing-request-json-twice"
-        },
-        {
             "cell": "nextjs-unoptimized-font-self-hosting::nextjs::layout-font-loading-without-fouc",
             "title": "Next.js Loads a Self-Hosted Font with FOIT After `next/font` Is Skipped",
             "description": "How a self-hosted font flashes or swaps late in Next.js when it bypasses `next/font` optimization.",
@@ -88,19 +74,19 @@
     ],
     "drafted": [
         {
-            "cell": "build-artifact::vite::deployed-from-wrong-output-directory",
-            "title": "Vite Builds Succeed but the Server Serves the Wrong `dist` Folder",
-            "description": "Why a deployment can show an old or empty app after a successful Vite build, and how to point the server at the right output.",
+            "cell": "typeerror-body-stream::nextjs::double-reading-request-body",
+            "title": "Next.js Route Handlers Throw TypeError: Body has already been read After Parsing `request.json()` Twice",
+            "description": "Why a Next.js route handler fails after the request body is consumed more than once, and how to preserve the stream.",
             "tags": [
-                "vite",
-                "deployment",
-                "dist",
-                "hosting",
-                "build"
+                "nextjs",
+                "route-handlers",
+                "request-body",
+                "fetch",
+                "streaming"
             ],
-            "angle": "Cover the case where the build command writes one output directory but the host, adapter, or static server serves another path. Explain how Vite emits assets, why stale build directories and mismatched root settings cause the wrong files to be served, then show how to align `root`, `build.outDir`, and the deployment target.",
-            "slug": "vite-builds-succeed-but-the-server-serves-the-wrong-dist-folder",
-            "draftedAt": "2026-09-29T01:22:48.926Z"
+            "angle": "Explain the fetch body model: a request stream can be consumed only once, so a second `request.json()`, `text()`, or `formData()` call throws. Cover why this happens in route handlers and middleware, then show the fix by reading once, cloning before consumption when needed, or passing the parsed object through.",
+            "slug": "next-js-route-handlers-throw-typeerror-body-has-already-been-read-after-parsing-request-json-twice",
+            "draftedAt": "2026-09-30T00:56:19.422Z"
         }
     ]
 }
