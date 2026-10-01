@@ -12,6 +12,7 @@ import {
     uebfaqe,
     pikegjaku,
     outbid,
+    revgraphs,
     focux,
     muslimTab,
     xOutbid
@@ -74,6 +75,12 @@ export const vibeCoded: Venture[] = [
         description: 'Make a love invitation worth opening.',
         icon: loveEnvelope,
         url: 'https://envelope.love'
+    },
+    {
+        name: 'RevGraphs',
+        description: 'Your revenue, visualized in beautiful graphs.',
+        icon: revgraphs,
+        url: 'https://revgraphs.com'
     }
 ]
 
