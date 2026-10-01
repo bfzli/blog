@@ -1,0 +1,334 @@
+---
+title: "Next.js Loads a Self-Hosted Font with FOIT After `next/font` Is Skipped"
+description: "How a self-hosted font flashes or swaps late in Next.js when it bypasses `next/font` optimization."
+tags: ["nextjs", "fonts", "performance", "css", "layout"]
+date: Oct 1, 2026
+cell: "nextjs-unoptimized-font-self-hosting::nextjs::layout-font-loading-without-fouc"
+---
+
+Text renders invisible or swaps late in a Next.js page when a self-hosted font is loaded manually, and the browser shows `FOIT` behavior rather than a Next.js runtime error.
+
+## What breaks
+
+A local font referenced from CSS or a raw `@font-face` rule can delay text paint until the font file finishes loading. The visible symptoms are usually one of these:
+
+- text is hidden for a short period
+- text paints with a fallback font and then swaps
+- text shifts when the custom font finally applies
+
+There is often no JavaScript exception. The problem is in the browser rendering path, not in the Next.js build. The page can be fully valid, yet the first paint still uses fallback text metrics or no text at all.
+
+A common manual setup looks like this:
+
+```css
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+```
+
+And then:
+
+```tsx
+export default function Page() {
+  return <p className="font-inter">Hello</p>;
+}
+```
+
+If the font is not preloaded, the browser may delay rendering or swap later depending on its font-display behavior and network timing.
+
+## Why manually loaded fonts can flash or render late
+
+The browser treats web fonts as external resources. When a font is referenced in CSS, the font download starts only after the browser has parsed the stylesheet and discovered the `@font-face` rule. That means the font is usually not in the earliest request chain.
+
+If the font file arrives after the browser has already reached the render phase, the browser has to choose between two bad options:
+
+- show invisible text until the font is ready, which is `FOIT` or Flash of Invisible Text
+- show fallback text first, then swap to the custom font later, which is `FOUT` or Flash of Unstyled Text
+
+The exact behavior depends on:
+
+- `font-display`
+- preload availability
+- whether the browser considers the font critical for first paint
+- network latency and font file size
+- whether the fallback font metrics are close to the final font
+
+A manual `@font-face` rule alone does not guarantee early discovery. It also does not automatically give the browser a fallback strategy with metric adjustment. That is why a font can appear late even when it is self-hosted and technically local to the app.
+
+## What `next/font/local` changes
+
+`next/font/local` is not only a convenience wrapper around `@font-face`. It changes how Next.js emits the font, how it is referenced, and how the browser is encouraged to load it.
+
+With `next/font/local`, Next.js:
+
+- generates a CSS class with the `@font-face` definition
+- emits preload hints for the font files
+- wires the font into the render path earlier than a handwritten stylesheet often would
+- can emit fallback metric-adjustment values so the fallback text occupies similar space
+
+That combination reduces both late swapping and layout shift.
+
+The API looks like this:
+
+```ts
+import localFont from 'next/font/local';
+
+export const inter = localFont({
+  src: './fonts/Inter-Regular.woff2',
+  display: 'swap',
+  variable: '--font-inter',
+});
+```
+
+Used in a layout:
+
+```tsx
+import { inter } from './fonts';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" className={inter.variable}>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+Then in CSS:
+
+```css
+body {
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+```
+
+The important part is not the class name itself. It is that Next.js can now participate in the font loading pipeline instead of leaving the browser to discover the resource from a later stylesheet parse.
+
+## The rendering path behind FOIT and FOUT
+
+When the browser renders a page, it moves through several stages:
+
+1. HTML parsing
+2. CSS discovery and stylesheet loading
+3. render tree construction
+4. layout and paint
+5. font resolution for text runs
+
+If a font is declared in an external stylesheet, the browser may not know about the font until the stylesheet is fetched and parsed. If that stylesheet arrives after initial render work has started, the browser paints with whatever it has available.
+
+When the font later becomes available, the browser re-runs text shaping and layout for affected elements. That can trigger a swap and, if the font’s metrics differ enough, a visible reflow.
+
+The `font-display` descriptor controls how long the browser waits before falling back.
+
+Common values:
+
+- `auto`
+- `block`
+- `swap`
+- `fallback`
+- `optional`
+
+If a manual font uses the browser default or `block`, invisible text is more likely. If it uses `swap`, the text is visible sooner, but the swap can still happen later and shift layout.
+
+`next/font/local` commonly sets up a better default for practical rendering and can add metric-matching CSS to reduce the shift once the font lands.
+
+## How preload changes the load order
+
+Preload is the difference between “discover during CSS parsing” and “request as soon as possible.”
+
+A preload hint looks like this in HTML:
+
+```html
+<link rel="preload" href="/_next/static/media/inter.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+```
+
+That tells the browser the font is needed early, before it would normally infer that from CSS. The browser can then fetch the font in parallel with the rest of the critical assets.
+
+Without preload, this rough sequence is common:
+
+- HTML arrives
+- CSS arrives
+- browser finds `@font-face`
+- font request starts
+- initial paint may already be underway
+
+With preload, the font request can start much earlier:
+
+- HTML arrives
+- preload hint is seen
+- font request starts
+- CSS arrives later
+- text can use the font sooner or swap less noticeably
+
+Next.js can generate this preload behavior for font assets used via `next/font/local`. A handwritten CSS file usually does not emit a corresponding preload tag automatically.
+
+## Fallback metrics and why layout shifts happen
+
+A font is not only letters. It also defines advance widths, ascenders, descenders, line height behavior, and glyph extents. If the fallback font and the final font differ, the text block size changes when the custom font loads.
+
+That is why the problem is not limited to a flash. The browser may also shift the page after the font swap.
+
+`next/font` can generate metric-adjusted fallbacks using values such as:
+
+- `ascent-override`
+- `descent-override`
+- `line-gap-override`
+- `size-adjust`
+
+These descriptors tell the browser how to scale and align fallback text so its box model is closer to the final font before the real font arrives.
+
+A manual `@font-face` rule typically does not include these unless you add them yourself. Without them, even a `font-display: swap` setup can still produce visible movement.
+
+## The manual pattern that causes the issue
+
+This is a common self-hosted setup that works functionally but can cause FOIT or late swapping:
+
+```css
+/* app/globals.css */
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+```
+
+Placed in a global stylesheet, this is valid. The browser still has to discover the font through the stylesheet pipeline. If the font response is late, the first paint can still use fallback text, and the swap can still shift layout.
+
+The problem gets worse if:
+
+- the font is large
+- multiple weights are loaded separately
+- the stylesheet is not critical and is deferred
+- the font is referenced from a component stylesheet that loads later
+- the server sets cache headers poorly
+- the page uses a font before the CSS is parsed
+
+## The `next/font/local` pattern that avoids it
+
+Use `next/font/local` in the root layout or a module imported from it.
+
+```ts
+// app/fonts.ts
+import localFont from 'next/font/local';
+
+export const inter = localFont({
+  src: [
+    {
+      path: './Inter-Regular.woff2',
+      weight: '400',
+      style: 'normal',
+    },
+    {
+      path: './Inter-Medium.woff2',
+      weight: '500',
+      style: 'normal',
+    },
+  ],
+  display: 'swap',
+  variable: '--font-inter',
+  fallback: ['system-ui', 'sans-serif'],
+});
+```
+
+Then apply it at the root:
+
+```tsx
+// app/layout.tsx
+import './globals.css';
+import { inter } from './fonts';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" className={inter.variable}>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+And reference the variable in CSS:
+
+```css
+body {
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+```
+
+This shape keeps the font definition centralized and gives Next.js enough information to emit the necessary preload and CSS output.
+
+## Why the root layout matters
+
+If you load the font in a nested component, the font may not be associated with the initial document response early enough to help the first paint. The root layout is the earliest stable place in the Next.js App Router to declare app-wide typography.
+
+That matters because font loading is a critical-path concern. You want the browser to learn about the font as soon as possible, not after a subtree renders.
+
+If different routes need different fonts, you can still scope them, but the font should be imported in the layout segment that controls the earliest paint for that route.
+
+## Verifying the fix
+
+You can confirm the difference in the browser DevTools Network panel.
+
+With a manual font load, check whether:
+
+- the font request starts after CSS arrives
+- the first paint occurs before the font response
+- the page repaints after the font finishes
+
+With `next/font/local`, check whether:
+
+- a preload request exists for the font file
+- the font request begins earlier in the waterfall
+- there is less or no layout shift when the font applies
+
+You can also inspect the generated HTML and CSS in the browser or build output. Next.js will emit its own font class names and font-face rules. That output should appear without requiring you to hand-author the preload logic.
+
+A basic production check is to compare `font-display` and the cumulative layout shift. If the font still flashes, confirm that all font weights in use are declared in `next/font/local`. Missing weights often force the browser to synthesize or fetch a different face later.
+
+## Common mistakes that keep the problem around
+
+A few patterns keep causing late font swaps:
+
+- loading only the regular weight and using `font-weight: 500` or `700` elsewhere
+- placing the font class on a nested element instead of the root
+- importing the font from a component that is not rendered on first paint
+- using a CSS `url('/fonts/...')` path without preload
+- forgetting `crossorigin` behavior when fonts are served from a different origin
+- mixing a local font with another global stylesheet that overrides `font-family`
+
+If a font family contains multiple files, every used face should be declared explicitly:
+
+```ts
+export const brandFont = localFont({
+  src: [
+    { path: './Brand-Regular.woff2', weight: '400', style: 'normal' },
+    { path: './Brand-Semibold.woff2', weight: '600', style: 'normal' },
+    { path: './Brand-Bold.woff2', weight: '700', style: 'normal' },
+  ],
+  display: 'swap',
+});
+```
+
+If a used weight is missing, the browser may defer to a fallback or synthesize a face, both of which can produce unexpected rendering changes.
+
+## Practical takeaway
+
+Prefer `next/font/local` for self-hosted fonts in Next.js. It gives you earlier discovery through preload, generated CSS that is attached to the framework’s render pipeline, and fallback metrics that reduce layout shift. A manual `@font-face` rule can work, but it leaves the browser to discover the font later and leaves you responsible for load ordering and metric tuning.
+
+If the page still flashes after switching, check that the font is imported at the layout level, all used weights are declared, and the rendered font class is present on the root element that covers the first paint.
