@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-27T22:38:12.912Z",
     "ideas": [
         {
-            "cell": "nextjs-unoptimized-font-self-hosting::nextjs::layout-font-loading-without-fouc",
-            "title": "Next.js Loads a Self-Hosted Font with FOIT After `next/font` Is Skipped",
-            "description": "How a self-hosted font flashes or swaps late in Next.js when it bypasses `next/font` optimization.",
-            "tags": [
-                "nextjs",
-                "fonts",
-                "performance",
-                "css",
-                "layout"
-            ],
-            "angle": "Explain why manually loading a local font file can produce invisible text or late swapping, and how `next/font/local` changes preload behavior, CSS generation, and fallback metrics. Cover the rendering path, the mechanism behind FOIT/FOUT, and the exact code shape that avoids it.",
-            "slug": "next-js-loads-a-self-hosted-font-with-foit-after-next-font-is-skipped"
-        },
-        {
             "cell": "nuxt-server-only-composable-client-use::nuxt::client-component-imports-server-composable",
             "title": "Nuxt Breaks in the Browser When a Client Component Imports a Server-Only Composable",
             "description": "Why a browser component crashes after importing a composable that touches server-only APIs in Nuxt.",
@@ -74,19 +60,19 @@
     ],
     "drafted": [
         {
-            "cell": "typeerror-body-stream::nextjs::double-reading-request-body",
-            "title": "Next.js Route Handlers Throw TypeError: Body has already been read After Parsing `request.json()` Twice",
-            "description": "Why a Next.js route handler fails after the request body is consumed more than once, and how to preserve the stream.",
+            "cell": "nextjs-unoptimized-font-self-hosting::nextjs::layout-font-loading-without-fouc",
+            "title": "Next.js Loads a Self-Hosted Font with FOIT After `next/font` Is Skipped",
+            "description": "How a self-hosted font flashes or swaps late in Next.js when it bypasses `next/font` optimization.",
             "tags": [
                 "nextjs",
-                "route-handlers",
-                "request-body",
-                "fetch",
-                "streaming"
+                "fonts",
+                "performance",
+                "css",
+                "layout"
             ],
-            "angle": "Explain the fetch body model: a request stream can be consumed only once, so a second `request.json()`, `text()`, or `formData()` call throws. Cover why this happens in route handlers and middleware, then show the fix by reading once, cloning before consumption when needed, or passing the parsed object through.",
-            "slug": "next-js-route-handlers-throw-typeerror-body-has-already-been-read-after-parsing-request-json-twice",
-            "draftedAt": "2026-09-30T00:56:19.422Z"
+            "angle": "Explain why manually loading a local font file can produce invisible text or late swapping, and how `next/font/local` changes preload behavior, CSS generation, and fallback metrics. Cover the rendering path, the mechanism behind FOIT/FOUT, and the exact code shape that avoids it.",
+            "slug": "next-js-loads-a-self-hosted-font-with-foit-after-next-font-is-skipped",
+            "draftedAt": "2026-10-01T00:57:27.968Z"
         }
     ]
 }
