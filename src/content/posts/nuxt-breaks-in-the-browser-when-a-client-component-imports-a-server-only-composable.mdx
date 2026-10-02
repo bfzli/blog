@@ -1,0 +1,292 @@
+---
+title: "Nuxt Breaks in the Browser When a Client Component Imports a Server-Only Composable"
+description: "Why a browser component crashes after importing a composable that touches server-only APIs in Nuxt."
+tags: ["nuxt", "vue", "ssr", "composables", "runtime"]
+date: Oct 2, 2026
+cell: "nuxt-server-only-composable-client-use::nuxt::client-component-imports-server-composable"
+---
+
+In the browser, a Nuxt client component that imports a server-only composable can fail with `Error: [nuxt] A composable that requires access to the Nuxt app was called outside of a Nuxt app` or with a runtime `ReferenceError` such as `process is not defined` or `window is not defined`, depending on which server-only API the composable touches.
+
+## Why the browser crashes
+
+Nuxt composables are not all the same. Some are universal and can run in both server and client contexts. Others depend on request-scoped state, server runtime objects, or Node-only APIs.
+
+A composable that reads from `useRequestHeaders()`, `useRequestEvent()`, `useNitroApp()`, `useRuntimeConfig().private`, or a server-only dependency assumes a server execution context. When that composable is imported into a file that gets bundled for the browser, the code can still be evaluated during module initialization or at runtime in the client bundle. At that point, the server context is absent.
+
+The result depends on what the composable touches:
+
+- Request-scoped APIs fail because there is no active server request.
+- Node-only APIs fail because the browser has no `process`, `fs`, `path`, or `crypto` in the Node sense.
+- Private runtime config fails because `runtimeConfig.private` is stripped from the client payload.
+- Import-time side effects fail if the module executes server assumptions before any component lifecycle runs.
+
+Nuxt’s module boundary is the important part. A file in `composables/` is not automatically universal just because it is colocated there. The code inside decides whether it is safe in both environments.
+
+## Universal composables versus server-only composables
+
+Nuxt composables fall into two broad categories.
+
+Universal composables can run on server and client. Examples include `useState()`, `useRoute()`, `useFetch()`, and `useAsyncData()` when they are used with a URL or handler that is safe for both environments.
+
+Server-only composables require server context. Examples include:
+
+- `useRequestHeaders()`
+- `useRequestEvent()`
+- `useCookie()` when reading HTTP-only cookies in a server path
+- `useRuntimeConfig().private`
+- direct access to `event.node.req` or `event.node.res`
+- calls into Node-only modules such as `fs`
+
+The difference matters because the build pipeline does not magically rewrite a server-only composable into a browser-safe one. If a client component imports it, the client bundle may include the module or part of its dependency graph. Even when the offending code is not executed immediately, the import can still cause evaluation-time failures.
+
+A useful rule is simple: if the composable needs the current request or Node APIs, do not import it from a component that must run in the browser.
+
+## The import boundary that causes the failure
+
+Consider this composable:
+
+```ts
+// composables/useServerSession.ts
+export const useServerSession = () => {
+  const headers = useRequestHeaders(['cookie'])
+  const event = useRequestEvent()
+
+  if (!event) {
+    throw new Error('No request event available')
+  }
+
+  return {
+    cookieHeader: headers.cookie ?? '',
+    ip: event.node.req.headers['x-forwarded-for'] ?? ''
+  }
+}
+```
+
+Now import it into a client component:
+
+```vue
+<!-- components/ProfileCard.vue -->
+<script setup lang="ts">
+const session = useServerSession()
+</script>
+
+<template>
+  <div>{{ session.cookieHeader }}</div>
+</template>
+```
+
+If `ProfileCard.vue` is rendered in the browser, the composable can fail because `useRequestEvent()` and `useRequestHeaders()` are server-only. The client bundle may try to resolve the module, but the active Nuxt server context is not present.
+
+This is not limited to explicit browser-only code such as `process.client`. The failure can appear simply because the component is part of a route that hydrates on the client. The server rendered HTML may exist already, but hydration still executes the component setup in the browser.
+
+## Why the failure can also look like missing data
+
+Not every misuse throws immediately. Sometimes the app renders, but values are empty or `undefined`.
+
+That happens when the composable depends on data that exists only during a server request, and the client-side render does not have a corresponding source. Examples include:
+
+- a header read from the initial request
+- a cookie marked `HttpOnly`
+- private runtime config
+- server-derived user identity
+- a database result that was fetched on the server but not serialized to the client
+
+Nuxt serializes only the data it knows should cross the server-client boundary. A composable that reads request state directly bypasses that boundary. On the server, the value exists. On the client, it does not. The result is often a subtle mismatch rather than a loud crash.
+
+## What happens during bundling
+
+Nuxt uses Vite for development and build-time bundling. Client code is compiled separately from server code. If a client component imports a shared module that imports a server-only dependency, that dependency can leak into the client graph.
+
+Two common outcomes follow:
+
+1. The browser bundle includes code that references a server-only global, causing a runtime `ReferenceError`.
+2. Nuxt strips or stubs the server-only path, and the composable returns `undefined` or an empty object because its dependencies are unavailable.
+
+This is why module boundaries matter. The safe pattern is not “avoid imports.” It is “place server-only logic behind a server boundary and pass serialized data to the client.”
+
+## Supported pattern: move server-only work behind `useAsyncData()`
+
+If the client component needs data that is produced on the server, fetch it in a place that Nuxt can serialize. `useAsyncData()` is the standard tool.
+
+Example:
+
+```vue
+<!-- pages/account.vue -->
+<script setup lang="ts">
+type AccountData = {
+  name: string
+  role: string
+}
+
+const { data, error } = await useAsyncData<AccountData>('account', () =>
+  $fetch('/api/account')
+)
+</script>
+
+<template>
+  <div v-if="error">Failed to load account</div>
+  <div v-else-if="data">
+    <p>{{ data.name }}</p>
+    <p>{{ data.role }}</p>
+  </div>
+</template>
+```
+
+Then keep the server-only logic in the API route:
+
+```ts
+// server/api/account.get.ts
+export default defineEventHandler((event) => {
+  const headers = getRequestHeaders(event)
+  const userAgent = headers['user-agent'] ?? ''
+
+  return {
+    name: 'Ada',
+    role: userAgent.includes('Mobile') ? 'viewer' : 'admin'
+  }
+})
+```
+
+This works because the request-scoped logic runs on the server where the request exists. `useAsyncData()` serializes the resolved result into the Nuxt payload, so the browser gets plain data instead of a server dependency graph.
+
+If the data is needed by many components, lift the `useAsyncData()` call into a page or layout and pass the result down as props.
+
+## Supported pattern: expose server logic through a server route
+
+If the server-only logic is more than a small lookup, move it into a server route. This keeps the client side simple and preserves the server boundary.
+
+Example composable replacement:
+
+```ts
+// server/api/profile.get.ts
+export default defineEventHandler(async (event) => {
+  const headers = getRequestHeaders(event)
+  const token = headers.authorization?.replace('Bearer ', '')
+
+  if (!token) {
+    throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
+  }
+
+  return {
+    userId: '123',
+    source: 'server'
+  }
+})
+```
+
+Client usage:
+
+```vue
+<script setup lang="ts">
+const { data, pending, error } = await useFetch('/api/profile')
+</script>
+
+<template>
+  <div v-if="pending">Loading</div>
+  <div v-else-if="error">Request failed</div>
+  <pre v-else>{{ data }}</pre>
+</template>
+```
+
+The browser talks to the API route over HTTP, and the route can use request-scoped and Node-only APIs safely.
+
+## Supported pattern: move shared logic into a plugin only when it is universal
+
+Sometimes the logic in the composable is not actually server-only. It may only be calling a library that can run in both environments, but the code is packaged in a way that makes the dependency unclear.
+
+In that case, split the code:
+
+```ts
+// utils/formatAccount.ts
+export type Account = {
+  name: string
+  plan: string
+}
+
+export function formatAccount(account: Account) {
+  return `${account.name} (${account.plan})`
+}
+```
+
+Then use it from both sides:
+
+```ts
+// plugins/account.client.ts
+export default defineNuxtPlugin(() => {
+  return {
+    provide: {
+      formatAccount
+    }
+  }
+})
+```
+
+This pattern is only safe if `formatAccount` does not touch request objects, `window`, or server-only config. A plugin does not make server-only code universal. It just changes how the logic is injected.
+
+If you need the value on both sides and it depends on initial server state, the plugin should read serialized state, not the raw request.
+
+## What not to do
+
+Do not import a server-only composable into a component and wrap the call in `if (process.client)`. That only postpones the failure if the import itself triggers evaluation or if the code path is still reached during hydration.
+
+Do not read `useRequestHeaders()` in a composable that is shared by client and server unless the composable guards the server-only branch with `import.meta.server` and the client path uses a different source of data.
+
+Do not store request-specific values in module-level variables. Those values can leak across requests on the server and disappear in the browser.
+
+Do not expose private runtime config to the client by importing `useRuntimeConfig()` and assuming the same fields exist everywhere. Only public runtime config belongs in browser code.
+
+## A safe refactor pattern
+
+Suppose the original composable looks like this:
+
+```ts
+// composables/useCurrentTenant.ts
+export const useCurrentTenant = () => {
+  const headers = useRequestHeaders(['x-tenant'])
+  return headers['x-tenant'] ?? 'default'
+}
+```
+
+A client component cannot safely import that composable. Refactor it into a server route and an ordinary value source:
+
+```ts
+// server/api/tenant.get.ts
+export default defineEventHandler((event) => {
+  const headers = getRequestHeaders(event)
+  return {
+    tenant: headers['x-tenant'] ?? 'default'
+  }
+})
+```
+
+Then consume it with `useAsyncData()`:
+
+```vue
+<script setup lang="ts">
+const { data: tenant } = await useAsyncData('tenant', () => $fetch('/api/tenant'))
+</script>
+
+<template>
+  <span>{{ tenant?.tenant }}</span>
+</template>
+```
+
+If several components need the value, place the `useAsyncData()` call in a parent layout and provide it with Vue `provide`/`inject` or props. The client components then depend on plain reactive state, not on server APIs.
+
+## How to keep the problem from returning
+
+Keep a hard boundary between server-only logic and browser components.
+
+Use these rules:
+
+- Put request-scoped work in `server/` files or server routes.
+- Keep composables in `composables/` universal unless they are explicitly server-only.
+- If a composable is server-only, import it only from `server/` code, server routes, or server-only plugins.
+- Use `useAsyncData()` or `useFetch()` to move data across the server-client boundary.
+- Check `runtimeConfig.private` only on the server. Use `runtimeConfig.public` in the client.
+- Avoid module-level access to request headers, cookies, or `event` objects.
+
+If a composable is meant to be universal, verify that it does not import `fs`, `path`, `process`, `request`, or other server-only modules anywhere in its dependency chain.
+
+The practical fix is to prefer `useAsyncData()` plus a server route when the client needs server-derived data. Use a plugin only for logic that is genuinely universal. Keep request-scoped and Node-only code out of browser-imported modules so the client bundle cannot reach it.
