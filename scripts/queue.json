@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-27T22:38:12.912Z",
     "ideas": [
         {
-            "cell": "nuxt-server-only-composable-client-use::nuxt::client-component-imports-server-composable",
-            "title": "Nuxt Breaks in the Browser When a Client Component Imports a Server-Only Composable",
-            "description": "Why a browser component crashes after importing a composable that touches server-only APIs in Nuxt.",
-            "tags": [
-                "nuxt",
-                "vue",
-                "ssr",
-                "composables",
-                "runtime"
-            ],
-            "angle": "Explain how Nuxt composables can rely on request-scoped or server-only context and why importing them into client code produces runtime failures or missing data. Cover module boundaries, the difference between universal and server-only composables, and the supported patterns for moving the shared logic behind `useAsyncData()`, plugins, or server routes.",
-            "slug": "nuxt-breaks-in-the-browser-when-a-client-component-imports-a-server-only-composable"
-        },
-        {
             "cell": "react-native-android-gradle-duplicate-classpath::react-native::android-build-duplicate-class",
             "title": "React Native Android Fails with \"Duplicate class\" During Gradle Compilation",
             "description": "Why Android builds stop on duplicate classes in React Native and how to identify the conflicting dependency.",
@@ -60,19 +46,19 @@
     ],
     "drafted": [
         {
-            "cell": "nextjs-unoptimized-font-self-hosting::nextjs::layout-font-loading-without-fouc",
-            "title": "Next.js Loads a Self-Hosted Font with FOIT After `next/font` Is Skipped",
-            "description": "How a self-hosted font flashes or swaps late in Next.js when it bypasses `next/font` optimization.",
+            "cell": "nuxt-server-only-composable-client-use::nuxt::client-component-imports-server-composable",
+            "title": "Nuxt Breaks in the Browser When a Client Component Imports a Server-Only Composable",
+            "description": "Why a browser component crashes after importing a composable that touches server-only APIs in Nuxt.",
             "tags": [
-                "nextjs",
-                "fonts",
-                "performance",
-                "css",
-                "layout"
+                "nuxt",
+                "vue",
+                "ssr",
+                "composables",
+                "runtime"
             ],
-            "angle": "Explain why manually loading a local font file can produce invisible text or late swapping, and how `next/font/local` changes preload behavior, CSS generation, and fallback metrics. Cover the rendering path, the mechanism behind FOIT/FOUT, and the exact code shape that avoids it.",
-            "slug": "next-js-loads-a-self-hosted-font-with-foit-after-next-font-is-skipped",
-            "draftedAt": "2026-10-01T00:57:27.968Z"
+            "angle": "Explain how Nuxt composables can rely on request-scoped or server-only context and why importing them into client code produces runtime failures or missing data. Cover module boundaries, the difference between universal and server-only composables, and the supported patterns for moving the shared logic behind `useAsyncData()`, plugins, or server routes.",
+            "slug": "nuxt-breaks-in-the-browser-when-a-client-component-imports-a-server-only-composable",
+            "draftedAt": "2026-10-02T01:13:14.413Z"
         }
     ]
 }
