@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-27T22:38:12.912Z",
     "ideas": [
         {
-            "cell": "react-native-android-gradle-duplicate-classpath::react-native::android-build-duplicate-class",
-            "title": "React Native Android Fails with \"Duplicate class\" During Gradle Compilation",
-            "description": "Why Android builds stop on duplicate classes in React Native and how to identify the conflicting dependency.",
-            "tags": [
-                "react-native",
-                "android",
-                "gradle",
-                "dependencies",
-                "build"
-            ],
-            "angle": "Explain how two transitive dependencies can contribute the same Java/Kotlin class to the Android classpath and trigger the Gradle duplicate-class error. Cover how to inspect the dependency graph, find the conflicting artifact, and resolve it with version alignment, exclusions, or a package upgrade.",
-            "slug": "react-native-android-fails-with-duplicate-class-during-gradle-compilation"
-        },
-        {
             "cell": "docker-compose-missing-service-network-alias::docker::inter-container-name-resolution",
             "title": "Docker Compose Cannot Resolve a Service Name Because the Container Is on the Wrong Network",
             "description": "Why one Compose service cannot reach another by name and how network membership controls DNS resolution.",
@@ -46,19 +32,19 @@
     ],
     "drafted": [
         {
-            "cell": "nuxt-server-only-composable-client-use::nuxt::client-component-imports-server-composable",
-            "title": "Nuxt Breaks in the Browser When a Client Component Imports a Server-Only Composable",
-            "description": "Why a browser component crashes after importing a composable that touches server-only APIs in Nuxt.",
+            "cell": "react-native-android-gradle-duplicate-classpath::react-native::android-build-duplicate-class",
+            "title": "React Native Android Fails with \"Duplicate class\" During Gradle Compilation",
+            "description": "Why Android builds stop on duplicate classes in React Native and how to identify the conflicting dependency.",
             "tags": [
-                "nuxt",
-                "vue",
-                "ssr",
-                "composables",
-                "runtime"
+                "react-native",
+                "android",
+                "gradle",
+                "dependencies",
+                "build"
             ],
-            "angle": "Explain how Nuxt composables can rely on request-scoped or server-only context and why importing them into client code produces runtime failures or missing data. Cover module boundaries, the difference between universal and server-only composables, and the supported patterns for moving the shared logic behind `useAsyncData()`, plugins, or server routes.",
-            "slug": "nuxt-breaks-in-the-browser-when-a-client-component-imports-a-server-only-composable",
-            "draftedAt": "2026-10-02T01:13:14.413Z"
+            "angle": "Explain how two transitive dependencies can contribute the same Java/Kotlin class to the Android classpath and trigger the Gradle duplicate-class error. Cover how to inspect the dependency graph, find the conflicting artifact, and resolve it with version alignment, exclusions, or a package upgrade.",
+            "slug": "react-native-android-fails-with-duplicate-class-during-gradle-compilation",
+            "draftedAt": "2026-10-03T00:51:44.446Z"
         }
     ]
 }
