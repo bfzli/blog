@@ -1,0 +1,345 @@
+---
+title: "React Native Android Fails with \"Duplicate class\" During Gradle Compilation"
+description: "Why Android builds stop on duplicate classes in React Native and how to identify the conflicting dependency."
+tags: ["react-native", "android", "gradle", "dependencies", "build"]
+date: Oct 3, 2026
+cell: "react-native-android-gradle-duplicate-classpath::react-native::android-build-duplicate-class"
+---
+
+Android builds fail during Gradle compilation with `Duplicate class com.google.android.gms.common.internal.safeparcel.zza found in modules play-services-basement-18.3.0.aar -> jetified-play-services-basement-18.3.0-runtime` and `play-services-basement-18.2.0.aar -> jetified-play-services-basement-18.2.0-runtime`.
+
+## What the error means
+
+This error comes from Android’s DEX/R8 pipeline, not from React Native itself. Gradle resolves the app’s dependency graph, packages every resolved Android artifact into the compile classpath, then D8 or R8 converts the resulting bytecode into `.dex` files. If two resolved artifacts contribute the same fully qualified class, compilation stops with a duplicate-class error.
+
+The duplicate is usually reported in this form:
+
+```text
+Duplicate class com.google.android.gms.common.internal.safeparcel.zza found in modules
+jetified-play-services-basement-18.3.0-runtime (com.google.android.gms:play-services-basement:18.3.0)
+and jetified-play-services-basement-18.2.0-runtime (com.google.android.gms:play-services-basement:18.2.0)
+```
+
+The exact class name varies. Common examples are classes from:
+
+- `com.google.android.gms:*`
+- `androidx.*`
+- `kotlin.*`
+- `com.facebook.react:*`
+- older support libraries such as `com.android.support:*`
+
+The error means the same class file was present in more than one resolved artifact, and Android cannot decide which one to keep.
+
+## Why transitive dependencies produce duplicates
+
+A React Native app rarely depends on the conflicting artifacts directly. The conflict often comes from transitive dependencies.
+
+A direct dependency is one you declare in `android/app/build.gradle` or a library module. A transitive dependency is pulled in by something else. For example:
+
+- `react-native-google-mobile-ads` depends on one version of Google Play Services.
+- Another library depends on a different version of the same Play Services package.
+- Both versions land on the compile classpath.
+- Both contain the same class name.
+- Gradle resolves the version graph, but it does not merge class files.
+- D8 sees the duplicate and fails.
+
+This is common with packages that bundle overlapping Android libraries:
+
+- Google Play Services modules
+- Firebase modules
+- Kotlin stdlib variants
+- AndroidX support artifacts
+- legacy Android support libraries pulled in by older packages
+
+The dependency graph can be valid from Maven’s point of view and still invalid for Android class packaging.
+
+## How Gradle ends up with two copies of the same class
+
+Gradle selects artifacts by module coordinate, not by Java package contents. If two different modules both contain `com/google/android/gms/common/internal/safeparcel/zza.class`, Gradle treats them as separate inputs until the Android toolchain processes them.
+
+There are several ways this happens:
+
+1. Two different versions of the same module are forced onto different configurations.
+2. Two different artifacts publish the same class because one is a shaded or repackaged copy.
+3. A library bundles outdated support classes alongside newer AndroidX dependencies.
+4. An older React Native plugin or native module declares a dependency that conflicts with the app’s chosen version.
+
+A common pattern in Android projects is version skew:
+
+- `com.google.android.gms:play-services-basement:18.2.0`
+- `com.google.android.gms:play-services-basement:18.3.0`
+
+Or:
+
+- `androidx.appcompat:appcompat:1.6.1`
+- `com.android.support:appcompat-v7:28.0.0`
+
+AndroidX and support libraries should not coexist in the same resolved classpath unless a library is explicitly bridging them, and even then the project should usually be migrated rather than mixed.
+
+## Inspect the dependency graph
+
+The first step is to identify which artifacts are contributing the duplicate class. Gradle can print the resolved dependency tree.
+
+Run this from the Android project root:
+
+```bash
+cd android
+./gradlew :app:dependencies
+```
+
+That output is broad. It shows every configuration, which is useful, but it is often too large to inspect manually. Narrow it to a configuration such as `debugRuntimeClasspath` or `releaseRuntimeClasspath`:
+
+```bash
+./gradlew :app:dependencies --configuration debugRuntimeClasspath
+```
+
+If the issue appears only in release builds, inspect `releaseRuntimeClasspath`. If it appears in both, inspect both.
+
+Search the output for the artifact named in the error, such as `play-services-basement` or `androidx.collection`. You are looking for multiple paths that resolve to different versions of the same module.
+
+A more focused command is `dependencyInsight`, which shows why a module was selected:
+
+```bash
+./gradlew :app:dependencyInsight \
+  --configuration debugRuntimeClasspath \
+  --dependency com.google.android.gms:play-services-basement
+```
+
+Example output can include lines like:
+
+```text
+com.google.android.gms:play-services-basement:18.3.0
+   variant "runtime" [...]
+   Selection reasons:
+      By conflict resolution: between versions 18.2.0 and 18.3.0
+
+com.google.android.gms:play-services-basement:18.2.0 -> 18.3.0
+\--- project :react-native-maps
+     \--- debugRuntimeClasspath
+```
+
+That tells you which dependency requested the older version and which version Gradle selected.
+
+If the error names two distinct modules rather than two versions of one module, inspect both. For example:
+
+```bash
+./gradlew :app:dependencyInsight \
+  --configuration debugRuntimeClasspath \
+  --dependency com.google.android.gms:play-services-basement
+
+./gradlew :app:dependencyInsight \
+  --configuration debugRuntimeClasspath \
+  --dependency com.google.firebase:firebase-common
+```
+
+A duplicate class can originate from different artifacts that happen to include the same code.
+
+## Find the conflicting dependency in React Native
+
+React Native apps often assemble native modules through npm packages. The Android side of those packages may declare dependencies in their own `android/build.gradle` files. A package can pull in an older library even when the app declares the newer one.
+
+To identify the source:
+
+1. Inspect `android/app/build.gradle` for direct `implementation` lines.
+2. Inspect any local native modules under `node_modules/<package>/android/build.gradle`.
+3. Search the lockfile and package manifests for packages known to bring in the conflicting artifact.
+4. Use `dependencyInsight` on the exact module named in the duplicate-class error.
+
+For example, if the error mentions `com.google.android.gms:play-services-basement`, inspect the tree for packages such as:
+
+- `react-native-firebase`
+- `react-native-google-mobile-ads`
+- `react-native-maps`
+- `invertase` packages that wrap Firebase or Google APIs
+- older geolocation or auth SDK wrappers
+
+The conflicting dependency is often not the package you expect. The graph tells you which module pulled it in.
+
+## Resolve the conflict by aligning versions
+
+The cleanest fix is version alignment. If two dependencies need the same library, they should resolve to one compatible version.
+
+### Prefer a single version via dependency constraints
+
+If the project controls the Android Gradle files, declare the version once and let Gradle reconcile it.
+
+```groovy
+dependencies {
+    implementation("com.google.android.gms:play-services-basement:18.3.0")
+}
+```
+
+If a transitive dependency requests an older version, Gradle usually resolves to the higher version by default, unless another rule pins it. In that case, align the version through a resolution strategy or a platform if the ecosystem supports it.
+
+For Firebase and Play Services, using the Firebase BoM can remove a lot of version drift:
+
+```groovy
+dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-auth")
+}
+```
+
+The BoM keeps Firebase modules on compatible versions and reduces the chance of duplicate or mismatched Android classes across Firebase artifacts.
+
+### Use the package’s recommended version
+
+If the duplicate comes from a React Native library, check that library’s Android requirements. Many packages document compatible versions of Play Services, AndroidX, or Kotlin. Upgrading the package often updates its transitive dependencies to versions that no longer collide.
+
+For example, an older `react-native-firebase` package may depend on older Firebase components. Upgrading to a newer major release aligns its Android artifacts with current Firebase versions and AndroidX.
+
+## Resolve the conflict with exclusions
+
+If one dependency brings in the conflicting artifact and the app already provides the correct version, exclude the transitive module from that dependency.
+
+In `android/app/build.gradle`:
+
+```groovy
+dependencies {
+    implementation("com.somevendor:some-sdk:1.4.2") {
+        exclude group: "com.google.android.gms", module: "play-services-basement"
+    }
+}
+```
+
+This works when the excluded module is truly redundant. It should not be used to hide a real incompatibility. If the library requires the excluded classes at runtime and no other dependency supplies them, the app will compile but fail later.
+
+Use exclusions when the duplicate is caused by a library bundling an overlapping dependency and the app already has the proper version elsewhere.
+
+A similar pattern works for older Android support libraries:
+
+```groovy
+dependencies {
+    implementation("com.legacy:legacy-sdk:2.1.0") {
+        exclude group: "com.android.support"
+    }
+}
+```
+
+Then migrate the project to AndroidX if possible. Excluding support libraries without providing AndroidX replacements is usually incomplete.
+
+## Resolve the conflict by upgrading the package
+
+The most durable fix is often upgrading the package that introduces the outdated artifact. Many duplicate-class errors come from libraries that lag behind the rest of the dependency graph.
+
+Upgrade when:
+
+- the conflict is between old and new versions of the same module
+- the library maintains an Android dependency older than current React Native templates expect
+- the library still depends on `com.android.support:*`
+- the package has a newer release that documents AndroidX or newer Play Services compatibility
+
+In React Native projects, this may mean updating:
+
+- a native module version in `package.json`
+- the React Native version itself
+- Android Gradle Plugin and Gradle wrapper versions
+- Kotlin plugin version
+- Firebase or Google services libraries
+
+After upgrading, clean the Android build cache:
+
+```bash
+cd android
+./gradlew clean
+./gradlew assembleDebug
+```
+
+If the issue persists, remove stale build outputs:
+
+```bash
+rm -rf android/.gradle android/app/build
+./gradlew :app:assembleDebug
+```
+
+## Check for Kotlin and AndroidX mismatches
+
+Not every duplicate class is caused by a dependency version clash inside Google libraries. Kotlin and AndroidX mismatches can cause the same failure mode.
+
+Examples include:
+
+- `Duplicate class kotlin.collections.jdk8.CollectionsJDK8Kt`
+- `Duplicate class androidx.lifecycle.ViewModel`
+- `Duplicate class android.support.v4.*`
+
+These typically point to mixed ecosystems:
+
+- Kotlin stdlib split across multiple versions
+- one library using AndroidX while another still ships the old support library
+- a plugin injecting a bundled copy of `kotlin-stdlib`
+
+If the duplicate mentions Kotlin, inspect `org.jetbrains.kotlin:kotlin-stdlib` and any library that bundles Kotlin runtime classes. In many Android builds, setting a single Kotlin version in the root project and letting all modules use it fixes the mismatch.
+
+For AndroidX, make sure these flags exist in `android/gradle.properties`:
+
+```properties
+android.useAndroidX=true
+android.enableJetifier=true
+```
+
+`Jetifier` rewrites many old support library references to AndroidX at build time, but it cannot fix every conflict. It helps when older libraries still reference support artifacts. It does not solve duplicate classes caused by two artifacts shipping the same AndroidX code.
+
+## A practical debugging workflow
+
+When the build fails with duplicate classes, use this sequence:
+
+1. Read the exact duplicate class and artifact names from the error.
+2. Run `./gradlew :app:dependencyInsight --configuration debugRuntimeClasspath --dependency <artifact>`.
+3. Identify every library that requests the conflicting module.
+4. Decide whether to align versions, exclude a transitive dependency, or upgrade the package.
+5. Rebuild with `./gradlew clean assembleDebug`.
+6. If release fails but debug passes, repeat against `releaseRuntimeClasspath`.
+
+If the duplicate class names two different modules, inspect both modules. The root cause is usually visible in the dependency tree.
+
+## Example resolution patterns
+
+A few common patterns recur in React Native Android projects.
+
+### Pattern 1: Google Play Services version skew
+
+One package requests `play-services-basement:18.2.0`, another requests `18.3.0`. Align on the higher compatible version or upgrade the older package.
+
+```groovy
+dependencies {
+    implementation("com.google.android.gms:play-services-basement:18.3.0")
+}
+```
+
+### Pattern 2: Firebase modules out of sync
+
+Different Firebase artifacts pull different internal classes. Use the Firebase BoM and remove explicit per-module version pins.
+
+```groovy
+dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-messaging")
+}
+```
+
+### Pattern 3: A library bundles a redundant transitive dependency
+
+Exclude the module from the offending library when the app already supplies it.
+
+```groovy
+dependencies {
+    implementation("com.vendor:ads-sdk:4.7.0") {
+        exclude group: "com.google.android.gms", module: "play-services-basement"
+    }
+}
+```
+
+### Pattern 4: Legacy support libraries inside a modern AndroidX app
+
+Upgrade the library. If that is not available, exclude the support library and replace it with AndroidX equivalents elsewhere in the graph.
+
+```properties
+android.useAndroidX=true
+android.enableJetifier=true
+```
+
+## Keep the error from coming back
+
+The most stable fix is to keep the Android dependency graph aligned instead of relying on exclusions alone. Prefer upgrading the package that introduces the incompatible dependency, then use a version alignment mechanism such as a BoM or a single explicit version declaration. Exclusions are useful when a library over-declares a dependency, but they should be the exception. Version alignment prevents the same class from reappearing through a different transitive path on the next install or package upgrade.
