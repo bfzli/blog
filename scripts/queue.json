@@ -2,20 +2,6 @@
     "generatedAt": "2026-09-27T22:38:12.912Z",
     "ideas": [
         {
-            "cell": "docker-compose-missing-service-network-alias::docker::inter-container-name-resolution",
-            "title": "Docker Compose Cannot Resolve a Service Name Because the Container Is on the Wrong Network",
-            "description": "Why one Compose service cannot reach another by name and how network membership controls DNS resolution.",
-            "tags": [
-                "docker",
-                "docker-compose",
-                "networking",
-                "dns",
-                "containers"
-            ],
-            "angle": "Explain the built-in DNS behavior in Docker Compose and why service-name lookup fails when containers are attached to different networks or when the target service is only on an external network. Cover the name-resolution rules, the effect of custom networks and aliases, and the configuration that makes service-to-service traffic work reliably.",
-            "slug": "docker-compose-cannot-resolve-a-service-name-because-the-container-is-on-the-wrong-network"
-        },
-        {
             "cell": "bun-executable-permission-missing::bun::package-binary-launch",
             "title": "Bun Starts a Package Binary but the Command Is Not Found in `node_modules/.bin`",
             "description": "Why a Bun-installed CLI fails to launch from a package binary and how to expose the executable correctly.",
@@ -32,19 +18,19 @@
     ],
     "drafted": [
         {
-            "cell": "react-native-android-gradle-duplicate-classpath::react-native::android-build-duplicate-class",
-            "title": "React Native Android Fails with \"Duplicate class\" During Gradle Compilation",
-            "description": "Why Android builds stop on duplicate classes in React Native and how to identify the conflicting dependency.",
+            "cell": "docker-compose-missing-service-network-alias::docker::inter-container-name-resolution",
+            "title": "Docker Compose Cannot Resolve a Service Name Because the Container Is on the Wrong Network",
+            "description": "Why one Compose service cannot reach another by name and how network membership controls DNS resolution.",
             "tags": [
-                "react-native",
-                "android",
-                "gradle",
-                "dependencies",
-                "build"
+                "docker",
+                "docker-compose",
+                "networking",
+                "dns",
+                "containers"
             ],
-            "angle": "Explain how two transitive dependencies can contribute the same Java/Kotlin class to the Android classpath and trigger the Gradle duplicate-class error. Cover how to inspect the dependency graph, find the conflicting artifact, and resolve it with version alignment, exclusions, or a package upgrade.",
-            "slug": "react-native-android-fails-with-duplicate-class-during-gradle-compilation",
-            "draftedAt": "2026-10-03T00:51:44.446Z"
+            "angle": "Explain the built-in DNS behavior in Docker Compose and why service-name lookup fails when containers are attached to different networks or when the target service is only on an external network. Cover the name-resolution rules, the effect of custom networks and aliases, and the configuration that makes service-to-service traffic work reliably.",
+            "slug": "docker-compose-cannot-resolve-a-service-name-because-the-container-is-on-the-wrong-network",
+            "draftedAt": "2026-10-04T00:16:51.805Z"
         }
     ]
 }
