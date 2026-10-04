@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-09-27T22:38:12.912Z",
+    "generatedAt": "2026-10-04T22:35:11.076Z",
     "ideas": [
         {
             "cell": "bun-executable-permission-missing::bun::package-binary-launch",
@@ -14,6 +14,118 @@
             ],
             "angle": "Explain how Bun installs package executables, how the `bin` field maps to a launcher, and why a wrong or missing path leaves no usable command in `node_modules/.bin`. Cover the packaging rules, the generated wrapper, and the exact `package.json` structure that makes the binary discoverable.",
             "slug": "bun-starts-a-package-binary-but-the-command-is-not-found-in-node-modules-bin"
+        },
+        {
+            "cell": "astro-request-headers::astro::proxying-cors-with-credentials",
+            "title": "Astro Proxies a Cross-Origin API Request but Drops Cookies and Authorization Headers",
+            "description": "Fix an Astro endpoint that forwards cross-origin requests without preserving credentials or auth headers.",
+            "tags": [
+                "astro",
+                "api",
+                "cors",
+                "cookies",
+                "fetch"
+            ],
+            "angle": "Cover how Astro server code can omit `cookie`, `authorization`, and `credentials` when forwarding requests with `fetch`. Explain the difference between browser CORS and server-side proxying, then show how to forward headers safely and avoid leaking or stripping session state.",
+            "slug": "astro-proxies-a-cross-origin-api-request-but-drops-cookies-and-authorization-headers"
+        },
+        {
+            "cell": "bun-sqlite-migration-lock::bun::exclusive-lock-during-schema-change",
+            "title": "Bun Locks a SQLite Database During a Migration and Other Requests Stall",
+            "description": "Explain why Bun migrations can block SQLite access and how to avoid long exclusive locks.",
+            "tags": [
+                "bun",
+                "sqlite",
+                "migrations",
+                "database",
+                "concurrency"
+            ],
+            "angle": "Describe how schema changes in SQLite can take an exclusive lock and block reads or writes while Bun runs migration code. Explain why long transactions, multiple connections, and write bursts make it worse, then show safer migration ordering and shorter lock windows.",
+            "slug": "bun-locks-a-sqlite-database-during-a-migration-and-other-requests-stall"
+        },
+        {
+            "cell": "workers-custom-domain::cloudflare-workers::route-binding-required",
+            "title": "Cloudflare Workers Fails to Serve a Custom Domain After the Route Is Missing in wrangler.toml",
+            "description": "Fix a Worker that deploys but never answers traffic on its custom domain because the route binding is absent.",
+            "tags": [
+                "cloudflare-workers",
+                "wrangler",
+                "domains",
+                "routes",
+                "deployment"
+            ],
+            "angle": "Explain the binding between a Worker, its route, and the custom domain mapping in Cloudflare. Cover how the code can deploy successfully while the hostname still points nowhere, then show the exact `wrangler.toml` route or custom domain configuration needed to receive traffic.",
+            "slug": "cloudflare-workers-fails-to-serve-a-custom-domain-after-the-route-is-missing-in-wrangler-toml"
+        },
+        {
+            "cell": "nextjs-server-component-mutation::nextjs::stale-cache-after-post",
+            "title": "Next.js Server Components Return Stale Data After a Mutation Because the Cache Was Not Invalidated",
+            "description": "Fix stale server-rendered data in Next.js after a write operation by revalidating the affected path or tag.",
+            "tags": [
+                "nextjs",
+                "react-server-components",
+                "cache",
+                "revalidate",
+                "app-router"
+            ],
+            "angle": "Explain how the App Router caches fetches and server component output across requests. Show why a mutation does not automatically refresh cached data, then cover `revalidatePath()`, `revalidateTag()`, and fetch cache options so the updated state renders consistently.",
+            "slug": "next-js-server-components-return-stale-data-after-a-mutation-because-the-cache-was-not-invalidated"
+        },
+        {
+            "cell": "go-sql-localhost-bind::go::listen-on-the-wrong-interface",
+            "title": "Go Fails to Accept Local Requests Because net/http Listens on the Wrong Interface",
+            "description": "Fix a Go server that starts cleanly but refuses local connections because it bound to the wrong host or port.",
+            "tags": [
+                "go",
+                "net-http",
+                "localhost",
+                "networking",
+                "server"
+            ],
+            "angle": "Explain how `http.ListenAndServe` binds to an address and why `127.0.0.1`, `0.0.0.0`, and `localhost` are not interchangeable in every environment. Show how to choose the correct bind address for local development, containers, and remote access.",
+            "slug": "go-fails-to-accept-local-requests-because-net-http-listens-on-the-wrong-interface"
+        },
+        {
+            "cell": "rust-bin-cargo::cargo::missing-binary-entrypoint",
+            "title": "Cargo Builds a Rust CLI but the Installed Command Never Appears in PATH",
+            "description": "Fix a Rust package that compiles but does not install a runnable binary because the crate metadata is incomplete.",
+            "tags": [
+                "rust",
+                "cargo",
+                "cli",
+                "publishing",
+                "binary"
+            ],
+            "angle": "Cover how Cargo decides whether a package exposes a binary and where it places the executable during `cargo install`. Explain the role of `[[bin]]`, `src/main.rs`, and package naming, then show how to make the command discoverable in PATH after installation.",
+            "slug": "cargo-builds-a-rust-cli-but-the-installed-command-never-appears-in-path"
+        },
+        {
+            "cell": "python-pydantic-mismatch::python::request-model-validation",
+            "title": "FastAPI Rejects a JSON Request with 422 Because the Pydantic Model Does Not Match the Payload",
+            "description": "Fix a FastAPI validation error caused by field names, types, or nesting that do not match the incoming JSON body.",
+            "tags": [
+                "fastapi",
+                "pydantic",
+                "python",
+                "validation",
+                "json"
+            ],
+            "angle": "Explain how FastAPI uses Pydantic to validate request bodies before the handler runs. Show how mismatched field names, missing nesting, optional types, and strict models produce a 422 response, then demonstrate the exact model and payload shape that must line up.",
+            "slug": "fastapi-rejects-a-json-request-with-422-because-the-pydantic-model-does-not-match-the-payload"
+        },
+        {
+            "cell": "nginx-websocket-timeout::nginx::idle-connection-close",
+            "title": "Nginx Closes a WebSocket Connection After the Upgrade Because the Timeout Is Too Low",
+            "description": "Fix an Nginx reverse proxy that accepts a WebSocket upgrade but drops the socket during idle periods.",
+            "tags": [
+                "nginx",
+                "websocket",
+                "proxy",
+                "timeout",
+                "reverse-proxy"
+            ],
+            "angle": "Explain that a successful upgrade only establishes the tunnel; Nginx can still close it with proxy read and send timeouts. Show the required websocket proxy headers and the timeout settings that keep the connection open for idle traffic.",
+            "slug": "nginx-closes-a-websocket-connection-after-the-upgrade-because-the-timeout-is-too-low"
         }
     ],
     "drafted": [
