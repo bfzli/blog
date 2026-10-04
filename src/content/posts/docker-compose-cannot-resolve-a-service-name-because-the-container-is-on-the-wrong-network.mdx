@@ -1,0 +1,389 @@
+---
+title: "Docker Compose Cannot Resolve a Service Name Because the Container Is on the Wrong Network"
+description: "Why one Compose service cannot reach another by name and how network membership controls DNS resolution."
+tags: ["docker", "docker-compose", "networking", "dns", "containers"]
+date: Oct 4, 2026
+cell: "docker-compose-missing-service-network-alias::docker::inter-container-name-resolution"
+---
+
+`curl: (6) Could not resolve host: api` appears inside one Docker Compose container when it tries to reach another service by name, even though both services are running.
+
+## How Docker Compose name resolution works
+
+Docker Compose creates a private network for a project and registers each service name in the embedded DNS server attached to that network. Inside that network, a container can usually reach another service by using the Compose service name as the hostname.
+
+For example, with this file:
+
+```yaml
+services:
+  api:
+    image: nginx:1.27
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://api"]
+```
+
+`web` can resolve `api` because both containers are attached to the same default network created by Compose.
+
+The DNS entry is not global. It exists only on networks shared by the containers. Docker’s DNS server answers name lookups for service names, container names, and configured aliases only when the client container is connected to the same user-defined network.
+
+That means service discovery in Compose is a network-membership problem, not a process-discovery problem.
+
+## Why name lookup fails
+
+The lookup fails when the requesting container and the target container are not on the same network. In that case, the DNS server available inside the requesting container has no record for the target service name.
+
+The common error from `curl` is:
+
+```text
+curl: (6) Could not resolve host: api
+```
+
+Other tools produce different text, but the mechanism is the same. The container can send DNS queries, but no attached network contains a DNS record for `api`, so resolution returns nothing.
+
+This often happens after introducing custom networks. For example:
+
+```yaml
+services:
+  api:
+    image: nginx:1.27
+    networks:
+      - backend
+
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://api"]
+    networks:
+      - frontend
+
+networks:
+  frontend: {}
+  backend: {}
+```
+
+Here `web` cannot resolve `api` because the services are attached to different networks. Docker Compose creates both networks, but it does not bridge name resolution across them.
+
+## The DNS rule Compose follows
+
+The important rule is simple:
+
+- A service name is resolvable from a container only if both containers share at least one user-defined network.
+- Docker’s embedded DNS returns names for services, container names, and aliases on that shared network.
+- The default network created by Compose is a user-defined network, so service-to-service lookup works there by default.
+
+This is why the default Compose configuration often works without any extra network configuration.
+
+The moment you define `networks:` explicitly, you take control of membership. The service name stays the same, but the DNS namespace changes with the network attachments.
+
+## A working Compose configuration
+
+This example works because both services share the same network:
+
+```yaml
+services:
+  api:
+    image: nginx:1.27
+    networks:
+      - appnet
+
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://api"]
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+```
+
+Run it with:
+
+```sh
+docker compose up --abort-on-container-exit
+```
+
+Inside `web`, the hostname `api` resolves to the `api` container’s IP address on `appnet`.
+
+If the target service listens on a non-default port, the hostname still resolves. DNS only provides the address; HTTP routing and port selection are separate concerns.
+
+## What happens when the target is only on an external network
+
+A second common failure mode appears when one service is attached only to an external network, while the caller uses a different Compose-managed network.
+
+Example:
+
+```yaml
+services:
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://api"]
+    networks:
+      - frontend
+
+  api:
+    image: nginx:1.27
+    networks:
+      - shared_net
+
+networks:
+  frontend: {}
+  shared_net:
+    external: true
+```
+
+If `shared_net` exists and `api` is attached only to it, `web` still cannot resolve `api` unless `web` is also attached to `shared_net`.
+
+An external network is just a network created outside the current Compose project. Compose does not automatically place other services on it, and it does not create cross-network DNS visibility. Service discovery still requires shared membership.
+
+If the `api` container is reachable from somewhere else on `shared_net`, that does not help `web` unless `web` joins `shared_net` too.
+
+## How aliases affect lookup
+
+Compose supports network aliases. An alias is an additional DNS name for a service on a specific network.
+
+```yaml
+services:
+  api:
+    image: nginx:1.27
+    networks:
+      appnet:
+        aliases:
+          - backend
+          - internal-api
+
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://backend"]
+    networks:
+      - appnet
+
+networks:
+  appnet: {}
+```
+
+In this example, `web` can use `backend` or `internal-api` as hostnames because the aliases are registered on `appnet`.
+
+Aliases are network-scoped. They are not exported to unrelated networks. If a container joins two networks, it can have different aliases on each one. That can be useful when the same service needs different names in different connectivity domains.
+
+A service can also have the same alias on multiple networks, but that does not make the name global. The alias resolves only within the network where it was declared and where the caller is attached.
+
+## Why a container on multiple networks can still fail
+
+A container attached to multiple networks may reach another service if they share at least one network. If they do not share one, DNS lookup still fails.
+
+Example:
+
+```yaml
+services:
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://api"]
+    networks:
+      - frontend
+      - shared
+
+  api:
+    image: nginx:1.27
+    networks:
+      - backend
+      - shared
+
+networks:
+  frontend: {}
+  backend: {}
+  shared: {}
+```
+
+Here `web` can resolve `api` because both join `shared`, even though they also have network-specific memberships elsewhere.
+
+If `shared` is removed, resolution breaks again:
+
+```yaml
+services:
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://api"]
+    networks:
+      - frontend
+
+  api:
+    image: nginx:1.27
+    networks:
+      - backend
+```
+
+There is no shared network, so no shared DNS namespace.
+
+## How to inspect the problem
+
+You can verify network membership with `docker compose ps` and `docker inspect`.
+
+Start with:
+
+```sh
+docker compose up -d
+```
+
+Then inspect the container networks:
+
+```sh
+docker inspect "$(docker compose ps -q web)" --format '{{json .NetworkSettings.Networks}}'
+docker inspect "$(docker compose ps -q api)" --format '{{json .NetworkSettings.Networks}}'
+```
+
+If the JSON objects do not share a network name, name resolution will fail.
+
+You can also test DNS directly from the client container:
+
+```sh
+docker compose exec web getent hosts api
+```
+
+If this returns nothing, the hostname is not resolvable from that container.
+
+If the image lacks `getent`, use `nslookup` or `dig` if available, or install a minimal package for debugging. For Alpine-based images:
+
+```sh
+docker compose exec web sh -lc 'apk add --no-cache bind-tools >/dev/null && nslookup api'
+```
+
+For Debian-based images:
+
+```sh
+docker compose exec web sh -lc 'apt-get update && apt-get install -y dnsutils >/dev/null && nslookup api'
+```
+
+If DNS resolution succeeds but the HTTP request still fails, the problem is no longer name resolution. It is likely port, protocol, application startup, or bind-address configuration.
+
+## How to make service-to-service traffic work reliably
+
+The simplest and most reliable pattern is to attach the services that need to talk to each other to the same user-defined network.
+
+```yaml
+services:
+  api:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["node", "server.js"]
+    volumes:
+      - ./server.js:/app/server.js:ro
+    networks:
+      - appnet
+
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://api:3000"]
+    networks:
+      - appnet
+
+networks:
+  appnet: {}
+```
+
+A minimal `server.js`:
+
+```ts
+import http from "node:http";
+
+http.createServer((req, res) => {
+  res.writeHead(200, { "content-type": "text/plain" });
+  res.end("ok\n");
+}).listen(3000, "0.0.0.0");
+```
+
+The important parts are:
+
+- both services share `appnet`
+- the server listens on `0.0.0.0`, not `127.0.0.1`
+- the client uses the service name `api`
+- the port matches the container’s listening port
+
+Binding to `0.0.0.0` is necessary because a container that listens only on `127.0.0.1` accepts connections only from itself. DNS may work and still the TCP connection will fail.
+
+## When to use external networks
+
+External networks are appropriate when you need Compose-managed services to join a pre-existing network, such as a shared reverse proxy network or a network used by multiple Compose projects.
+
+Example:
+
+```yaml
+services:
+  api:
+    image: nginx:1.27
+    networks:
+      - shared_net
+
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://api"]
+    networks:
+      - shared_net
+
+networks:
+  shared_net:
+    external: true
+```
+
+The external network must already exist:
+
+```sh
+docker network create shared_net
+```
+
+This works because both services are attached to the same external network. It does not matter that the network was created outside the current Compose project.
+
+What does not work is placing only one service on the external network and assuming the other service can find it from a separate network. DNS is tied to shared attachment, not project membership.
+
+## Avoiding ambiguous names
+
+Compose service names are the primary lookup names, but aliases can introduce ambiguity if they overlap on a shared network. Keep aliases intentional and specific.
+
+If a service must be reached both internally and externally, use one network for internal service discovery and another for ingress or proxy integration. Do not rely on incidental container names or on multiple unrelated network attachments to make the same hostname resolve everywhere.
+
+A practical layout looks like this:
+
+```yaml
+services:
+  api:
+    image: nginx:1.27
+    networks:
+      - internal
+      - edge
+
+  web:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -sS http://api"]
+    networks:
+      - internal
+
+  proxy:
+    image: traefik:v3.1
+    networks:
+      - edge
+
+networks:
+  internal: {}
+  edge:
+    external: true
+```
+
+`web` reaches `api` over `internal`. `proxy` can also reach `api` if it joins `internal`, but the edge-facing network remains separate. This keeps DNS scope aligned with the communication paths.
+
+## Practical command sequence
+
+If you need to fix a broken lookup, check the topology first:
+
+```sh
+docker compose config
+docker compose ps
+docker inspect "$(docker compose ps -q web)" --format '{{json .NetworkSettings.Networks}}'
+docker inspect "$(docker compose ps -q api)" --format '{{json .NetworkSettings.Networks}}'
+docker compose exec web getent hosts api
+```
+
+If the networks do not match, update the Compose file so both services join the same user-defined network. If the service must stay on an external network, attach the client service there too. If the hostname should be different, add a network alias on the shared network and use that alias consistently.
+
+## Practical takeaway
+
+Prefer a single shared user-defined network for services that need direct service-name lookup. Use network aliases only when you need an alternate name on that same shared network. Use external networks only when they are shared by every container that needs to resolve the name. If a hostname cannot be resolved, the first thing to verify is not the application code but network membership, because Docker Compose DNS only answers for containers that share a network.
