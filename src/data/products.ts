@@ -77,7 +77,7 @@ export const vibeCoded: Venture[] = [
         url: 'https://envelope.love'
     },
     {
-        name: 'RevGraphs',
+        name: 'Revgraphs',
         description: 'Your revenue, visualized in beautiful graphs.',
         icon: revgraphs,
         url: 'https://revgraphs.com'
