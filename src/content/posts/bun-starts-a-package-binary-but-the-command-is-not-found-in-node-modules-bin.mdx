@@ -1,0 +1,375 @@
+---
+title: "Bun Starts a Package Binary but the Command Is Not Found in `node_modules/.bin`"
+description: "Why a Bun-installed CLI fails to launch from a package binary and how to expose the executable correctly."
+tags: ["bun", "cli", "package-json", "bin", "packaging"]
+date: Oct 5, 2026
+cell: "bun-executable-permission-missing::bun::package-binary-launch"
+---
+
+`bun run <package-binary>` fails because `node_modules/.bin/<name>` does not exist, and Bun reports `command not found: <name>`.
+
+## What this error means
+
+A package can ship executable entry points through its `package.json` `bin` field. Package managers create a launcher in `node_modules/.bin` that points to the real file inside the package directory.
+
+When Bun installs a package that advertises a binary, it only exposes that command if the package metadata is valid and the `bin` target resolves to an actual file. If the `bin` path is missing, malformed, or points outside the package in a way Bun does not package, there is no launcher to place in `node_modules/.bin`. Then a call such as:
+
+```sh
+bunx mycli
+```
+
+or
+
+```sh
+bun run mycli
+```
+
+fails with a `command not found` error because the executable name was never linked into `node_modules/.bin`.
+
+## How Bun exposes package binaries
+
+Bun reads the installed package's `package.json`. If it finds a `bin` entry, it uses that to generate a runnable command name.
+
+The `bin` field supports two forms:
+
+- a string, when the package exposes a single executable
+- an object, when the package exposes multiple executables
+
+A minimal single-binary package looks like this:
+
+```json
+{
+  "name": "mycli",
+  "version": "1.0.0",
+  "bin": "dist/cli.js"
+}
+```
+
+That is shorthand for:
+
+```json
+{
+  "name": "mycli",
+  "version": "1.0.0",
+  "bin": {
+    "mycli": "dist/cli.js"
+  }
+}
+```
+
+The left side is the command name. The right side is the file Bun should execute. After install, Bun creates a launcher under `node_modules/.bin/mycli`.
+
+The wrapper is not the actual implementation. It is a small executable shim that resolves the package path and starts the declared file using the package manager's execution rules. The shim lets you run the command without typing the full path into `node_modules/mycli/dist/cli.js`.
+
+## Why a missing or wrong `bin` path breaks discovery
+
+Bun can only expose what is described in the package metadata. If the `bin` value points to a file that is not present in the published package, the install can complete, but there is nothing valid to link.
+
+Common causes include:
+
+- `bin` points to `src/cli.ts`, but only built JavaScript is published
+- `bin` points to a file that is excluded by `"files"` in `package.json`
+- `bin` points to a path with the wrong directory case on a case-sensitive filesystem
+- the package defines `bin`, but the published tarball does not contain `package.json`
+- the command name is not what the consuming code expects
+
+For example, this package metadata is broken if the package is published without `src/cli.ts`:
+
+```json
+{
+  "name": "mycli",
+  "version": "1.0.0",
+  "bin": {
+    "mycli": "src/cli.ts"
+  }
+}
+```
+
+Bun can read the declaration, but it still has to resolve the file in the installed package. If the file is absent, the executable cannot be linked into `node_modules/.bin`.
+
+## How `node_modules/.bin` is populated
+
+The `node_modules/.bin` directory is a convention used by package managers for executable shims. During installation, each package binary is linked there by name.
+
+With Bun, the typical result for a valid CLI package is:
+
+```text
+node_modules/
+  .bin/
+    mycli
+  mycli/
+    package.json
+    dist/
+      cli.js
+```
+
+The `.bin/mycli` entry is what `bun run mycli`, `bunx mycli`, and other tooling rely on.
+
+If the package declares multiple binaries, Bun creates one wrapper per entry:
+
+```json
+{
+  "name": "toolkit",
+  "version": "1.0.0",
+  "bin": {
+    "toolkit": "dist/toolkit.js",
+    "toolkit-doctor": "dist/doctor.js"
+  }
+}
+```
+
+This produces `node_modules/.bin/toolkit` and `node_modules/.bin/toolkit-doctor`.
+
+If the consuming project expects `toolkit` but the package only publishes `toolkit-doctor`, the command lookup will fail even though the package installed successfully.
+
+## The exact `package.json` structure Bun expects
+
+A package binary is discoverable when all of the following are true:
+
+- `package.json` is included in the published package
+- `bin` is present and valid
+- the `bin` value points to a real file in the package
+- the target file is executable in the runtime environment
+- the command name matches the expected binary name
+
+A reliable package layout for a Bun-compatible CLI looks like this:
+
+```json
+{
+  "name": "mycli",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "mycli": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ]
+}
+```
+
+And the CLI entry file should include a shebang if it is intended to run as a standalone executable:
+
+```ts
+#!/usr/bin/env node
+
+import { main } from "./index.js";
+
+await main();
+```
+
+For CommonJS, the same idea applies:
+
+```js
+#!/usr/bin/env node
+
+const { main } = require("./index.js");
+
+main();
+```
+
+The shebang matters because the wrapper needs an executable target. Bun can run JavaScript directly, but packaging conventions still depend on the binary target being a real launcher file.
+
+## Packaging rules that determine whether the binary ships
+
+Publishing a package is not the same thing as checking out the repository. Bun installs from the published package contents, not from the full source tree.
+
+That means files can disappear for several reasons:
+
+- a `"files"` allowlist excludes the binary
+- `.npmignore` excludes the binary
+- the `bin` path points to a source file that is not built before publish
+- the package is published from a subdirectory that does not contain the executable
+- the executable is generated locally but not committed into the release artifact
+
+A package like this may work in the repository but fail after publish:
+
+```json
+{
+  "name": "mycli",
+  "version": "1.0.0",
+  "bin": {
+    "mycli": "dist/cli.js"
+  },
+  "files": [
+    "src"
+  ]
+}
+```
+
+This excludes `dist`, so the binary target is absent from the tarball. Bun cannot create a launcher for a file that is not installed.
+
+The reverse problem is also common. The package ships `dist/cli.js`, but the `bin` field still points at `src/cli.ts`. The install succeeds, but `node_modules/.bin` remains empty for that package because the target path is invalid.
+
+## How to verify what Bun installed
+
+Inspect the installed package before looking at the consumer code.
+
+```sh
+ls -la node_modules/.bin
+cat node_modules/mycli/package.json
+```
+
+You can also inspect the executable target directly:
+
+```sh
+ls -la node_modules/mycli/dist/cli.js
+```
+
+If `node_modules/.bin/mycli` is missing, Bun did not create a launcher. That usually means one of these is true:
+
+- the package has no `bin` field
+- the `bin` field does not name the command you expect
+- the `bin` target path does not exist in the installed package
+- the install was done from a workspace or local path that did not include the file
+
+To check whether Bun sees the package as a binary provider, inspect the resolved metadata:
+
+```sh
+bun pm ls
+```
+
+If the package is present but the command is absent from `node_modules/.bin`, the issue is in the package metadata or published contents, not in the consumer invocation.
+
+## A working minimal CLI package
+
+This is a complete structure that Bun can install and expose correctly.
+
+`package.json`:
+
+```json
+{
+  "name": "mycli",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "mycli": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "files": [
+    "dist"
+  ]
+}
+```
+
+`src/cli.ts`:
+
+```ts
+#!/usr/bin/env node
+
+import { greet } from "./greet.js";
+
+const name = process.argv[2] ?? "world";
+console.log(greet(name));
+```
+
+`src/greet.ts`:
+
+```ts
+export function greet(name: string): string {
+  return `hello ${name}`;
+}
+```
+
+`tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true,
+    "strict": true
+  },
+  "include": ["src"]
+}
+```
+
+After building and publishing, the installed package should contain `dist/cli.js`, and Bun should create `node_modules/.bin/mycli`.
+
+## How `bunx` differs from direct `node_modules/.bin` access
+
+`bunx` can run a package binary without manually referencing the local shim, but it still depends on the same package metadata.
+
+If `bin` is broken, `bunx mycli` fails for the same reason as `node_modules/.bin/mycli` missing: Bun has no valid launcher to resolve.
+
+The distinction matters when diagnosing the problem:
+
+- if `bunx mycli` fails and `node_modules/.bin/mycli` is missing, the package metadata is wrong
+- if `node_modules/.bin/mycli` exists but execution still fails, the target script or shebang is broken
+
+That separation tells you where to look.
+
+## Fixing the package so Bun can generate the launcher
+
+Prefer this structure:
+
+```json
+{
+  "name": "mycli",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "mycli": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepack": "bun run build"
+  }
+}
+```
+
+This setup makes the install artifact predictable:
+
+- `prepack` builds the distributable files before publish
+- `files` ensures `dist` is included
+- `bin` points at the built launcher
+- the command name matches the package binary name
+
+If the CLI is meant to be the package's primary executable, the command name should usually match the package name. That keeps consumer instructions simple and avoids mismatches between the package identity and the launcher name.
+
+## Avoiding the problem in workspace and local-link setups
+
+Workspace packages can hide this issue because a direct source checkout may contain files that the published tarball does not.
+
+Use the same rules in workspaces that you would use for a published package:
+
+- build to `dist`
+- point `bin` at `dist/cli.js`
+- include `dist` in `"files"`
+- verify the launcher with `bun install` in a clean project
+
+A local link created with `bun link` or a path dependency still depends on the package's `bin` metadata. If the path package omits the binary target, the consumer project will still not get a usable `node_modules/.bin` command.
+
+## Practical check list
+
+Use this sequence when Bun cannot find the package binary:
+
+```sh
+cat node_modules/mycli/package.json
+ls -la node_modules/mycli/dist/cli.js
+ls -la node_modules/.bin/mycli
+```
+
+Then confirm the package metadata contains a valid `bin` declaration:
+
+```json
+{
+  "bin": {
+    "mycli": "./dist/cli.js"
+  }
+}
+```
+
+If the file is missing, fix the publish artifact. If the file exists but the launcher does not, fix the command name or the `bin` mapping. If both exist but execution fails, check the shebang and file permissions.
+
+The preferred fix is to publish a built executable under `dist`, point `bin` at that file, and include the built output in `"files"`. That makes Bun generate the `node_modules/.bin` launcher consistently and prevents missing-command failures from reappearing.
