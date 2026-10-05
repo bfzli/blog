@@ -2,20 +2,6 @@
     "generatedAt": "2026-10-04T22:35:11.076Z",
     "ideas": [
         {
-            "cell": "bun-executable-permission-missing::bun::package-binary-launch",
-            "title": "Bun Starts a Package Binary but the Command Is Not Found in `node_modules/.bin`",
-            "description": "Why a Bun-installed CLI fails to launch from a package binary and how to expose the executable correctly.",
-            "tags": [
-                "bun",
-                "cli",
-                "package-json",
-                "bin",
-                "packaging"
-            ],
-            "angle": "Explain how Bun installs package executables, how the `bin` field maps to a launcher, and why a wrong or missing path leaves no usable command in `node_modules/.bin`. Cover the packaging rules, the generated wrapper, and the exact `package.json` structure that makes the binary discoverable.",
-            "slug": "bun-starts-a-package-binary-but-the-command-is-not-found-in-node-modules-bin"
-        },
-        {
             "cell": "astro-request-headers::astro::proxying-cors-with-credentials",
             "title": "Astro Proxies a Cross-Origin API Request but Drops Cookies and Authorization Headers",
             "description": "Fix an Astro endpoint that forwards cross-origin requests without preserving credentials or auth headers.",
@@ -130,19 +116,19 @@
     ],
     "drafted": [
         {
-            "cell": "docker-compose-missing-service-network-alias::docker::inter-container-name-resolution",
-            "title": "Docker Compose Cannot Resolve a Service Name Because the Container Is on the Wrong Network",
-            "description": "Why one Compose service cannot reach another by name and how network membership controls DNS resolution.",
+            "cell": "bun-executable-permission-missing::bun::package-binary-launch",
+            "title": "Bun Starts a Package Binary but the Command Is Not Found in `node_modules/.bin`",
+            "description": "Why a Bun-installed CLI fails to launch from a package binary and how to expose the executable correctly.",
             "tags": [
-                "docker",
-                "docker-compose",
-                "networking",
-                "dns",
-                "containers"
+                "bun",
+                "cli",
+                "package-json",
+                "bin",
+                "packaging"
             ],
-            "angle": "Explain the built-in DNS behavior in Docker Compose and why service-name lookup fails when containers are attached to different networks or when the target service is only on an external network. Cover the name-resolution rules, the effect of custom networks and aliases, and the configuration that makes service-to-service traffic work reliably.",
-            "slug": "docker-compose-cannot-resolve-a-service-name-because-the-container-is-on-the-wrong-network",
-            "draftedAt": "2026-10-04T00:16:51.805Z"
+            "angle": "Explain how Bun installs package executables, how the `bin` field maps to a launcher, and why a wrong or missing path leaves no usable command in `node_modules/.bin`. Cover the packaging rules, the generated wrapper, and the exact `package.json` structure that makes the binary discoverable.",
+            "slug": "bun-starts-a-package-binary-but-the-command-is-not-found-in-node-modules-bin",
+            "draftedAt": "2026-10-05T00:21:07.646Z"
         }
     ]
 }
