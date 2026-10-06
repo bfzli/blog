@@ -1,0 +1,328 @@
+---
+title: "Astro Proxies a Cross-Origin API Request but Drops Cookies and Authorization Headers"
+description: "Fix an Astro endpoint that forwards cross-origin requests without preserving credentials or auth headers."
+tags: ["astro", "api", "cors", "cookies", "fetch"]
+date: Oct 6, 2026
+cell: "astro-request-headers::astro::proxying-cors-with-credentials"
+---
+
+`401 Unauthorized` from the upstream API after an Astro endpoint proxies the request, while the browser request succeeds and the forwarded request arrives without `cookie`, `authorization`, or `credentials`.
+
+## What is actually breaking
+
+Astro server code often uses `fetch` to forward a request from an endpoint or server-side route to another origin. The incoming browser request may already include a session cookie or bearer token, but the outgoing server-side `fetch` does not automatically preserve them.
+
+That difference matters because there are two separate request paths:
+
+- **Browser to Astro**: the browser attaches credentials based on same-site rules, `fetch` options, and CORS policy.
+- **Astro to upstream API**: Astro runs on the server. Its `fetch` call is a new server-side request with its own headers and options.
+
+If you forward a request with something like `fetch(url, { method: 'GET' })`, the upstream service receives no browser cookie, no `Authorization` header unless you add it, and no browser-managed credential behavior. If the upstream API expects session state, it returns `401 Unauthorized`, `403 Forbidden`, or an empty authenticated response instead of the data you expect.
+
+## Browser CORS is not server-side proxying
+
+CORS applies only to browser-enforced cross-origin requests. It does not block server-side code from making requests to another origin.
+
+That distinction is the source of a common misunderstanding:
+
+- A browser `fetch('https://api.example.com', { credentials: 'include' })` is subject to CORS response headers.
+- A server-side `fetch('https://api.example.com')` from Astro is not a browser CORS request at all.
+
+So if an Astro endpoint proxies a request to another origin, the upstream API does not need to grant browser CORS access to Astro. The request is coming from the server.
+
+But server-side proxying also means the browser does not automatically carry its cookie jar or auth headers into the upstream request. You must explicitly copy the headers that should be forwarded.
+
+## How Astro server code drops credentials by default
+
+In Astro, server code commonly runs in endpoint files such as `src/pages/api/proxy.ts` or server-side page logic. If the code forwards the request like this:
+
+```ts
+// src/pages/api/proxy.ts
+import type { APIRoute } from 'astro';
+
+export const GET: APIRoute = async ({ request }) => {
+  const upstream = await fetch('https://api.example.com/user', {
+    method: 'GET',
+  });
+
+  return new Response(await upstream.text(), {
+    status: upstream.status,
+    headers: upstream.headers,
+  });
+};
+```
+
+the upstream request contains only what you set. It does not inherit incoming request headers automatically.
+
+The incoming `request` object may have these headers:
+
+- `cookie`
+- `authorization`
+- `x-csrf-token`
+- custom session headers
+
+If you do not forward them, the proxy strips the session context.
+
+This is different from a browser calling the upstream directly with `credentials: 'include'`. In server code, `credentials` is not a browser cookie switch. In the standard `fetch` API on the server, `credentials` is usually ignored by the runtime or not used to attach any browser-managed state. The important part is the explicit `headers` you forward.
+
+## Forwarding the right headers
+
+A safe proxy copies only the headers you need. For authentication and session-based APIs, that usually means `cookie` and `authorization`. If the upstream expects anti-CSRF protection, it may also need `x-csrf-token` or a similar token header.
+
+A minimal Astro endpoint can forward those headers explicitly:
+
+```ts
+// src/pages/api/proxy.ts
+import type { APIRoute } from 'astro';
+
+const FORWARDED_HEADERS = [
+  'authorization',
+  'cookie',
+  'x-csrf-token',
+] as const;
+
+export const POST: APIRoute = async ({ request }) => {
+  const headers = new Headers();
+
+  for (const name of FORWARDED_HEADERS) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+
+  const upstream = await fetch('https://api.example.com/private/data', {
+    method: 'POST',
+    headers,
+    body: request.body,
+    duplex: 'half',
+  });
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: upstream.headers,
+  });
+};
+```
+
+This forwards the authentication material without copying every incoming header.
+
+### Why explicit forwarding works
+
+`request.headers` contains the headers sent to Astro by the browser. When you build a new `fetch`, you control the outgoing request separately. Copying selected values is the only way to preserve identity across the proxy boundary.
+
+A common mistake is to clone the entire header set blindly:
+
+```ts
+const upstream = await fetch('https://api.example.com/private/data', {
+  headers: request.headers,
+});
+```
+
+That can work mechanically, but it is too broad. It forwards hop-by-hop headers and request-specific headers that should not leave your server. It can also leak origin-specific values to the upstream service.
+
+## Preserving cookies without leaking everything
+
+If the upstream API uses session cookies, forward only `cookie`, not the whole header bag.
+
+The `cookie` header can contain several values. Passing it through verbatim preserves the browser session for the upstream origin if that origin is the actual session authority.
+
+```ts
+import type { APIRoute } from 'astro';
+
+export const GET: APIRoute = async ({ request }) => {
+  const cookie = request.headers.get('cookie');
+
+  const upstream = await fetch('https://api.example.com/account', {
+    headers: cookie ? { cookie } : undefined,
+  });
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: upstream.headers,
+  });
+};
+```
+
+If the browser session belongs to your Astro app, not the upstream API, you should not forward that cookie to a different service unless the service is designed to understand it. A cookie scoped to `app.example.com` is not the same thing as a cookie intended for `api.example.com`.
+
+The proxy should forward session material only when the upstream service is the authentication boundary or explicitly trusts that credential.
+
+## Preserving `Authorization` headers
+
+Bearer-token APIs usually authenticate with `Authorization: Bearer ...`. If the browser sent that header to Astro, the proxy must copy it explicitly.
+
+```ts
+import type { APIRoute } from 'astro';
+
+export const GET: APIRoute = async ({ request }) => {
+  const authorization = request.headers.get('authorization');
+
+  const upstream = await fetch('https://api.example.com/me', {
+    headers: authorization ? { authorization } : {},
+  });
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: upstream.headers,
+  });
+};
+```
+
+This is common when Astro acts as a backend-for-frontend. The browser authenticates to Astro, Astro forwards the token to a downstream API, and the downstream API authorizes the request.
+
+Do not confuse this with browser CORS. A browser can send an `Authorization` header cross-origin only if your frontend code sets it and the browser’s CORS checks allow the request. Once the request reaches Astro, the server-side proxy must still forward that header manually.
+
+## Handling `credentials` correctly
+
+The `credentials` option matters in browser `fetch`, not as a substitute for explicit server-side forwarding.
+
+In browser code, these options control whether cookies and HTTP auth are included:
+
+```ts
+fetch('https://app.example.com/api/proxy', {
+  credentials: 'include',
+});
+```
+
+That tells the browser to send cookies to your Astro origin if the cookie policy allows it.
+
+On the server, Astro can call upstream services with `fetch`, but server `fetch` does not gain access to the browser’s credential jar. There is no ambient session transfer just because the code runs in response to a browser request.
+
+If you need the upstream request to be authenticated, copy the incoming headers into the outgoing request. Do not rely on `credentials: 'include'` in the server proxy as if it were a browser feature.
+
+## A safer proxy helper
+
+For maintainability, create a helper that forwards only approved headers and preserves the request body when needed.
+
+```ts
+// src/lib/forwardRequest.ts
+const PASS_THROUGH_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'content-type',
+  'x-csrf-token',
+]);
+
+export function buildForwardHeaders(input: Headers): Headers {
+  const output = new Headers();
+
+  for (const [name, value] of input.entries()) {
+    if (PASS_THROUGH_HEADERS.has(name.toLowerCase())) {
+      output.set(name, value);
+    }
+  }
+
+  return output;
+}
+```
+
+Use it in an endpoint:
+
+```ts
+// src/pages/api/proxy.ts
+import type { APIRoute } from 'astro';
+import { buildForwardHeaders } from '../../lib/forwardRequest';
+
+export const ALL: APIRoute = async ({ request }) => {
+  const headers = buildForwardHeaders(request.headers);
+
+  const upstream = await fetch('https://api.example.com/forwarded', {
+    method: request.method,
+    headers,
+    body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+    duplex: request.method === 'GET' || request.method === 'HEAD' ? undefined : 'half',
+  });
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: upstream.headers,
+  });
+};
+```
+
+This pattern keeps the proxy narrow. It preserves auth and content negotiation headers while avoiding accidental leakage of unrelated request metadata.
+
+## Avoiding common mistakes
+
+### Forwarding all headers blindly
+
+Copying `request.headers` directly can forward more than authentication data. That may expose:
+
+- internal header names
+- client-specific debug headers
+- headers that should not cross trust boundaries
+- incorrect `host` or `origin` values
+
+Build a whitelist instead.
+
+### Assuming `credentials` fixes server forwarding
+
+`credentials: 'include'` in server-side `fetch` does not make Astro behave like the browser. It does not import browser cookies into the server runtime. Forward the `cookie` header yourself when that is intentional.
+
+### Dropping the body on non-GET requests
+
+If the proxied request is `POST`, `PUT`, `PATCH`, or `DELETE`, forward the body as well as headers. If you forward auth headers but lose the body, the upstream may authenticate the request and still fail semantically.
+
+### Returning the upstream response unsafely
+
+Returning `upstream.headers` directly can sometimes pass through headers that do not belong in a browser response, such as `set-cookie` from a different origin. Review which response headers should be returned to the browser.
+
+A safer response copy keeps the payload and status but filters response headers when needed:
+
+```ts
+const responseHeaders = new Headers(upstream.headers);
+responseHeaders.delete('set-cookie');
+
+return new Response(upstream.body, {
+  status: upstream.status,
+  headers: responseHeaders,
+});
+```
+
+If the proxy is meant to relay a session cookie from your own origin, handle that intentionally. If the upstream is a different trust boundary, do not mirror its cookies back to the browser by default.
+
+## Debugging the missing credentials
+
+When the upstream rejects the proxied request, inspect both sides.
+
+Check the incoming Astro request:
+
+```ts
+console.log('cookie', request.headers.get('cookie'));
+console.log('authorization', request.headers.get('authorization'));
+```
+
+Then inspect what the proxy sent:
+
+```ts
+const headers = buildForwardHeaders(request.headers);
+console.log('forwarded-cookie', headers.get('cookie'));
+console.log('forwarded-authorization', headers.get('authorization'));
+```
+
+If those values are present in Astro but missing upstream, the issue is in the forwarding code.
+
+If those values are already missing from the incoming browser request, the problem is earlier:
+
+- the browser did not send them
+- the cookie was not set for the right domain, path, or `SameSite` mode
+- the frontend request omitted `credentials: 'include'`
+- the browser did not attach the `Authorization` header
+
+That distinction helps isolate whether the break is at the browser-to-Astro boundary or the Astro-to-upstream boundary.
+
+## When not to proxy credentials at all
+
+Some APIs should not receive the browser’s session cookie directly. In those cases, Astro should authenticate the user at the edge, then exchange that identity for a backend token or service credential.
+
+Examples include:
+
+- token exchange flows
+- server-to-server API keys
+- session translation between unrelated domains
+- upstream services that should never see browser cookies
+
+In those designs, the proxy should not forward `cookie` blindly. Instead, it should derive a new credential on the server and send that to the upstream service. That avoids coupling the upstream API to browser-originated session state.
+
+## Practical takeaway
+
+For an Astro endpoint proxying a cross-origin API request, prefer an explicit header whitelist and forward `cookie` and `authorization` only when the upstream service is meant to receive them. Do not rely on server-side `fetch` to preserve browser credentials, and do not assume `credentials: 'include'` fixes server proxying. The browser handles CORS and its own credential rules; Astro must still copy the session state into the upstream request by hand.
