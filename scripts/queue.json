@@ -2,20 +2,6 @@
     "generatedAt": "2026-10-04T22:35:11.076Z",
     "ideas": [
         {
-            "cell": "astro-request-headers::astro::proxying-cors-with-credentials",
-            "title": "Astro Proxies a Cross-Origin API Request but Drops Cookies and Authorization Headers",
-            "description": "Fix an Astro endpoint that forwards cross-origin requests without preserving credentials or auth headers.",
-            "tags": [
-                "astro",
-                "api",
-                "cors",
-                "cookies",
-                "fetch"
-            ],
-            "angle": "Cover how Astro server code can omit `cookie`, `authorization`, and `credentials` when forwarding requests with `fetch`. Explain the difference between browser CORS and server-side proxying, then show how to forward headers safely and avoid leaking or stripping session state.",
-            "slug": "astro-proxies-a-cross-origin-api-request-but-drops-cookies-and-authorization-headers"
-        },
-        {
             "cell": "bun-sqlite-migration-lock::bun::exclusive-lock-during-schema-change",
             "title": "Bun Locks a SQLite Database During a Migration and Other Requests Stall",
             "description": "Explain why Bun migrations can block SQLite access and how to avoid long exclusive locks.",
@@ -116,19 +102,19 @@
     ],
     "drafted": [
         {
-            "cell": "bun-executable-permission-missing::bun::package-binary-launch",
-            "title": "Bun Starts a Package Binary but the Command Is Not Found in `node_modules/.bin`",
-            "description": "Why a Bun-installed CLI fails to launch from a package binary and how to expose the executable correctly.",
+            "cell": "astro-request-headers::astro::proxying-cors-with-credentials",
+            "title": "Astro Proxies a Cross-Origin API Request but Drops Cookies and Authorization Headers",
+            "description": "Fix an Astro endpoint that forwards cross-origin requests without preserving credentials or auth headers.",
             "tags": [
-                "bun",
-                "cli",
-                "package-json",
-                "bin",
-                "packaging"
+                "astro",
+                "api",
+                "cors",
+                "cookies",
+                "fetch"
             ],
-            "angle": "Explain how Bun installs package executables, how the `bin` field maps to a launcher, and why a wrong or missing path leaves no usable command in `node_modules/.bin`. Cover the packaging rules, the generated wrapper, and the exact `package.json` structure that makes the binary discoverable.",
-            "slug": "bun-starts-a-package-binary-but-the-command-is-not-found-in-node-modules-bin",
-            "draftedAt": "2026-10-05T00:21:07.646Z"
+            "angle": "Cover how Astro server code can omit `cookie`, `authorization`, and `credentials` when forwarding requests with `fetch`. Explain the difference between browser CORS and server-side proxying, then show how to forward headers safely and avoid leaking or stripping session state.",
+            "slug": "astro-proxies-a-cross-origin-api-request-but-drops-cookies-and-authorization-headers",
+            "draftedAt": "2026-10-06T01:59:58.135Z"
         }
     ]
 }
