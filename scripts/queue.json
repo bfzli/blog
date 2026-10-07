@@ -2,20 +2,6 @@
     "generatedAt": "2026-10-04T22:35:11.076Z",
     "ideas": [
         {
-            "cell": "bun-sqlite-migration-lock::bun::exclusive-lock-during-schema-change",
-            "title": "Bun Locks a SQLite Database During a Migration and Other Requests Stall",
-            "description": "Explain why Bun migrations can block SQLite access and how to avoid long exclusive locks.",
-            "tags": [
-                "bun",
-                "sqlite",
-                "migrations",
-                "database",
-                "concurrency"
-            ],
-            "angle": "Describe how schema changes in SQLite can take an exclusive lock and block reads or writes while Bun runs migration code. Explain why long transactions, multiple connections, and write bursts make it worse, then show safer migration ordering and shorter lock windows.",
-            "slug": "bun-locks-a-sqlite-database-during-a-migration-and-other-requests-stall"
-        },
-        {
             "cell": "workers-custom-domain::cloudflare-workers::route-binding-required",
             "title": "Cloudflare Workers Fails to Serve a Custom Domain After the Route Is Missing in wrangler.toml",
             "description": "Fix a Worker that deploys but never answers traffic on its custom domain because the route binding is absent.",
@@ -102,19 +88,19 @@
     ],
     "drafted": [
         {
-            "cell": "astro-request-headers::astro::proxying-cors-with-credentials",
-            "title": "Astro Proxies a Cross-Origin API Request but Drops Cookies and Authorization Headers",
-            "description": "Fix an Astro endpoint that forwards cross-origin requests without preserving credentials or auth headers.",
+            "cell": "bun-sqlite-migration-lock::bun::exclusive-lock-during-schema-change",
+            "title": "Bun Locks a SQLite Database During a Migration and Other Requests Stall",
+            "description": "Explain why Bun migrations can block SQLite access and how to avoid long exclusive locks.",
             "tags": [
-                "astro",
-                "api",
-                "cors",
-                "cookies",
-                "fetch"
+                "bun",
+                "sqlite",
+                "migrations",
+                "database",
+                "concurrency"
             ],
-            "angle": "Cover how Astro server code can omit `cookie`, `authorization`, and `credentials` when forwarding requests with `fetch`. Explain the difference between browser CORS and server-side proxying, then show how to forward headers safely and avoid leaking or stripping session state.",
-            "slug": "astro-proxies-a-cross-origin-api-request-but-drops-cookies-and-authorization-headers",
-            "draftedAt": "2026-10-06T01:59:58.135Z"
+            "angle": "Describe how schema changes in SQLite can take an exclusive lock and block reads or writes while Bun runs migration code. Explain why long transactions, multiple connections, and write bursts make it worse, then show safer migration ordering and shorter lock windows.",
+            "slug": "bun-locks-a-sqlite-database-during-a-migration-and-other-requests-stall",
+            "draftedAt": "2026-10-07T01:09:52.742Z"
         }
     ]
 }
