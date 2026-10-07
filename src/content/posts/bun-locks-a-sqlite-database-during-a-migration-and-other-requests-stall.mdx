@@ -1,0 +1,358 @@
+---
+title: "Bun Locks a SQLite Database During a Migration and Other Requests Stall"
+description: "Explain why Bun migrations can block SQLite access and how to avoid long exclusive locks."
+tags: ["bun", "sqlite", "migrations", "database", "concurrency"]
+date: Oct 7, 2026
+cell: "bun-sqlite-migration-lock::bun::exclusive-lock-during-schema-change"
+---
+
+During `bun migrate`, SQLite access in other requests breaks with `SQLITE_BUSY: database is locked`.
+
+## What is happening
+
+SQLite uses file locks to coordinate access to a database file. A single connection can hold a write transaction, and schema changes can escalate to an exclusive lock. While that lock is held, other connections cannot read or write the database file in the usual way.
+
+Bun migrations commonly run application code that executes `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, index creation, and data backfills. Those statements may trigger a schema write transaction that blocks concurrent access until the migration finishes and the transaction is committed.
+
+If the migration holds the transaction open for a long time, requests from other Bun workers, other processes, or other pooled connections can start failing or stalling with `SQLITE_BUSY: database is locked`.
+
+## Why SQLite blocks
+
+SQLite is not a server process with row-level locks. It is a library that coordinates access to a shared file. Lock behavior depends on the operation:
+
+- Reads can run concurrently with other reads.
+- A write transaction blocks other writers.
+- Some schema changes require stronger locking than ordinary row updates.
+- An exclusive lock prevents other connections from reading or writing until the transaction ends.
+
+The critical detail is that schema changes are not just metadata edits in memory. SQLite must update the database file, the schema tables, and sometimes rebuild tables behind the scenes. That work happens inside a transaction. If the transaction remains open, the file lock remains open.
+
+Bun does not change that SQLite behavior. Bun simply executes the migration code, and the SQLite driver inherits the locking semantics of SQLite.
+
+## Why Bun migrations can hold locks longer than expected
+
+A migration often looks small in code but large in effect.
+
+```ts
+import { sql } from "bun";
+
+export async function up() {
+  await sql`
+    ALTER TABLE users ADD COLUMN last_seen_at INTEGER
+  `;
+}
+```
+
+That single statement may still require SQLite to:
+
+1. Acquire a schema-related lock.
+2. Update `sqlite_schema`.
+3. Rebuild internal metadata.
+4. Commit the change.
+
+If the migration does more than one schema statement, or mixes schema changes with data updates, the lock window grows.
+
+```ts
+import { sql } from "bun";
+
+export async function up() {
+  await sql`BEGIN`;
+  await sql`ALTER TABLE users ADD COLUMN last_seen_at INTEGER`;
+  await sql`UPDATE users SET last_seen_at = created_at`;
+  await sql`CREATE INDEX users_last_seen_at_idx ON users(last_seen_at)`;
+  await sql`COMMIT`;
+}
+```
+
+This pattern is risky because the write transaction spans the whole block. Every statement inside the transaction extends the time other requests must wait.
+
+The same problem shows up when migration code loops over large tables, calls out to slow code, or waits on other asynchronous work while the transaction is open.
+
+## Multiple connections make contention visible
+
+SQLite can coordinate a few access patterns, but it cannot make concurrent writes disappear. If your Bun app uses more than one connection, contention shows up faster.
+
+Common cases include:
+
+- An HTTP server handling requests while a migration runs in the same process.
+- A connection pool with several open SQLite connections.
+- A second Bun process pointing at the same `.db` file.
+- A background job writing at the same time as a migration.
+
+Each connection competes for the same file locks. A request that only needs a simple `SELECT` can still fail if the schema lock is exclusive. A request that wants to write will usually fail or wait when a migration already owns the write lock.
+
+The more connections you have, the more likely one of them will touch the database while the migration is in its locked section.
+
+## Write bursts amplify the problem
+
+Even outside migrations, write bursts make the system more sensitive to lock duration.
+
+SQLite serializes writers. If a migration is already holding a write transaction, other writers queue behind it or fail with `SQLITE_BUSY`. If the application already has frequent writes, the migration is more likely to collide with them.
+
+This matters because Bun apps often combine:
+
+- request-driven writes,
+- scheduled jobs,
+- seed or sync jobs,
+- and startup migrations.
+
+When all of those target one SQLite file, the database is effectively single-writer during the lock window. The practical consequence is that a migration should be treated as an outage-prone write operation unless the lock window is kept very short.
+
+## Schema changes that are especially lock-heavy
+
+Not all schema changes cost the same.
+
+Usually lower risk:
+
+- `ALTER TABLE ... ADD COLUMN` with no table rebuild
+- simple index creation on small tables
+
+Usually higher risk:
+
+- `ALTER TABLE` operations that require copying data
+- `DROP COLUMN`-style changes that rebuild a table
+- large index builds
+- backfills that update many rows
+- migrations that mix schema work and application logic
+
+SQLite’s `ALTER TABLE` support is limited compared with client-server databases. When a change cannot be applied in place, the common fallback is table rebuild: create a new table, copy rows, drop the old table, rename the new one. That sequence holds locks for a longer period because it touches more data and more catalog entries.
+
+## Safer migration ordering
+
+The safest pattern is to separate schema changes from large data changes and to keep each transaction short.
+
+A common order is:
+
+1. Add new nullable columns.
+2. Deploy code that can read and write both old and new shapes.
+3. Backfill data in small batches.
+4. Add indexes after the data is in place, if needed.
+5. Enforce constraints only after the table is ready.
+
+This avoids a single long migration that must do every step under one lock.
+
+### Example: add column first, backfill later
+
+```ts
+import { sql } from "bun";
+
+export async function up() {
+  await sql`ALTER TABLE users ADD COLUMN last_seen_at INTEGER`;
+}
+```
+
+Then backfill in batches from a separate job, not inside the migration transaction.
+
+```ts
+import { sql } from "bun";
+
+const BATCH_SIZE = 1000;
+
+export async function backfillLastSeenAt() {
+  while (true) {
+    const rows = await sql<{
+      id: number;
+      created_at: number;
+    }>`
+      SELECT id, created_at
+      FROM users
+      WHERE last_seen_at IS NULL
+      ORDER BY id
+      LIMIT ${BATCH_SIZE}
+    `;
+
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      await sql`
+        UPDATE users
+        SET last_seen_at = ${row.created_at}
+        WHERE id = ${row.id}
+      `;
+    }
+  }
+}
+```
+
+This still writes to the database, but each statement is short-lived. The database remains available between updates.
+
+A more efficient version updates batches with one statement per chunk.
+
+```ts
+import { sql } from "bun";
+
+export async function backfillChunk(ids: number[]) {
+  if (ids.length === 0) return;
+
+  await sql`
+    UPDATE users
+    SET last_seen_at = created_at
+    WHERE id IN ${sql(ids)}
+  `;
+}
+```
+
+The important part is that the migration no longer monopolizes the file lock for the full backfill.
+
+## Keep transactions short
+
+If you do need an explicit transaction, keep it limited to the smallest possible unit of work.
+
+Good:
+
+```ts
+import { sql } from "bun";
+
+export async function up() {
+  await sql`BEGIN`;
+  try {
+    await sql`ALTER TABLE users ADD COLUMN status TEXT`;
+    await sql`COMMIT`;
+  } catch (error) {
+    await sql`ROLLBACK`;
+    throw error;
+  }
+}
+```
+
+Less safe:
+
+```ts
+import { sql } from "bun";
+
+export async function up() {
+  await sql`BEGIN`;
+  try {
+    await sql`ALTER TABLE users ADD COLUMN status TEXT`;
+    await sql`UPDATE users SET status = 'active' WHERE status IS NULL`;
+    await sql`CREATE INDEX users_status_idx ON users(status)`;
+    await sql`COMMIT`;
+  } catch (error) {
+    await sql`ROLLBACK`;
+    throw error;
+  }
+}
+```
+
+The second example keeps the lock across schema change, data rewrite, and index creation. If the table is large, that can block requests for a long time.
+
+When possible, avoid wrapping unrelated statements into one transaction. SQLite already provides atomicity for many single statements, and separate transactions reduce the lock window.
+
+## Run migrations before serving traffic
+
+The cleanest way to avoid request failures is to keep the database offline while migrations run.
+
+Run migrations as a startup gate before the HTTP server accepts requests. If the app uses Bun’s `serve`, start listening only after migrations complete.
+
+```ts
+import { sql } from "bun";
+import { serve } from "bun";
+
+async function migrate() {
+  await sql`ALTER TABLE users ADD COLUMN last_seen_at INTEGER`;
+}
+
+await migrate();
+
+serve({
+  fetch(req) {
+    return new Response("ok");
+  },
+  port: 3000,
+});
+```
+
+This avoids collisions with live traffic. It does not remove locks, but it prevents user-facing requests from competing with the migration.
+
+If zero-downtime startup is required, use a separate release step:
+
+1. Stop new traffic from reaching the old instance.
+2. Run migrations.
+3. Start the new instance.
+4. Re-enable traffic.
+
+That sequence is safer than letting the app accept requests while the migration process is active.
+
+## Reduce connection count during migration windows
+
+If the app opens many SQLite connections, reduce them during migration time.
+
+A smaller number of active connections means fewer places that can collide with the write lock. In practice:
+
+- use a single SQLite connection for the migration runner,
+- avoid running request handlers during schema changes,
+- close idle workers before the migration starts,
+- do not spawn parallel migration tasks against the same file.
+
+Multiple concurrent migration processes are especially dangerous. SQLite can only permit one writer at a time, so parallel migrations usually increase `SQLITE_BUSY` errors without increasing throughput.
+
+## Use `busy_timeout` only as a buffer
+
+SQLite supports waiting for a lock instead of failing immediately. In Bun, this depends on the SQLite package or driver settings you use. A `busy_timeout` can reduce transient failures, but it does not solve long exclusive locks.
+
+If the migration holds the database for 30 seconds, a 5 second timeout just turns a hard failure into a delayed hard failure.
+
+Use a timeout only as a cushion for short collisions, not as the primary fix.
+
+## Detect long lock windows
+
+The problem is easier to manage when migrations are measured. If a migration takes much longer than expected, it is often because it is touching too much data under one transaction.
+
+Useful checks include:
+
+- how long each migration step takes,
+- whether the app logs `SQLITE_BUSY` during deploys,
+- whether the same file is shared by request traffic and migration code,
+- whether index creation or backfill logic runs inside the migration transaction.
+
+For SQLite itself, the `sqlite3` CLI can help verify schema state, and Bun logs can confirm which statement held the lock longest.
+
+## Practical migration pattern
+
+A low-risk pattern for Bun and SQLite looks like this:
+
+1. Run schema-only migrations first.
+2. Keep each migration to a small number of statements.
+3. Avoid loops, sleeps, network calls, and full-table updates inside the migration transaction.
+4. Deploy application code that can handle both old and new schema.
+5. Backfill in chunks outside the migration.
+6. Create indexes after the table is stable.
+7. Start the app only after migrations complete, or pause traffic during the migration window.
+
+Example migration plus background backfill:
+
+```ts
+import { sql } from "bun";
+
+export async function up() {
+  await sql`ALTER TABLE users ADD COLUMN last_seen_at INTEGER`;
+}
+```
+
+```ts
+import { sql } from "bun";
+
+export async function backfillUsers() {
+  const batch = await sql<{ id: number; created_at: number }>`
+    SELECT id, created_at
+    FROM users
+    WHERE last_seen_at IS NULL
+    ORDER BY id
+    LIMIT 500
+  `;
+
+  for (const row of batch) {
+    await sql`
+      UPDATE users
+      SET last_seen_at = ${row.created_at}
+      WHERE id = ${row.id}
+    `;
+  }
+}
+```
+
+This structure keeps the schema lock short and moves the expensive work out of the migration path.
+
+## Practical takeaway
+
+Prefer short, schema-only Bun migrations that finish before traffic starts, then backfill and index data in separate small batches. That approach keeps SQLite exclusive locks brief, reduces `SQLITE_BUSY: database is locked` errors, and avoids blocking reads and writes across the rest of the app.
