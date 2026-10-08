@@ -2,20 +2,6 @@
     "generatedAt": "2026-10-04T22:35:11.076Z",
     "ideas": [
         {
-            "cell": "workers-custom-domain::cloudflare-workers::route-binding-required",
-            "title": "Cloudflare Workers Fails to Serve a Custom Domain After the Route Is Missing in wrangler.toml",
-            "description": "Fix a Worker that deploys but never answers traffic on its custom domain because the route binding is absent.",
-            "tags": [
-                "cloudflare-workers",
-                "wrangler",
-                "domains",
-                "routes",
-                "deployment"
-            ],
-            "angle": "Explain the binding between a Worker, its route, and the custom domain mapping in Cloudflare. Cover how the code can deploy successfully while the hostname still points nowhere, then show the exact `wrangler.toml` route or custom domain configuration needed to receive traffic.",
-            "slug": "cloudflare-workers-fails-to-serve-a-custom-domain-after-the-route-is-missing-in-wrangler-toml"
-        },
-        {
             "cell": "nextjs-server-component-mutation::nextjs::stale-cache-after-post",
             "title": "Next.js Server Components Return Stale Data After a Mutation Because the Cache Was Not Invalidated",
             "description": "Fix stale server-rendered data in Next.js after a write operation by revalidating the affected path or tag.",
@@ -88,19 +74,19 @@
     ],
     "drafted": [
         {
-            "cell": "bun-sqlite-migration-lock::bun::exclusive-lock-during-schema-change",
-            "title": "Bun Locks a SQLite Database During a Migration and Other Requests Stall",
-            "description": "Explain why Bun migrations can block SQLite access and how to avoid long exclusive locks.",
+            "cell": "workers-custom-domain::cloudflare-workers::route-binding-required",
+            "title": "Cloudflare Workers Fails to Serve a Custom Domain After the Route Is Missing in wrangler.toml",
+            "description": "Fix a Worker that deploys but never answers traffic on its custom domain because the route binding is absent.",
             "tags": [
-                "bun",
-                "sqlite",
-                "migrations",
-                "database",
-                "concurrency"
+                "cloudflare-workers",
+                "wrangler",
+                "domains",
+                "routes",
+                "deployment"
             ],
-            "angle": "Describe how schema changes in SQLite can take an exclusive lock and block reads or writes while Bun runs migration code. Explain why long transactions, multiple connections, and write bursts make it worse, then show safer migration ordering and shorter lock windows.",
-            "slug": "bun-locks-a-sqlite-database-during-a-migration-and-other-requests-stall",
-            "draftedAt": "2026-10-07T01:09:52.742Z"
+            "angle": "Explain the binding between a Worker, its route, and the custom domain mapping in Cloudflare. Cover how the code can deploy successfully while the hostname still points nowhere, then show the exact `wrangler.toml` route or custom domain configuration needed to receive traffic.",
+            "slug": "cloudflare-workers-fails-to-serve-a-custom-domain-after-the-route-is-missing-in-wrangler-toml",
+            "draftedAt": "2026-10-08T01:27:47.313Z"
         }
     ]
 }
