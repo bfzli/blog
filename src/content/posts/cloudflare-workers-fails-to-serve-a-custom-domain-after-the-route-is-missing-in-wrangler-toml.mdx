@@ -1,0 +1,342 @@
+---
+title: "Cloudflare Workers Fails to Serve a Custom Domain After the Route Is Missing in wrangler.toml"
+description: "Fix a Worker that deploys but never answers traffic on its custom domain because the route binding is absent."
+tags: ["cloudflare-workers", "wrangler", "domains", "routes", "deployment"]
+date: Oct 8, 2026
+cell: "workers-custom-domain::cloudflare-workers::route-binding-required"
+---
+
+A Cloudflare Worker deploys successfully, but requests to the custom domain fail with `Error 1101: Worker threw exception` or the hostname returns `DNS_PROBE_FINISHED_NXDOMAIN` / `ERR_NAME_NOT_RESOLVED` when the route or custom domain mapping is missing from `wrangler.toml`.
+
+## What is actually broken
+
+The Worker code can upload and publish without creating any traffic binding. Deployment and request routing are separate steps in Cloudflare’s system.
+
+A successful `wrangler deploy` only means the script was uploaded to the Workers platform and assigned a version. It does not guarantee that any hostname points to it. If the route binding is absent, Cloudflare has no instruction to send `example.com/*` or `api.example.com/*` to that Worker.
+
+The result depends on the hostname configuration:
+
+- If the domain is not mapped in Cloudflare DNS, the request never reaches Cloudflare at all.
+- If the domain is proxied in Cloudflare DNS but no Worker route exists, the request can hit Cloudflare’s edge without invoking the Worker.
+- If a custom domain or route points to the wrong Worker script name, the request may reach the zone but still not execute the expected code.
+
+The key point is that a Worker, a route, and a custom domain are separate bindings. Deployment does not infer them from each other.
+
+## The binding model
+
+Cloudflare Workers traffic attachment works through a hostname-to-script association.
+
+There are two common ways to create that association:
+
+1. A route, such as `example.com/*` or `api.example.com/*`
+2. A custom domain binding, which is a first-class hostname mapping for a Worker
+
+Both are configured through the Worker project metadata, usually in `wrangler.toml`, or through the Cloudflare dashboard.
+
+A route is pattern-based. It matches requests by hostname and path. A custom domain binding is hostname-based and acts like a dedicated edge entry point for the Worker.
+
+In both cases, the Worker must be explicitly attached to traffic. The code alone does nothing for incoming requests until the attachment exists.
+
+## Why deployment succeeds anyway
+
+`wrangler deploy` validates and uploads the Worker script. That process can succeed even if no traffic binding exists.
+
+A Worker that has no route or custom domain still exists in Cloudflare. It is just idle. The deployment API is concerned with the script artifact and configuration, not whether the script is reachable from a public hostname.
+
+That separation is why this problem is easy to miss:
+
+- The deployment command exits with success.
+- The Worker appears in the dashboard.
+- The custom domain keeps resolving to the origin, another Worker, or nothing at all.
+- Requests never invoke the uploaded script.
+
+This is expected behavior. The platform does not create hostname routing automatically from the script name.
+
+## The missing `wrangler.toml` binding
+
+For a route-based deployment, `wrangler.toml` needs a `routes` entry or a `route` field, depending on the project shape and Wrangler version.
+
+A minimal example looks like this:
+
+```toml
+name = "example-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-08"
+
+routes = [
+  { pattern = "example.com/*", zone_name = "example.com" }
+]
+```
+
+For a subdomain route:
+
+```toml
+name = "example-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-08"
+
+routes = [
+  { pattern = "api.example.com/*", zone_name = "example.com" }
+]
+```
+
+For some older configurations, a single `route` field is used:
+
+```toml
+name = "example-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-08"
+route = "api.example.com/*"
+```
+
+The route must match the hostname and path pattern that should receive traffic. If the route is missing, no hostname pattern is attached to the Worker.
+
+For a custom domain binding, the configuration may instead be managed through Cloudflare’s dashboard or with Wrangler support for custom domains, depending on the setup. In either case, the Worker needs an explicit hostname binding.
+
+## A runnable Worker example
+
+A simple Worker that confirms routing is working:
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    return new Response(
+      JSON.stringify(
+        {
+          ok: true,
+          host: url.host,
+          pathname: url.pathname,
+        },
+        null,
+        2
+      ),
+      {
+        headers: {
+          "content-type": "application/json",
+        },
+      }
+    );
+  },
+};
+```
+
+With the route binding present, a request to `https://api.example.com/test` should return JSON similar to:
+
+```json
+{
+  "ok": true,
+  "host": "api.example.com",
+  "pathname": "/test"
+}
+```
+
+Without the binding, that code is still valid and deployable, but no traffic reaches it.
+
+## How to confirm the route is missing
+
+Use Wrangler to inspect the deployed project configuration:
+
+```sh
+npx wrangler deploy
+npx wrangler whoami
+npx wrangler versions list
+```
+
+Then inspect the `wrangler.toml` used by the deployment.
+
+If the file has no `route`, no `routes`, and no custom domain setup, the Worker has no public hostname attachment.
+
+You can also list routes in the dashboard:
+
+- Cloudflare Dashboard
+- Workers & Pages
+- Your Worker
+- Triggers
+
+If no route appears there, the Worker is deployed but unreachable from the expected hostname.
+
+A useful validation step is to print the active config that Wrangler is using:
+
+```sh
+npx wrangler deploy --dry-run
+```
+
+If the config does not include a route binding, the dry run can still pass because syntax validity and traffic attachment are not the same check.
+
+## Route versus custom domain
+
+The route and custom domain mechanisms solve the same routing problem in different ways.
+
+A route is best when you want path matching, for example:
+
+- `example.com/api/*`
+- `www.example.com/*`
+- `*.example.com/*` in supported configurations
+
+A custom domain is best when you want a hostname reserved directly for a Worker, without tying it to an arbitrary path rule.
+
+If the requirement is “this hostname should always answer with this Worker,” a custom domain binding is often simpler. If the requirement is “only a path on an existing zone should invoke this Worker,” a route is the correct tool.
+
+The failure mode in this post happens when neither exists.
+
+## Correct `wrangler.toml` for a route
+
+A full example with a route binding:
+
+```toml
+name = "example-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-08"
+
+routes = [
+  { pattern = "example.com/*", zone_name = "example.com" }
+]
+```
+
+A project with a dedicated API subdomain:
+
+```toml
+name = "api-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-08"
+
+routes = [
+  { pattern = "api.example.com/*", zone_name = "example.com" }
+]
+```
+
+If you want only one path under the subdomain:
+
+```toml
+name = "api-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-08"
+
+routes = [
+  { pattern = "api.example.com/v1/*", zone_name = "example.com" }
+]
+```
+
+The `zone_name` must be the zone that owns the hostname. Cloudflare uses it to resolve which account zone receives the route binding.
+
+## Correct custom domain configuration
+
+If the hostname should be a custom domain rather than a route, make sure the domain is actually bound to the Worker.
+
+At a high level, the required pieces are:
+
+- The domain is added to the Cloudflare account
+- DNS for the hostname is proxied through Cloudflare where required
+- The Worker has a custom domain binding for that hostname
+
+If using dashboard-based setup, the custom domain is added under the Worker’s triggers or domain settings. If using Wrangler-supported binding, use the documented custom domain workflow for your Wrangler version.
+
+The important difference is that the hostname must be attached to the Worker explicitly. Merely uploading the code is not enough.
+
+## Why DNS can make this look like a Worker problem
+
+A common source of confusion is that the hostname can fail before the Worker is even considered.
+
+If the DNS record is `DNS only`, traffic goes straight to the origin and bypasses Workers. If the DNS record does not exist, the hostname does not resolve. If the record exists but the route is missing, the request resolves but does not match any Worker trigger.
+
+Check the record type and proxy status:
+
+- `A` or `CNAME` record exists for the hostname
+- Proxy is enabled where the Worker should receive traffic
+- The route or custom domain binding matches the hostname exactly
+
+A route mismatch can be subtle. `example.com/*` does not cover `www.example.com/*`. `api.example.com/*` does not cover the apex domain. `example.com/*` does not cover `example.com` if the deployment config expects an explicit path pattern and the request handling is strict in the setup.
+
+## Commands to verify and fix
+
+After updating `wrangler.toml`, redeploy:
+
+```sh
+npx wrangler deploy
+```
+
+If the binding is route-based, confirm it exists in the dashboard route list.
+
+If the binding is custom-domain-based, confirm the hostname is attached to the Worker and the DNS entry is proxied as required.
+
+A typical verification flow is:
+
+```sh
+curl -i https://api.example.com/
+```
+
+If the Worker is attached, the response should come from the Worker’s code.
+
+If it is not attached, the response will come from somewhere else, or the hostname will fail before a response is generated.
+
+## Common configuration mistakes
+
+Several configuration errors produce the same symptom.
+
+### Missing `routes` entirely
+
+The Worker deploys but nothing sends traffic to it.
+
+### Wrong hostname in `pattern`
+
+`api.example.com/*` does not match `www.example.com/*`.
+
+### Wrong `zone_name`
+
+The route declaration exists, but it targets the wrong zone, so Cloudflare does not attach it where expected.
+
+### Using `DNS only` instead of proxied DNS
+
+Cloudflare Workers need Cloudflare edge traffic. Unproxied DNS bypasses the Worker.
+
+### Expecting deployment to create a hostname binding
+
+`wrangler deploy` uploads code only. It does not infer routing from the script name or the domain name.
+
+## Minimal working example
+
+`wrangler.toml`:
+
+```toml
+name = "example-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-08"
+
+routes = [
+  { pattern = "api.example.com/*", zone_name = "example.com" }
+]
+```
+
+`src/index.ts`:
+
+```ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    return new Response("Worker is reachable", {
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+      },
+    });
+  },
+};
+```
+
+Deploy:
+
+```sh
+npx wrangler deploy
+```
+
+Then test:
+
+```sh
+curl -i https://api.example.com/
+```
+
+If the route is correct and DNS is proxied, the response should be `Worker is reachable`.
+
+## Practical takeaway
+
+Prefer a route binding in `wrangler.toml` when the Worker should answer a specific hostname or path pattern, and prefer a custom domain binding when the hostname should point directly and exclusively to that Worker. The important fix is to create the binding explicitly. A Worker deployment without a route or custom domain is only an uploaded script, not a reachable endpoint.
