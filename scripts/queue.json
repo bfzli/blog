@@ -2,20 +2,6 @@
     "generatedAt": "2026-10-04T22:35:11.076Z",
     "ideas": [
         {
-            "cell": "nextjs-server-component-mutation::nextjs::stale-cache-after-post",
-            "title": "Next.js Server Components Return Stale Data After a Mutation Because the Cache Was Not Invalidated",
-            "description": "Fix stale server-rendered data in Next.js after a write operation by revalidating the affected path or tag.",
-            "tags": [
-                "nextjs",
-                "react-server-components",
-                "cache",
-                "revalidate",
-                "app-router"
-            ],
-            "angle": "Explain how the App Router caches fetches and server component output across requests. Show why a mutation does not automatically refresh cached data, then cover `revalidatePath()`, `revalidateTag()`, and fetch cache options so the updated state renders consistently.",
-            "slug": "next-js-server-components-return-stale-data-after-a-mutation-because-the-cache-was-not-invalidated"
-        },
-        {
             "cell": "go-sql-localhost-bind::go::listen-on-the-wrong-interface",
             "title": "Go Fails to Accept Local Requests Because net/http Listens on the Wrong Interface",
             "description": "Fix a Go server that starts cleanly but refuses local connections because it bound to the wrong host or port.",
@@ -74,19 +60,19 @@
     ],
     "drafted": [
         {
-            "cell": "workers-custom-domain::cloudflare-workers::route-binding-required",
-            "title": "Cloudflare Workers Fails to Serve a Custom Domain After the Route Is Missing in wrangler.toml",
-            "description": "Fix a Worker that deploys but never answers traffic on its custom domain because the route binding is absent.",
+            "cell": "nextjs-server-component-mutation::nextjs::stale-cache-after-post",
+            "title": "Next.js Server Components Return Stale Data After a Mutation Because the Cache Was Not Invalidated",
+            "description": "Fix stale server-rendered data in Next.js after a write operation by revalidating the affected path or tag.",
             "tags": [
-                "cloudflare-workers",
-                "wrangler",
-                "domains",
-                "routes",
-                "deployment"
+                "nextjs",
+                "react-server-components",
+                "cache",
+                "revalidate",
+                "app-router"
             ],
-            "angle": "Explain the binding between a Worker, its route, and the custom domain mapping in Cloudflare. Cover how the code can deploy successfully while the hostname still points nowhere, then show the exact `wrangler.toml` route or custom domain configuration needed to receive traffic.",
-            "slug": "cloudflare-workers-fails-to-serve-a-custom-domain-after-the-route-is-missing-in-wrangler-toml",
-            "draftedAt": "2026-10-08T01:27:47.313Z"
+            "angle": "Explain how the App Router caches fetches and server component output across requests. Show why a mutation does not automatically refresh cached data, then cover `revalidatePath()`, `revalidateTag()`, and fetch cache options so the updated state renders consistently.",
+            "slug": "next-js-server-components-return-stale-data-after-a-mutation-because-the-cache-was-not-invalidated",
+            "draftedAt": "2026-10-09T01:36:07.466Z"
         }
     ]
 }
