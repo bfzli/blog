@@ -1,0 +1,401 @@
+---
+title: "Next.js Server Components Return Stale Data After a Mutation Because the Cache Was Not Invalidated"
+description: "Fix stale server-rendered data in Next.js after a write operation by revalidating the affected path or tag."
+tags: ["nextjs", "react-server-components", "cache", "revalidate", "app-router"]
+date: Oct 9, 2026
+cell: "nextjs-server-component-mutation::nextjs::stale-cache-after-post"
+---
+
+Server Components render stale data after a mutation in the Next.js App Router, even though the write succeeded. The page keeps showing cached output instead of the updated record, and there is no runtime exception such as `next/headers` or `use server`; the visible failure is stale UI caused by cached fetches and cached Server Component output that were not invalidated.
+
+## Why this happens
+
+In the App Router, rendering is not equivalent to “run all server code again on every request.” Next.js caches at two levels:
+
+1. **`fetch()` response caching**
+2. **Server Component render output caching**
+
+When a Server Component calls `fetch()`, Next.js can cache the response depending on the request, route segment settings, and fetch options such as `cache: 'force-cache'` or `next: { revalidate: ... }`. That cached response can then be reused on later requests.
+
+Separately, the App Router can cache rendered Server Component output for a route segment. This lets Next.js avoid recomputing the same tree if nothing is marked as changed.
+
+A mutation does not automatically invalidate either cache. A write operation can update the database, return success, and still leave the route’s cached data intact. The next render may reuse the old fetch result or the old segment output, so the page shows stale state.
+
+That behavior is deliberate. Without invalidation, every mutation would force broad recomputation and erase most of the App Router’s performance gains.
+
+## The cache model in the App Router
+
+A Server Component can look like this:
+
+```tsx
+// app/posts/page.tsx
+type Post = {
+  id: string;
+  title: string;
+};
+
+async function getPosts(): Promise<Post[]> {
+  const res = await fetch('https://example.com/api/posts', {
+    cache: 'force-cache',
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to load posts');
+  }
+
+  return res.json();
+}
+
+export default async function PostsPage() {
+  const posts = await getPosts();
+
+  return (
+    <main>
+      <h1>Posts</h1>
+      <ul>
+        {posts.map((post) => (
+          <li key={post.id}>{post.title}</li>
+        ))}
+      </ul>
+    </main>
+  );
+}
+```
+
+With `cache: 'force-cache'`, the fetch result can be reused across requests. If a server action or route handler later inserts a post into the database, the above component is still free to render the old cached result until invalidation happens.
+
+The same issue can occur when the fetch is tagged and cached by path or by tag. The key point is that the App Router does not infer that a mutation invalidates every dependent read. You need to say which data or route must be refreshed.
+
+## Why a mutation does not refresh the page automatically
+
+A server action or route handler can write to a database or external API, but that write is not a cache event by itself.
+
+Consider this server action:
+
+```tsx
+// app/posts/actions.ts
+'use server';
+
+import { revalidatePath } from 'next/cache';
+
+export async function createPost(formData: FormData) {
+  const title = String(formData.get('title') ?? '');
+
+  await fetch('https://example.com/api/posts', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  });
+
+  // Missing invalidation would leave cached reads in place.
+}
+```
+
+If `createPost()` succeeds and nothing is invalidated, the next render of `app/posts/page.tsx` can still reuse stale cached data.
+
+The same problem appears with route handlers:
+
+```ts
+// app/api/posts/route.ts
+import { NextResponse } from 'next/server';
+
+export async function POST(req: Request) {
+  const body = await req.json();
+
+  await fetch('https://example.com/api/posts', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  return NextResponse.json({ ok: true });
+}
+```
+
+A `POST` request changes data, but it does not automatically tell the App Router which cached reads are now invalid.
+
+## Invalidate by path with `revalidatePath()`
+
+Use `revalidatePath()` when the mutation affects a specific route or layout tree and you want that path to render fresh data on the next request.
+
+```tsx
+// app/posts/actions.ts
+'use server';
+
+import { revalidatePath } from 'next/cache';
+
+export async function createPost(formData: FormData) {
+  const title = String(formData.get('title') ?? '');
+
+  await fetch('https://example.com/api/posts', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  });
+
+  revalidatePath('/posts');
+}
+```
+
+`revalidatePath('/posts')` marks the `/posts` route as stale. The next time that path is requested, Next.js recomputes the Server Component tree and reruns the data fetches for that route.
+
+Use this when:
+
+- a mutation affects one page
+- the data read is route-specific
+- you want the next render of that route to rebuild
+
+This is usually the simplest fix for a list page, detail page, or dashboard section that maps directly to a URL.
+
+For dynamic routes, you can invalidate the concrete path:
+
+```tsx
+revalidatePath(`/posts/${postId}`);
+```
+
+If the mutation affects a nested segment, invalidating the relevant layout path can be more appropriate than invalidating only a child page.
+
+## Invalidate by tag with `revalidateTag()`
+
+Use `revalidateTag()` when multiple routes read the same underlying data and you want a single mutation to invalidate all of them.
+
+First, tag the fetch:
+
+```tsx
+// app/lib/posts.ts
+type Post = {
+  id: string;
+  title: string;
+};
+
+export async function getPosts(): Promise<Post[]> {
+  const res = await fetch('https://example.com/api/posts', {
+    next: {
+      tags: ['posts'],
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to load posts');
+  }
+
+  return res.json();
+}
+```
+
+Then invalidate the tag after a write:
+
+```tsx
+// app/posts/actions.ts
+'use server';
+
+import { revalidateTag } from 'next/cache';
+
+export async function createPost(formData: FormData) {
+  const title = String(formData.get('title') ?? '');
+
+  await fetch('https://example.com/api/posts', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  });
+
+  revalidateTag('posts');
+}
+```
+
+Any cached fetch associated with the `posts` tag becomes stale. On the next request, every page that relies on that tagged data can fetch fresh results.
+
+Use tags when:
+
+- the same dataset is read from multiple routes
+- a mutation affects a shared entity or collection
+- invalidating by path would miss other pages that depend on the same record set
+
+This is the cleaner option for shared caches, for example a posts index, a sidebar count, and an admin table that all read the same source of truth.
+
+## Choosing between path and tag invalidation
+
+`revalidatePath()` is route-centric. `revalidateTag()` is data-centric.
+
+Use `revalidatePath()` when the problem is limited to one route, such as `/posts` or `/profile`.
+
+Use `revalidateTag()` when several routes consume the same data and should all refresh after a write, such as:
+
+- `/posts`
+- `/dashboard`
+- `/admin/posts`
+
+If you only invalidate by path in that case, another page can still render stale data from the same cached fetch.
+
+In many apps, both are appropriate. A mutation may need to refresh the current page immediately and also invalidate shared tagged data for other routes.
+
+## Fetch cache options that affect freshness
+
+The App Router fetch cache determines whether data is reused across requests and how long it stays valid.
+
+### `cache: 'force-cache'`
+
+This is the default behavior for many server-side fetches in static contexts. Next.js can reuse the response until something invalidates it.
+
+```tsx
+await fetch('https://example.com/api/posts', {
+  cache: 'force-cache',
+});
+```
+
+This is efficient, but it requires explicit invalidation after writes.
+
+### `cache: 'no-store'`
+
+Use this when the data must always be fresh and should never be cached.
+
+```tsx
+await fetch('https://example.com/api/posts', {
+  cache: 'no-store',
+});
+```
+
+This bypasses the fetch cache. It is useful for highly volatile data, but it removes the performance benefits of caching.
+
+A page that depends on `no-store` data is less likely to display stale results after a mutation, because it will fetch on each request. The tradeoff is higher latency and more origin traffic.
+
+### `next: { revalidate: number }`
+
+Use this for time-based revalidation.
+
+```tsx
+await fetch('https://example.com/api/posts', {
+  next: {
+    revalidate: 60,
+  },
+});
+```
+
+Next.js can serve cached data for up to 60 seconds before regenerating it. This is useful when slight staleness is acceptable.
+
+This does not solve immediate post-write freshness by itself. If a write must be visible right away, you still need `revalidatePath()` or `revalidateTag()`.
+
+### `next: { tags: [...] }`
+
+This is the best fit for shared cache invalidation.
+
+```tsx
+await fetch('https://example.com/api/posts', {
+  next: {
+    tags: ['posts'],
+  },
+});
+```
+
+Tags let you bind a read to a logical dataset rather than a URL.
+
+## A complete example
+
+A simple posts page with a create form can use a Server Action and tag-based invalidation.
+
+```tsx
+// app/posts/actions.ts
+'use server';
+
+import { revalidateTag } from 'next/cache';
+
+export async function createPost(formData: FormData) {
+  const title = String(formData.get('title') ?? '').trim();
+
+  if (!title) {
+    throw new Error('Title is required');
+  }
+
+  await fetch('https://example.com/api/posts', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  });
+
+  revalidateTag('posts');
+}
+```
+
+```tsx
+// app/posts/page.tsx
+import { createPost } from './actions';
+
+type Post = {
+  id: string;
+  title: string;
+};
+
+async function getPosts(): Promise<Post[]> {
+  const res = await fetch('https://example.com/api/posts', {
+    next: {
+      tags: ['posts'],
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to load posts');
+  }
+
+  return res.json();
+}
+
+export default async function PostsPage() {
+  const posts = await getPosts();
+
+  return (
+    <main>
+      <form action={createPost}>
+        <input name="title" placeholder="New post title" />
+        <button type="submit">Create</button>
+      </form>
+
+      <ul>
+        {posts.map((post) => (
+          <li key={post.id}>{post.title}</li>
+        ))}
+      </ul>
+    </main>
+  );
+}
+```
+
+This works because the write invalidates the read. The next render of the page requests fresh data instead of reusing the old cached result.
+
+If only `/posts` needs to refresh and no other route shares the same dataset, `revalidatePath('/posts')` is enough. If `/posts` and `/dashboard` both read from the same collection, `revalidateTag('posts')` is the better mechanism.
+
+## Common mistakes
+
+A mutation updates the database, but the read uses `cache: 'force-cache'` and no invalidation follows. The UI stays stale.
+
+A server action calls `router.refresh()` from the client, but the underlying fetch is still cached by tag or by path. Refreshing the route reruns the render, but it can still reuse stale cached data unless the cache was marked stale.
+
+A fetch uses `next: { revalidate: 3600 }`, but the code expects immediate consistency after a write. Time-based revalidation is not a substitute for explicit invalidation.
+
+A route depends on shared data, but only one page path is revalidated. Other pages continue serving old cached output until they are individually refreshed.
+
+## When to disable caching instead
+
+Sometimes caching is the wrong tool. If the data must always reflect the latest state and the endpoint is inexpensive enough to read repeatedly, use `cache: 'no-store'`.
+
+That is appropriate for:
+
+- per-user highly dynamic state
+- rapidly changing admin screens
+- external sources that cannot tolerate even short-lived staleness
+
+It is not the default answer for most applications. In most cases, a targeted `revalidatePath()` or `revalidateTag()` keeps the performance benefits of caching while restoring consistency after a mutation.
+
+## Practical takeaway
+
+Prefer `revalidateTag()` when several routes share the same data, and prefer `revalidatePath()` when only one route needs to refresh. Use `cache: 'no-store'` only when freshness matters more than caching. The problem appears because the App Router caches both `fetch()` results and Server Component output, and writes do not invalidate those caches automatically.
