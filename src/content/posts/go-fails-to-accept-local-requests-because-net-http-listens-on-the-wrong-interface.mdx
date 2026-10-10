@@ -1,0 +1,350 @@
+---
+title: "Go Fails to Accept Local Requests Because net/http Listens on the Wrong Interface"
+description: "Fix a Go server that starts cleanly but refuses local connections because it bound to the wrong host or port."
+tags: ["go", "net-http", "localhost", "networking", "server"]
+date: Oct 10, 2026
+cell: "go-sql-localhost-bind::go::listen-on-the-wrong-interface"
+---
+
+A Go server can start successfully and still refuse local connections with `dial tcp 127.0.0.1:8080: connect: connection refused` or `connect: cannot assign requested address` when `net/http` is listening on the wrong interface or port.
+
+## What `http.ListenAndServe` actually binds to
+
+`http.ListenAndServe` does two separate jobs:
+
+1. It creates a network listener on the address you pass.
+2. It hands accepted connections to an `http.Server`.
+
+The first argument is not just a label. It is the actual bind address in the form `host:port`.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "ok")
+	})
+
+	err := http.ListenAndServe("127.0.0.1:8080", mux)
+	if err != nil {
+		panic(err)
+	}
+}
+```
+
+That program listens only on the loopback interface. It is reachable from the same network namespace, but not from other interfaces. If a client connects to a different IP, the kernel will not deliver that traffic to this process.
+
+The important part is that the address string controls which local address the kernel associates with the socket. Go is not choosing a route based on intent. It is asking the operating system to bind to a specific local endpoint.
+
+## Why `127.0.0.1`, `0.0.0.0`, and `localhost` are not interchangeable
+
+These values look similar, but they mean different things at bind time and at connect time.
+
+### `127.0.0.1`
+
+`127.0.0.1` is the IPv4 loopback address. Binding to it means:
+
+- the server accepts only connections addressed to that exact local loopback IP
+- traffic arriving on another interface is ignored
+- the service is local to the host or container network namespace
+
+This is usually the right choice for a development server that should not be exposed outside the machine.
+
+### `0.0.0.0`
+
+`0.0.0.0` is the unspecified IPv4 address. Binding to it means:
+
+- the server listens on all IPv4 interfaces available in the current network namespace
+- it can accept connections from localhost, LAN IPs, container-exposed ports, and other reachable interfaces
+- it does not mean “connect to everything”; it means “accept on all local IPv4 addresses”
+
+This is the common choice for remote access and containers.
+
+### `localhost`
+
+`localhost` is a hostname, not an IP address. It resolves through name service configuration, usually to `127.0.0.1` and sometimes to `::1` as well. That creates two practical differences:
+
+- binding to `localhost:8080` depends on how the system resolves the name
+- connecting to `localhost` may prefer IPv6 on some systems, while the server may be listening only on IPv4
+
+Because of that, `localhost` is not a safe assumption for bind addresses in portable server code. Use an explicit IP or use the empty host string with care.
+
+## How `net/http` interprets the address string
+
+The call `http.ListenAndServe(addr, handler)` is equivalent to creating a `net.Listener` with `net.Listen("tcp", addr)` and then serving it.
+
+For TCP, the address string is resolved like this:
+
+- `":8080"` binds to all interfaces on port `8080`
+- `"127.0.0.1:8080"` binds to IPv4 loopback on port `8080`
+- `"[::1]:8080"` binds to IPv6 loopback on port `8080`
+- `"0.0.0.0:8080"` binds to all IPv4 interfaces on port `8080`
+- `"[::]:8080"` binds to all IPv6 interfaces on port `8080`
+
+The empty host in `":8080"` is the most portable “listen everywhere” form for simple development. On many systems it ends up listening on IPv4 and IPv6, but the exact behavior depends on the platform and socket settings. If you need a precise bind target, use a specific IP family.
+
+The usual source of confusion is mixing the listen address with the connect address.
+
+A server bound to `127.0.0.1:8080` can be reached with:
+
+```bash
+curl http://127.0.0.1:8080
+curl http://localhost:8080
+```
+
+A server bound to `0.0.0.0:8080` cannot be reached by connecting to `0.0.0.0:8080` from a client. `0.0.0.0` is not a destination address. It is a wildcard used for binding.
+
+## How to verify what the process is actually listening on
+
+If the connection fails, inspect the listener rather than the handler code.
+
+On Linux:
+
+```bash
+ss -ltnp | grep 8080
+```
+
+On macOS:
+
+```bash
+lsof -nP -iTCP:8080 -sTCP:LISTEN
+```
+
+Typical output for a loopback-only listener looks like this:
+
+```text
+LISTEN 0 4096 127.0.0.1:8080 0.0.0.0:* users:(("server",pid=1234,fd=3))
+```
+
+That means the server is only on loopback.
+
+A wildcard listener often looks like this:
+
+```text
+LISTEN 0 4096 0.0.0.0:8080 0.0.0.0:* users:(("server",pid=1234,fd=3))
+```
+
+If the process is listening on the wrong address, the socket table will show it. That is the quickest way to separate an application bug from a network path problem.
+
+You can also test name resolution:
+
+```bash
+getent hosts localhost
+```
+
+or:
+
+```bash
+ping localhost
+```
+
+If `localhost` resolves to both `::1` and `127.0.0.1`, a client may try IPv6 first. If the server listens only on IPv4, `curl http://localhost:8080` can fail while `curl http://127.0.0.1:8080` succeeds.
+
+## Local development: bind to loopback on purpose
+
+For a local-only development server, prefer `127.0.0.1` or `localhost` only if the environment is known to resolve it correctly.
+
+A clear, explicit pattern is:
+
+```go
+package main
+
+import (
+	"log"
+	"net/http"
+)
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
+	addr := "127.0.0.1:8080"
+	log.Printf("listening on http://%s", addr)
+
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+That ensures the server is only reachable from the local machine. It avoids exposing the port on Wi-Fi, Docker bridge interfaces, or other network paths.
+
+If IPv6 loopback is required, use the explicit form:
+
+```go
+addr := "[::1]:8080"
+```
+
+Do not assume `localhost` will resolve the same way on every workstation, CI host, or container base image.
+
+## Containers: bind to all interfaces inside the container
+
+Inside a container, `127.0.0.1` refers to the container’s own loopback interface, not the host. That matters for published ports.
+
+If a process inside the container listens on `127.0.0.1:8080`, Docker can publish the port, but traffic entering through the container’s external interface will not be accepted. The listener is not attached to that interface.
+
+Use `0.0.0.0:8080` or `:8080` inside the container:
+
+```go
+addr := ":8080"
+if err := http.ListenAndServe(addr, mux); err != nil {
+	log.Fatal(err)
+}
+```
+
+Then publish the port from the container runtime.
+
+With Docker:
+
+```bash
+docker run --rm -p 8080:8080 myserver
+```
+
+With `docker compose`:
+
+```yaml
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+```
+
+If the server binds to `127.0.0.1` inside the container, `curl http://localhost:8080` from inside the container may work, but host-to-container traffic through the published port can fail because the service is not listening on the interface Docker forwards to.
+
+The same rule applies to Kubernetes pods and other sandboxed environments. Bind to the pod’s interface, not its loopback, when the service must be reachable outside the process namespace.
+
+## Remote access: bind to a non-loopback interface intentionally
+
+To accept connections from other machines, the process must bind to an address that is reachable from those machines.
+
+A common choice is:
+
+```go
+addr := "0.0.0.0:8080"
+```
+
+That listens on all IPv4 interfaces. On a host with multiple network cards, that includes LAN, VPN, and container bridge interfaces.
+
+If the service should only be reachable on a specific interface, bind to that interface’s IP instead of all interfaces:
+
+```go
+addr := "192.168.1.20:8080"
+```
+
+This narrows exposure. It is also easier to reason about in multi-homed hosts, where the wrong wildcard bind can make a service reachable on networks it was not meant for.
+
+For IPv6-only or dual-stack environments, use an IPv6 bind explicitly:
+
+```go
+addr := "[::]:8080"
+```
+
+That is the IPv6 wildcard. Whether it also accepts IPv4-mapped connections depends on the OS configuration and socket options.
+
+## Choosing the correct bind address
+
+The correct address depends on where the client is running.
+
+### Use `127.0.0.1:PORT` when:
+
+- the server should be accessible only from the same host
+- you want to avoid exposing the port to other devices
+- the client is always local, such as a browser on the same workstation or a local test
+
+### Use `:PORT` or `0.0.0.0:PORT` when:
+
+- the server runs in a container and the port must be published
+- the server must accept traffic from other hosts
+- the process should listen on all IPv4 interfaces in the current namespace
+
+### Use a specific interface IP when:
+
+- only one network path should be accepted
+- you are on a host with multiple active networks
+- you want tighter exposure than a wildcard bind
+
+### Avoid `localhost:PORT` when:
+
+- portability matters
+- IPv6 and IPv4 behavior may differ
+- the same code runs in containers, CI, and local shells
+
+## Common failure modes
+
+### Server starts, but `curl localhost:8080` fails
+
+This usually means the server bound to a different interface or port.
+
+Check the address passed to `http.ListenAndServe`. If it is `127.0.0.1`, test with `127.0.0.1` rather than `localhost`. If it is `:8080`, check whether the process actually started on `8080` and whether another listener is occupying that port.
+
+### `curl localhost:8080` works, but another machine cannot connect
+
+This usually means the server is bound to loopback. The listener exists, but only on the local interface. Change the bind address to `0.0.0.0:8080` or the host’s LAN IP.
+
+### A containerized server is unreachable from the host
+
+This usually means the server is bound to `127.0.0.1` inside the container. Change the bind address to `:8080` and publish the port with `-p 8080:8080`.
+
+### `localhost` works on one machine but not another
+
+This usually means host resolution differs. One machine may resolve `localhost` to `::1` first, while the other resolves it to `127.0.0.1`. The server may be listening on only one family.
+
+## A robust pattern for configuration
+
+For applications that run in multiple environments, make the bind address configurable and set a sensible default.
+
+```go
+package main
+
+import (
+	"flag"
+	"log"
+	"net/http"
+)
+
+func main() {
+	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
+	flag.Parse()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
+	log.Printf("listening on %s", *addr)
+	log.Fatal(http.ListenAndServe(*addr, mux))
+}
+```
+
+Run it locally:
+
+```bash
+go run . -addr 127.0.0.1:8080
+```
+
+Run it in a container:
+
+```bash
+go run . -addr :8080
+```
+
+Run it on a host that needs remote access:
+
+```bash
+go run . -addr 0.0.0.0:8080
+```
+
+This keeps the binding choice explicit instead of burying it in environment assumptions.
+
+## The practical takeaway
+
+Use the narrowest bind address that matches the deployment target. Prefer `127.0.0.1:PORT` for local-only development, `:PORT` or `0.0.0.0:PORT` for containers and remote access, and a specific interface IP when you need to control exposure precisely. Do not treat `localhost` and `0.0.0.0` as interchangeable. The bind address controls which network paths can reach the listener, and the wrong choice is enough to make a Go server appear healthy while local requests still fail.
