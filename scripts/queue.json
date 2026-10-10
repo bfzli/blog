@@ -2,20 +2,6 @@
     "generatedAt": "2026-10-04T22:35:11.076Z",
     "ideas": [
         {
-            "cell": "go-sql-localhost-bind::go::listen-on-the-wrong-interface",
-            "title": "Go Fails to Accept Local Requests Because net/http Listens on the Wrong Interface",
-            "description": "Fix a Go server that starts cleanly but refuses local connections because it bound to the wrong host or port.",
-            "tags": [
-                "go",
-                "net-http",
-                "localhost",
-                "networking",
-                "server"
-            ],
-            "angle": "Explain how `http.ListenAndServe` binds to an address and why `127.0.0.1`, `0.0.0.0`, and `localhost` are not interchangeable in every environment. Show how to choose the correct bind address for local development, containers, and remote access.",
-            "slug": "go-fails-to-accept-local-requests-because-net-http-listens-on-the-wrong-interface"
-        },
-        {
             "cell": "rust-bin-cargo::cargo::missing-binary-entrypoint",
             "title": "Cargo Builds a Rust CLI but the Installed Command Never Appears in PATH",
             "description": "Fix a Rust package that compiles but does not install a runnable binary because the crate metadata is incomplete.",
@@ -60,19 +46,19 @@
     ],
     "drafted": [
         {
-            "cell": "nextjs-server-component-mutation::nextjs::stale-cache-after-post",
-            "title": "Next.js Server Components Return Stale Data After a Mutation Because the Cache Was Not Invalidated",
-            "description": "Fix stale server-rendered data in Next.js after a write operation by revalidating the affected path or tag.",
+            "cell": "go-sql-localhost-bind::go::listen-on-the-wrong-interface",
+            "title": "Go Fails to Accept Local Requests Because net/http Listens on the Wrong Interface",
+            "description": "Fix a Go server that starts cleanly but refuses local connections because it bound to the wrong host or port.",
             "tags": [
-                "nextjs",
-                "react-server-components",
-                "cache",
-                "revalidate",
-                "app-router"
+                "go",
+                "net-http",
+                "localhost",
+                "networking",
+                "server"
             ],
-            "angle": "Explain how the App Router caches fetches and server component output across requests. Show why a mutation does not automatically refresh cached data, then cover `revalidatePath()`, `revalidateTag()`, and fetch cache options so the updated state renders consistently.",
-            "slug": "next-js-server-components-return-stale-data-after-a-mutation-because-the-cache-was-not-invalidated",
-            "draftedAt": "2026-10-09T01:36:07.466Z"
+            "angle": "Explain how `http.ListenAndServe` binds to an address and why `127.0.0.1`, `0.0.0.0`, and `localhost` are not interchangeable in every environment. Show how to choose the correct bind address for local development, containers, and remote access.",
+            "slug": "go-fails-to-accept-local-requests-because-net-http-listens-on-the-wrong-interface",
+            "draftedAt": "2026-10-10T01:25:34.253Z"
         }
     ]
 }
