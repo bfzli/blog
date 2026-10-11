@@ -1,0 +1,360 @@
+---
+title: "Cargo Builds a Rust CLI but the Installed Command Never Appears in PATH"
+description: "Fix a Rust package that compiles but does not install a runnable binary because the crate metadata is incomplete."
+tags: ["rust", "cargo", "cli", "publishing", "binary"]
+date: Oct 11, 2026
+cell: "rust-bin-cargo::cargo::missing-binary-entrypoint"
+---
+
+`cargo install` succeeds, but the expected executable never shows up in `~/.cargo/bin`, so running `mycli` returns `bash: mycli: command not found` or `zsh: command not found: mycli`.
+
+## What Cargo installs and where it puts the binary
+
+Cargo does not install “a crate” in the abstract. It installs a package, and only packages that expose a binary target produce an executable.
+
+During `cargo install`, Cargo builds the package in release mode and copies the resulting binary into Cargo’s global install directory, usually `~/.cargo/bin` on Unix-like systems. That directory must already be in `PATH` for the command to be runnable without a full path.
+
+The installed filename comes from the binary target name, not from the library crate name. If the binary target is not defined, Cargo may still compile the package successfully as a library or workspace member, but nothing executable is placed in `~/.cargo/bin`.
+
+The core rule is simple:
+
+- a package with `src/main.rs` is treated as a binary crate by default
+- a package with `src/lib.rs` is treated as a library crate by default
+- a package can expose both
+- `cargo install` only installs binary targets
+
+## How Cargo decides whether a package has a binary
+
+Cargo uses package metadata from `Cargo.toml` and the source layout to determine targets.
+
+A package exposes a binary in one of three common ways:
+
+- `src/main.rs` exists
+- `[[bin]]` is declared in `Cargo.toml`
+- the package is a workspace member whose manifest points to a binary path
+
+A package exposes a library when `src/lib.rs` exists or `[lib]` is configured.
+
+If a package contains only `src/lib.rs`, then `cargo build` succeeds, but `cargo install` has no executable to install. Depending on the exact package shape, Cargo may emit a message such as:
+
+```text
+error: package `mycli v0.1.0` is a library and cannot be installed
+```
+
+If a binary exists but the installed command is not on `PATH`, the install succeeded and the shell simply cannot locate the file. That is a different problem from the crate metadata issue, but the end result looks similar from the terminal.
+
+## The default binary layout Cargo expects
+
+For a standard single-binary package, Cargo expects this layout:
+
+```text
+mycli/
+├── Cargo.toml
+└── src/
+    └── main.rs
+```
+
+A minimal `Cargo.toml` looks like this:
+
+```toml
+[package]
+name = "mycli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+```
+
+And `src/main.rs`:
+
+```rust
+fn main() {
+    println!("mycli");
+}
+```
+
+With that layout, `cargo install --path .` builds and installs a binary named `mycli`.
+
+The package name matters here. By default, Cargo derives the binary name from the package name. A package named `mycli` installs a `mycli` executable unless you override the binary target name.
+
+## When `src/main.rs` is not enough
+
+`src/main.rs` is enough for the default case, but only if the package is actually being treated as a package that Cargo can install.
+
+Problems start when the manifest is configured as a library-only crate or when the binary code lives in a nonstandard path without a matching `[[bin]]` entry.
+
+For example, this package compiles as a library but installs nothing runnable:
+
+```toml
+[package]
+name = "mycli"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+```
+
+```rust
+// src/lib.rs
+pub fn run() {
+    println!("mycli");
+}
+```
+
+There is no binary target in that manifest. `cargo build` works, but `cargo install` has no command to place in `~/.cargo/bin`.
+
+The same issue appears if the package uses a custom source tree and forgets to declare the binary target.
+
+## How `[[bin]]` makes a command installable
+
+The `[[bin]]` table tells Cargo to treat a file as an executable target. This is the explicit fix when the main file is not in the default location, or when the package exposes more than one executable.
+
+Example:
+
+```toml
+[package]
+name = "mycli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mycli"
+path = "cli/main.rs"
+```
+
+```rust
+// cli/main.rs
+fn main() {
+    println!("mycli");
+}
+```
+
+With this manifest, `cargo install --path .` produces `mycli` in the install directory even though the source is not under `src/main.rs`.
+
+The `name` field is the installed command name. The `path` field is the source file Cargo compiles for that command.
+
+This is the mechanism Cargo uses when the binary is not in the default location. Without `[[bin]]`, Cargo does not infer arbitrary paths.
+
+## Package naming and installed command names
+
+The package name and the binary name are related but not identical.
+
+By default:
+
+- `package.name` determines the package identity
+- `src/main.rs` compiles into a binary with the package name
+- `[[bin]].name` overrides the executable name
+
+That means a package named `my-cli` can still install an executable named `mycli` if the binary target says so.
+
+Example:
+
+```toml
+[package]
+name = "my-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mycli"
+path = "src/main.rs"
+```
+
+Cargo will install `mycli`, not `my-cli`, because the binary target name wins.
+
+This matters when the package name includes characters that are valid in crates but awkward or different as command names. If the wrong name is installed, the binary is still present, just under a different filename.
+
+## Check what Cargo sees before installing
+
+Use `cargo metadata` or `cargo build --bins` to verify that Cargo sees a binary target.
+
+A quick inspection command is:
+
+```bash
+cargo metadata --no-deps --format-version 1
+```
+
+For a quicker build check, use:
+
+```bash
+cargo build --release --bins
+```
+
+If the package has no binary targets, `--bins` exposes that clearly.
+
+To inspect the manifest directly, confirm one of these is present:
+
+- `src/main.rs`
+- `[[bin]]`
+- a workspace member with a binary path
+
+If none of those exist, `cargo install` has nothing to install.
+
+## Where Cargo places the executable
+
+By default, Cargo installs binaries into the directory returned by `cargo env CARGO_HOME`, usually:
+
+```text
+~/.cargo/bin
+```
+
+That directory must be on `PATH` for the command to be callable by name.
+
+You can verify the install location with:
+
+```bash
+cargo install --path .
+ls ~/.cargo/bin
+```
+
+On Windows, the equivalent location is typically `%USERPROFILE%\.cargo\bin`.
+
+If Cargo installs the executable correctly but the shell still says it cannot be found, the issue is `PATH`, not the manifest.
+
+Check the active `PATH` with:
+
+```bash
+echo "$PATH"
+```
+
+Then confirm Cargo’s bin directory is included. If it is missing, add it in the shell profile.
+
+For Bash:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+For Zsh:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+For Fish:
+
+```fish
+set -Ux fish_user_paths $HOME/.cargo/bin $fish_user_paths
+```
+
+## A minimal working package
+
+This is the simplest package that installs a runnable command:
+
+```toml
+[package]
+name = "mycli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+```
+
+```rust
+// src/main.rs
+fn main() {
+    println!("mycli running");
+}
+```
+
+Install it from the package directory:
+
+```bash
+cargo install --path .
+```
+
+Then verify the command:
+
+```bash
+mycli
+```
+
+If the shell still cannot find it, inspect `PATH` and ensure `~/.cargo/bin` is present.
+
+## A package with both library and binary targets
+
+Many packages expose a library for reuse and a binary for CLI usage.
+
+```toml
+[package]
+name = "mycli"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "mycli"
+path = "src/main.rs"
+```
+
+```rust
+// src/lib.rs
+pub fn message() -> &'static str {
+    "mycli running"
+}
+```
+
+```rust
+// src/main.rs
+fn main() {
+    println!("{}", mycli::message());
+}
+```
+
+This layout makes the command installable and keeps shared logic in the library. `cargo install --path .` installs the binary target named `mycli`.
+
+## Common failure modes
+
+A package can compile but still fail to install a command for several reasons.
+
+### Library-only manifest
+
+If the manifest exposes only `[lib]`, Cargo builds a library and has no binary to install.
+
+Fix: add `src/main.rs` or a `[[bin]]` entry.
+
+### Binary source in a nonstandard path without `[[bin]]`
+
+Cargo does not guess arbitrary file locations.
+
+Fix: declare the binary path explicitly.
+
+### Installed binary name differs from expectation
+
+The executable may exist under a different name than the package.
+
+Fix: check `[[bin]].name` and `package.name`.
+
+### Cargo’s bin directory is not on `PATH`
+
+The binary is installed but the shell cannot locate it.
+
+Fix: add `~/.cargo/bin` to `PATH`.
+
+### Installing the wrong package in a workspace
+
+`cargo install --path .` installs the current package, but in a workspace the selected member may not be the CLI.
+
+Fix: run `cargo install --path path/to/member` or specify `--package`.
+
+## Verifying the final result
+
+A correct install should produce a file in the Cargo binary directory:
+
+```bash
+cargo install --path .
+ls -l ~/.cargo/bin/mycli
+which mycli
+mycli --help
+```
+
+If `which mycli` returns nothing, the command is either installed under a different name or `~/.cargo/bin` is not in `PATH`.
+
+If `ls -l ~/.cargo/bin/mycli` fails, Cargo did not install a binary target. Recheck the manifest and source layout.
+
+## Practical takeaway
+
+Prefer the default `src/main.rs` layout for a single CLI package, because Cargo recognizes it automatically and `cargo install --path .` installs the command under the package name. Use `[[bin]]` when the executable lives outside `src/main.rs`, when there are multiple binaries, or when the command name needs to differ from the package name. After installation, make sure `~/.cargo/bin` is on `PATH`; otherwise the binary exists but the shell cannot find it.
