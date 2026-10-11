@@ -2,20 +2,6 @@
     "generatedAt": "2026-10-04T22:35:11.076Z",
     "ideas": [
         {
-            "cell": "rust-bin-cargo::cargo::missing-binary-entrypoint",
-            "title": "Cargo Builds a Rust CLI but the Installed Command Never Appears in PATH",
-            "description": "Fix a Rust package that compiles but does not install a runnable binary because the crate metadata is incomplete.",
-            "tags": [
-                "rust",
-                "cargo",
-                "cli",
-                "publishing",
-                "binary"
-            ],
-            "angle": "Cover how Cargo decides whether a package exposes a binary and where it places the executable during `cargo install`. Explain the role of `[[bin]]`, `src/main.rs`, and package naming, then show how to make the command discoverable in PATH after installation.",
-            "slug": "cargo-builds-a-rust-cli-but-the-installed-command-never-appears-in-path"
-        },
-        {
             "cell": "python-pydantic-mismatch::python::request-model-validation",
             "title": "FastAPI Rejects a JSON Request with 422 Because the Pydantic Model Does Not Match the Payload",
             "description": "Fix a FastAPI validation error caused by field names, types, or nesting that do not match the incoming JSON body.",
@@ -46,19 +32,19 @@
     ],
     "drafted": [
         {
-            "cell": "go-sql-localhost-bind::go::listen-on-the-wrong-interface",
-            "title": "Go Fails to Accept Local Requests Because net/http Listens on the Wrong Interface",
-            "description": "Fix a Go server that starts cleanly but refuses local connections because it bound to the wrong host or port.",
+            "cell": "rust-bin-cargo::cargo::missing-binary-entrypoint",
+            "title": "Cargo Builds a Rust CLI but the Installed Command Never Appears in PATH",
+            "description": "Fix a Rust package that compiles but does not install a runnable binary because the crate metadata is incomplete.",
             "tags": [
-                "go",
-                "net-http",
-                "localhost",
-                "networking",
-                "server"
+                "rust",
+                "cargo",
+                "cli",
+                "publishing",
+                "binary"
             ],
-            "angle": "Explain how `http.ListenAndServe` binds to an address and why `127.0.0.1`, `0.0.0.0`, and `localhost` are not interchangeable in every environment. Show how to choose the correct bind address for local development, containers, and remote access.",
-            "slug": "go-fails-to-accept-local-requests-because-net-http-listens-on-the-wrong-interface",
-            "draftedAt": "2026-10-10T01:25:34.253Z"
+            "angle": "Cover how Cargo decides whether a package exposes a binary and where it places the executable during `cargo install`. Explain the role of `[[bin]]`, `src/main.rs`, and package naming, then show how to make the command discoverable in PATH after installation.",
+            "slug": "cargo-builds-a-rust-cli-but-the-installed-command-never-appears-in-path",
+            "draftedAt": "2026-10-11T00:36:21.362Z"
         }
     ]
 }
