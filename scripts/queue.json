@@ -2,20 +2,6 @@
     "generatedAt": "2026-10-11T23:17:01.090Z",
     "ideas": [
         {
-            "cell": "python-pydantic-mismatch::python::request-model-validation",
-            "title": "FastAPI Rejects a JSON Request with 422 Because the Pydantic Model Does Not Match the Payload",
-            "description": "Fix a FastAPI validation error caused by field names, types, or nesting that do not match the incoming JSON body.",
-            "tags": [
-                "fastapi",
-                "pydantic",
-                "python",
-                "validation",
-                "json"
-            ],
-            "angle": "Explain how FastAPI uses Pydantic to validate request bodies before the handler runs. Show how mismatched field names, missing nesting, optional types, and strict models produce a 422 response, then demonstrate the exact model and payload shape that must line up.",
-            "slug": "fastapi-rejects-a-json-request-with-422-because-the-pydantic-model-does-not-match-the-payload"
-        },
-        {
             "cell": "nginx-websocket-timeout::nginx::idle-connection-close",
             "title": "Nginx Closes a WebSocket Connection After the Upgrade Because the Timeout Is Too Low",
             "description": "Fix an Nginx reverse proxy that accepts a WebSocket upgrade but drops the socket during idle periods.",
@@ -58,19 +44,19 @@
     ],
     "drafted": [
         {
-            "cell": "rust-bin-cargo::cargo::missing-binary-entrypoint",
-            "title": "Cargo Builds a Rust CLI but the Installed Command Never Appears in PATH",
-            "description": "Fix a Rust package that compiles but does not install a runnable binary because the crate metadata is incomplete.",
+            "cell": "python-pydantic-mismatch::python::request-model-validation",
+            "title": "FastAPI Rejects a JSON Request with 422 Because the Pydantic Model Does Not Match the Payload",
+            "description": "Fix a FastAPI validation error caused by field names, types, or nesting that do not match the incoming JSON body.",
             "tags": [
-                "rust",
-                "cargo",
-                "cli",
-                "publishing",
-                "binary"
+                "fastapi",
+                "pydantic",
+                "python",
+                "validation",
+                "json"
             ],
-            "angle": "Cover how Cargo decides whether a package exposes a binary and where it places the executable during `cargo install`. Explain the role of `[[bin]]`, `src/main.rs`, and package naming, then show how to make the command discoverable in PATH after installation.",
-            "slug": "cargo-builds-a-rust-cli-but-the-installed-command-never-appears-in-path",
-            "draftedAt": "2026-10-11T00:36:21.362Z"
+            "angle": "Explain how FastAPI uses Pydantic to validate request bodies before the handler runs. Show how mismatched field names, missing nesting, optional types, and strict models produce a 422 response, then demonstrate the exact model and payload shape that must line up.",
+            "slug": "fastapi-rejects-a-json-request-with-422-because-the-pydantic-model-does-not-match-the-payload",
+            "draftedAt": "2026-10-12T00:52:47.353Z"
         }
     ]
 }
