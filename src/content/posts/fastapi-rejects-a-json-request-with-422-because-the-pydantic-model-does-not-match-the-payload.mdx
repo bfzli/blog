@@ -1,0 +1,481 @@
+---
+title: "FastAPI Rejects a JSON Request with 422 Because the Pydantic Model Does Not Match the Payload"
+description: "Fix a FastAPI validation error caused by field names, types, or nesting that do not match the incoming JSON body."
+tags: ["fastapi", "pydantic", "python", "validation", "json"]
+date: Oct 12, 2026
+cell: "python-pydantic-mismatch::python::request-model-validation"
+---
+
+A FastAPI `POST` handler fails before the route code runs, and the response is `422 Unprocessable Entity` with validation errors such as `{"detail":[{"loc":["body","name"],"msg":"field required","type":"value_error.missing"}]}` or `{"detail":[{"loc":["body"],"msg":"field required","type":"value_error.missing"}]}`.
+
+## Why FastAPI returns 422 before your handler executes
+
+FastAPI validates request bodies with Pydantic before it calls the endpoint function. If the incoming JSON does not match the declared model, FastAPI does not pass control to the handler. Instead, it returns `422 Unprocessable Entity`.
+
+The mechanism is simple:
+
+1. The request body is parsed as JSON.
+2. FastAPI compares the parsed data with the Pydantic model type annotation on the endpoint.
+3. Pydantic checks field names, nesting, required keys, types, and constraints.
+4. If validation fails, FastAPI builds a `422` response with a `detail` array.
+
+That means a `422` is usually not an application bug in the handler. It is a shape mismatch between the payload and the model.
+
+A minimal FastAPI app looks like this:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class UserCreate(BaseModel):
+    name: str
+    email: str
+
+@app.post("/users")
+def create_user(user: UserCreate):
+    return {"name": user.name, "email": user.email}
+```
+
+If the client sends:
+
+```json
+{
+  "name": "Ada"
+}
+```
+
+the response is `422` because `email` is required and missing.
+
+## Field names must match exactly
+
+Pydantic matches JSON keys to model field names. It does not guess that `user_name` should map to `username`, and it does not automatically translate camelCase to snake_case unless you configure aliases.
+
+If the model is:
+
+```python
+from pydantic import BaseModel
+
+class Profile(BaseModel):
+    first_name: str
+    last_name: str
+```
+
+then this payload works:
+
+```json
+{
+  "first_name": "Grace",
+  "last_name": "Hopper"
+}
+```
+
+This payload fails:
+
+```json
+{
+  "firstName": "Grace",
+  "lastName": "Hopper"
+}
+```
+
+FastAPI returns a response shaped like this:
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "first_name"],
+      "msg": "field required",
+      "type": "value_error.missing"
+    },
+    {
+      "loc": ["body", "last_name"],
+      "msg": "field required",
+      "type": "value_error.missing"
+    }
+  ]
+}
+```
+
+The error points to the model field names, not the incoming key names. That is the clue that the payload keys do not line up with the schema.
+
+If you need alternate JSON names, use aliases:
+
+```python
+from pydantic import BaseModel, Field
+
+class Profile(BaseModel):
+    first_name: str = Field(alias="firstName")
+    last_name: str = Field(alias="lastName")
+
+    class Config:
+        populate_by_name = True
+```
+
+With this model, both of these payloads are valid:
+
+```json
+{
+  "firstName": "Grace",
+  "lastName": "Hopper"
+}
+```
+
+and
+
+```json
+{
+  "first_name": "Grace",
+  "last_name": "Hopper"
+}
+```
+
+When using aliases, the exact Pydantic version matters. In Pydantic v2, `populate_by_name = True` is the config knob that allows field names as well as aliases.
+
+## Missing nesting produces a 422 even when the keys exist
+
+A common failure is sending the right keys at the wrong level.
+
+If the model contains a nested object:
+
+```python
+from pydantic import BaseModel
+
+class Address(BaseModel):
+    street: str
+    city: str
+
+class UserCreate(BaseModel):
+    name: str
+    address: Address
+```
+
+then the payload must nest `address` as an object:
+
+```json
+{
+  "name": "Ada",
+  "address": {
+    "street": "1 Main St",
+    "city": "London"
+  }
+}
+```
+
+This payload is invalid:
+
+```json
+{
+  "name": "Ada",
+  "street": "1 Main St",
+  "city": "London"
+}
+```
+
+The response will report that `address` is missing, because the model expects a single `address` object, not `street` and `city` at the top level.
+
+A nested model is not just a grouping convenience. It changes the request contract. If the endpoint annotation says `address: Address`, the body must contain `address` as a JSON object.
+
+A similar issue appears with request wrappers. If the handler expects:
+
+```python
+class CreateUserRequest(BaseModel):
+    user: UserCreate
+```
+
+then the JSON must look like:
+
+```json
+{
+  "user": {
+    "name": "Ada",
+    "email": "ada@example.com"
+  }
+}
+```
+
+Sending the inner fields directly causes a `422` because the outer `user` key is missing.
+
+## Optional types do not make a field optional unless you give it a default
+
+A field annotated as `Optional[str]` or `str | None` can accept `null`, but that does not automatically make the field omissible.
+
+In Pydantic, these two declarations are different:
+
+```python
+from pydantic import BaseModel
+
+class A(BaseModel):
+    nickname: str | None
+
+class B(BaseModel):
+    nickname: str | None = None
+```
+
+`A.nickname` is still required, even though its value can be `null`.
+
+`B.nickname` is optional because it has a default value of `None`.
+
+This payload fails against `A`:
+
+```json
+{}
+```
+
+The error is:
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "nickname"],
+      "msg": "field required",
+      "type": "value_error.missing"
+    }
+  ]
+}
+```
+
+These payloads pass:
+
+```json
+{
+  "nickname": null
+}
+```
+
+and, for `B`, also:
+
+```json
+{
+  "nickname": "Ada"
+}
+```
+
+Use a default when the field may be omitted entirely. Use a nullable type when the field may be present but `null`.
+
+This distinction matters when clients send partial update documents. If a field should be skipped in some requests, define it with a default.
+
+## Type mismatches also trigger 422
+
+FastAPI does more than check presence. It validates types too.
+
+If the model says:
+
+```python
+from pydantic import BaseModel
+
+class Item(BaseModel):
+    quantity: int
+    price: float
+```
+
+then these values are valid:
+
+```json
+{
+  "quantity": 3,
+  "price": 19.99
+}
+```
+
+This payload fails:
+
+```json
+{
+  "quantity": "3",
+  "price": "19.99"
+}
+```
+
+Pydantic may coerce some values depending on configuration, but you should not rely on coercion when the API contract needs exact types.
+
+With strict models in Pydantic v2, coercion is disabled. You can enforce this with `strict=True` at the model or field level.
+
+```python
+from pydantic import BaseModel, ConfigDict, Field
+
+class Item(BaseModel):
+    model_config = ConfigDict(strict=True)
+    quantity: int
+    price: float
+```
+
+Now `"3"` is rejected for `quantity`, and `"19.99"` is rejected for `price`.
+
+If you need strictness only for one field, use `Field(strict=True)`:
+
+```python
+from pydantic import BaseModel, Field
+
+class Item(BaseModel):
+    quantity: int = Field(strict=True)
+```
+
+Strict validation is useful when stringified numbers or booleans would mask client bugs. It also makes the `422` response more precise, because the error points to the exact field and wrong type.
+
+## Query parameters and body models are separate sources
+
+Another reason for `422` is sending data in the wrong place.
+
+FastAPI distinguishes path parameters, query parameters, headers, cookies, and JSON bodies. The declared model type determines where FastAPI looks.
+
+If the endpoint is:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class SearchRequest(BaseModel):
+    term: str
+    limit: int = 10
+
+@app.post("/search")
+def search(body: SearchRequest):
+    return body
+```
+
+then `term` and `limit` must be in the JSON body. Sending them as query parameters does not satisfy the body model.
+
+This request is wrong:
+
+```http
+POST /search?term=fastapi&limit=5
+Content-Type: application/json
+
+{}
+```
+
+That produces a `422` because the body model fields are missing from the JSON body.
+
+If you want query parameters, declare them as such:
+
+```python
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/search")
+def search(term: str = Query(...), limit: int = Query(10)):
+    return {"term": term, "limit": limit}
+```
+
+The contract is determined by the function signature. A Pydantic body model and query parameters are not interchangeable.
+
+## Reproducing the failure with a runnable example
+
+Install the exact packages:
+
+```bash
+python -m pip install fastapi==0.115.0 uvicorn==0.30.6 pydantic==2.8.2
+```
+
+Create `main.py`:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Address(BaseModel):
+    street: str
+    city: str
+
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    address: Address
+    nickname: str | None
+
+@app.post("/users")
+def create_user(user: UserCreate):
+    return user
+```
+
+Run it:
+
+```bash
+uvicorn main:app --reload
+```
+
+This request fails:
+
+```bash
+curl -s -X POST "http://127.0.0.1:8000/users" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Ada","email":"ada@example.com","street":"1 Main St","city":"London"}'
+```
+
+The response includes errors for `address` and `nickname`. `address` is missing because the payload flattened the nested object. `nickname` is missing because it has no default, so `str | None` is still required.
+
+A valid payload is:
+
+```bash
+curl -s -X POST "http://127.0.0.1:8000/users" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Ada","email":"ada@example.com","address":{"street":"1 Main St","city":"London"},"nickname":null}'
+```
+
+To make `nickname` truly optional, change the model to:
+
+```python
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    address: Address
+    nickname: str | None = None
+```
+
+Now the field may be omitted.
+
+## Reading the `422` response correctly
+
+FastAPI’s validation errors use a stable structure.
+
+A typical response looks like this:
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "address", "street"],
+      "msg": "field required",
+      "type": "value_error.missing"
+    }
+  ]
+}
+```
+
+Each part has meaning:
+
+- `loc` shows where validation failed.
+- `msg` describes the problem.
+- `type` is the validation code from Pydantic.
+
+If `loc` starts with `["body", ...]`, the issue is in the JSON body. If it includes a nested field path, the mismatch is deeper in the object graph.
+
+For type errors, `msg` may say something like `value is not a valid integer` or, in Pydantic v2, `Input should be a valid integer`. Exact wording depends on the version, but the meaning is the same: the payload type does not match the model type.
+
+## Preventing the mismatch
+
+The safest fix is to make the model and payload shape explicit and keep them aligned.
+
+Use these rules:
+
+- Match JSON keys to field names exactly, or define aliases.
+- Mirror nesting in the payload when the model uses nested Pydantic classes.
+- Add defaults for fields that may be omitted.
+- Use `str | None` only when `null` is allowed, not when omission is allowed.
+- Turn on `strict=True` when you want invalid coercions to fail instead of being accepted.
+- Keep request body fields and query parameters separate.
+
+If you want to avoid payload drift, generate client types from the API schema or inspect the OpenAPI document at `/openapi.json`. FastAPI publishes the body schema automatically, and that schema is the contract the client must satisfy.
+
+## The practical takeaway
+
+Prefer a model-first request contract: define the Pydantic schema so it matches the actual JSON shape you expect, then send payloads that use the same field names, nesting, and nullability. Use defaults for optional omission, use aliases for naming differences, and enable strict validation when silent coercion would hide bad input. That keeps `422` responses limited to genuine client errors instead of schema drift.
