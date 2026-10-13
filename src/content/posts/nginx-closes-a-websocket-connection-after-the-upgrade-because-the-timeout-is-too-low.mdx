@@ -1,0 +1,278 @@
+---
+title: "Nginx Closes a WebSocket Connection After the Upgrade Because the Timeout Is Too Low"
+description: "Fix an Nginx reverse proxy that accepts a WebSocket upgrade but drops the socket during idle periods."
+tags: ["nginx", "websocket", "proxy", "timeout", "reverse-proxy"]
+date: Oct 13, 2026
+cell: "nginx-websocket-timeout::nginx::idle-connection-close"
+---
+
+A WebSocket connection behind Nginx closes during idle periods even though the upgrade succeeds. The upstream logs show `WebSocket is closed before the connection is established` or `1006 (abnormal closure)`, and Nginx error logs typically include `upstream timed out (110: Connection timed out) while reading upstream` or `upstream timed out (110: Connection timed out) while sending to upstream`.
+
+## What the upgrade does and does not do
+
+A WebSocket handshake begins as an HTTP request with `Connection: Upgrade` and `Upgrade: websocket`. If Nginx forwards those headers correctly, it can switch the request from HTTP proxying to a long-lived TCP tunnel.
+
+That upgrade only establishes the tunnel. It does not disable Nginx proxy timers.
+
+After the handshake completes, the connection can still be closed by `proxy_read_timeout` or `proxy_send_timeout` if no traffic flows for long enough. This is the core problem.
+
+`proxy_read_timeout` controls how long Nginx waits for data from the upstream server.  
+`proxy_send_timeout` controls how long Nginx waits while sending data to the upstream server.
+
+For WebSockets, the connection may stay open for long periods without application messages. If the timeout is too low, Nginx treats that idle period as a stalled upstream and closes the socket.
+
+## The required WebSocket proxy headers
+
+Nginx needs the standard upgrade headers so it can switch protocols correctly.
+
+A minimal reverse proxy location looks like this:
+
+```nginx
+location /socket/ {
+    proxy_pass http://app_backend;
+    proxy_http_version 1.1;
+
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    proxy_set_header Host $host;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+}
+```
+
+The `proxy_http_version 1.1` line matters because WebSocket upgrade is defined for HTTP/1.1. HTTP/1.0 proxying will not preserve the upgrade path.
+
+The `Upgrade` header forwards the client request’s upgrade target.
+
+The `Connection` header must include `upgrade`. In simple WebSocket locations, setting it to the literal string `"upgrade"` is common and works. For mixed HTTP and WebSocket routing, a `map` is usually better because it avoids sending `Connection: upgrade` on requests that are not WebSocket requests.
+
+A more robust pattern is:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    location /socket/ {
+        proxy_pass http://app_backend;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+```
+
+The `map` selects `upgrade` only when the client actually sends an `Upgrade` header.
+
+## Why the socket closes after idle time
+
+Once the WebSocket is established, traffic can become sparse. If neither side sends frames, Nginx sees an idle upstream connection.
+
+Nginx does not know whether the application expects silence or whether the backend has stalled. Its proxy timers define the maximum silent interval.
+
+The common failure sequence is:
+
+1. The browser sends the HTTP upgrade request.
+2. Nginx forwards the request to the upstream.
+3. The upstream returns `101 Switching Protocols`.
+4. The connection stays open.
+5. No WebSocket frames pass for longer than `proxy_read_timeout` or `proxy_send_timeout`.
+6. Nginx closes the tunnel.
+7. The browser reports `1006` because the close was not a clean WebSocket close frame.
+
+That is why the upgrade can succeed and the connection can still disappear later.
+
+This is also why increasing only the upstream application timeout is not enough. If Nginx still has a shorter proxy timeout, Nginx closes the socket first.
+
+## Which timeout matters for WebSocket idle periods
+
+For a WebSocket tunnel, `proxy_read_timeout` is usually the critical setting.
+
+It controls the interval Nginx will wait for data from the upstream after the connection is established. If the upstream is silent longer than this timeout, Nginx closes the connection.
+
+`proxy_send_timeout` is also relevant, but it usually fails less often in WebSocket deployments. It applies when Nginx is trying to send data upstream and the upstream is not accepting it quickly enough. In practice, `proxy_send_timeout` should still be set to a value that matches the expected lifetime of the tunnel.
+
+A safe baseline for long-lived sockets is:
+
+```nginx
+location /socket/ {
+    proxy_pass http://app_backend;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_set_header Host $host;
+
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}
+```
+
+If the application already sends heartbeat frames every 30 seconds, a `60s` timeout may be enough. If the connection can be idle for several minutes, use a much larger value.
+
+## Heartbeats and the timeout mechanism
+
+The timeout is reset by traffic. Any WebSocket frame that reaches Nginx counts as activity.
+
+That includes application messages and ping/pong frames, depending on the stack. If the backend or client sends periodic heartbeats, the connection remains active as long as the interval between frames is less than the Nginx timeout.
+
+This means the fix can be made in either of two ways:
+
+- increase the Nginx proxy timeouts
+- add heartbeat traffic so the tunnel is never silent for too long
+
+Raising the timeout is the simplest approach when the protocol is intentionally idle for long periods.
+
+Heartbeats are better when the network path or intermediaries have their own idle limits. A connection may survive Nginx but still die in a load balancer, firewall, or NAT device. In that case, heartbeat frames keep the entire path active.
+
+A common application-level heartbeat in Node.js using the `ws` package looks like this:
+
+```ts
+import WebSocket, { WebSocketServer } from 'ws';
+
+const wss = new WebSocketServer({ port: 8080 });
+
+function heartbeat(this: WebSocket & { isAlive?: boolean }) {
+  this.isAlive = true;
+}
+
+wss.on('connection', (ws: WebSocket & { isAlive?: boolean }) => {
+  ws.isAlive = true;
+
+  ws.on('pong', heartbeat);
+});
+
+const interval = setInterval(() => {
+  wss.clients.forEach((ws: WebSocket & { isAlive?: boolean }) => {
+    if (ws.isAlive === false) {
+      ws.terminate();
+      return;
+    }
+
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('close', () => clearInterval(interval));
+```
+
+This keeps a 30-second activity cycle on the connection. If Nginx uses `proxy_read_timeout 60s`, the tunnel should not time out because the connection is no longer idle for more than 60 seconds.
+
+## A complete Nginx configuration
+
+A complete server block for a WebSocket backend might look like this:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream app_backend {
+    server 127.0.0.1:3000;
+    keepalive 32;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+
+    location /socket/ {
+        proxy_pass http://app_backend;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
+
+    location / {
+        proxy_pass http://app_backend;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+`proxy_buffering off` is commonly added for WebSocket paths. WebSocket frames are not ordinary buffered HTTP responses, and disabling buffering avoids confusion in mixed proxy configurations.
+
+`http2` on the `listen` line does not apply to the WebSocket tunnel itself. Browsers still establish WebSocket connections over HTTP/1.1 upgrade semantics in this common configuration.
+
+## How to verify the fix
+
+The Nginx configuration should be validated before reload:
+
+```bash
+sudo nginx -t
+```
+
+If the syntax is valid, reload Nginx:
+
+```bash
+sudo systemctl reload nginx
+```
+
+Then check the error log for timeout messages. The exact path depends on the distribution, but common locations are `/var/log/nginx/error.log` or systemd journal output.
+
+To confirm the handshake is correct, use `curl` only for the HTTP headers. `curl` cannot complete a WebSocket session, but it can show whether the upgrade response is present:
+
+```bash
+curl -i \
+  -H 'Connection: Upgrade' \
+  -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==' \
+  -H 'Sec-WebSocket-Version: 13' \
+  https://example.com/socket/
+```
+
+A successful upgrade should return `101 Switching Protocols`. After that, the timeout behavior must be tested with a real WebSocket client.
+
+The `wscat` package is a simple way to observe idle disconnects:
+
+```bash
+npx wscat -c wss://example.com/socket/
+```
+
+If the socket closes after a fixed interval with no traffic, the Nginx proxy timeout is still too low or the upstream heartbeat interval is too long.
+
+## Common misconfigurations
+
+A frequent mistake is setting only `proxy_pass` and assuming the tunnel will stay open automatically. It will not. Without `proxy_read_timeout` and `proxy_send_timeout` sized for the application, idle WebSockets close.
+
+Another common issue is omitting `proxy_http_version 1.1`. Without it, the upgrade path can fail or behave inconsistently.
+
+Another is using `proxy_set_header Connection "keep-alive"` on a WebSocket location. That header is wrong for an upgrade request. The connection must advertise `upgrade`, not plain HTTP keep-alive semantics.
+
+If a load balancer sits in front of Nginx, it may have its own idle timeout. In that case, Nginx settings alone are not enough. The shortest idle timeout anywhere along the path wins.
+
+## Practical timeout values
+
+There is no universal timeout value. The correct value depends on traffic patterns and infrastructure limits.
+
+Use these rules:
+
+- If the connection can be idle for a long time, set `proxy_read_timeout` and `proxy_send_timeout` to several minutes or longer.
+- If the backend sends heartbeats every `N` seconds, the Nginx timeouts must be greater than `N`.
+- If an upstream proxy or cloud load balancer has a lower idle timeout, set heartbeats below that limit or increase the intermediary timeout.
+
+A conservative starting point is `3600s` for both proxy timeouts on a dedicated WebSocket path. That is large enough for many idle session patterns and avoids premature closure.
+
+## Closing fix
+
+Prefer a dedicated WebSocket `location` block with `proxy_http_version 1.1`, the `Upgrade` and `Connection` headers, and explicit `proxy_read_timeout` and `proxy_send_timeout` values that exceed the maximum expected idle interval. If idle gaps are unpredictable, add application heartbeats as well. The upgrade only creates the tunnel; the proxy timeouts determine whether Nginx keeps it open.
