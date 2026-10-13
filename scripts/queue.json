@@ -2,20 +2,6 @@
     "generatedAt": "2026-10-11T23:17:01.090Z",
     "ideas": [
         {
-            "cell": "nginx-websocket-timeout::nginx::idle-connection-close",
-            "title": "Nginx Closes a WebSocket Connection After the Upgrade Because the Timeout Is Too Low",
-            "description": "Fix an Nginx reverse proxy that accepts a WebSocket upgrade but drops the socket during idle periods.",
-            "tags": [
-                "nginx",
-                "websocket",
-                "proxy",
-                "timeout",
-                "reverse-proxy"
-            ],
-            "angle": "Explain that a successful upgrade only establishes the tunnel; Nginx can still close it with proxy read and send timeouts. Show the required websocket proxy headers and the timeout settings that keep the connection open for idle traffic.",
-            "slug": "nginx-closes-a-websocket-connection-after-the-upgrade-because-the-timeout-is-too-low"
-        },
-        {
             "cell": "environment-runtime-shift::remix::on-server-render",
             "title": "Remix Reads `process.env` in a Route Loader but the Variable Is Undefined in Production",
             "description": "Fix route loaders and actions that work locally but lose environment values after deployment or adapter changes.",
@@ -44,19 +30,19 @@
     ],
     "drafted": [
         {
-            "cell": "python-pydantic-mismatch::python::request-model-validation",
-            "title": "FastAPI Rejects a JSON Request with 422 Because the Pydantic Model Does Not Match the Payload",
-            "description": "Fix a FastAPI validation error caused by field names, types, or nesting that do not match the incoming JSON body.",
+            "cell": "nginx-websocket-timeout::nginx::idle-connection-close",
+            "title": "Nginx Closes a WebSocket Connection After the Upgrade Because the Timeout Is Too Low",
+            "description": "Fix an Nginx reverse proxy that accepts a WebSocket upgrade but drops the socket during idle periods.",
             "tags": [
-                "fastapi",
-                "pydantic",
-                "python",
-                "validation",
-                "json"
+                "nginx",
+                "websocket",
+                "proxy",
+                "timeout",
+                "reverse-proxy"
             ],
-            "angle": "Explain how FastAPI uses Pydantic to validate request bodies before the handler runs. Show how mismatched field names, missing nesting, optional types, and strict models produce a 422 response, then demonstrate the exact model and payload shape that must line up.",
-            "slug": "fastapi-rejects-a-json-request-with-422-because-the-pydantic-model-does-not-match-the-payload",
-            "draftedAt": "2026-10-12T00:52:47.353Z"
+            "angle": "Explain that a successful upgrade only establishes the tunnel; Nginx can still close it with proxy read and send timeouts. Show the required websocket proxy headers and the timeout settings that keep the connection open for idle traffic.",
+            "slug": "nginx-closes-a-websocket-connection-after-the-upgrade-because-the-timeout-is-too-low",
+            "draftedAt": "2026-10-13T02:47:25.082Z"
         }
     ]
 }
