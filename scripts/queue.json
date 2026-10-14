@@ -2,19 +2,6 @@
     "generatedAt": "2026-10-11T23:17:01.090Z",
     "ideas": [
         {
-            "cell": "environment-runtime-shift::remix::on-server-render",
-            "title": "Remix Reads `process.env` in a Route Loader but the Variable Is Undefined in Production",
-            "description": "Fix route loaders and actions that work locally but lose environment values after deployment or adapter changes.",
-            "tags": [
-                "remix",
-                "env",
-                "loader",
-                "deployment"
-            ],
-            "angle": "Explain how Remix adapters, build-time replacement, and server runtime differences affect environment access. Show how to read env vars from the correct runtime source for your adapter, and how to avoid inlining values that should stay server-side.",
-            "slug": "remix-reads-process-env-in-a-route-loader-but-the-variable-is-undefined-in-production"
-        },
-        {
             "cell": "asset-origin-path::astro::static-production",
             "title": "Astro Serves Broken Images After Deployment Because the Asset Path Points at the Wrong Origin",
             "description": "Fix deployed Astro pages that load HTML but 404 their CSS, JS, or image assets from an incorrect public path.",
@@ -30,19 +17,18 @@
     ],
     "drafted": [
         {
-            "cell": "nginx-websocket-timeout::nginx::idle-connection-close",
-            "title": "Nginx Closes a WebSocket Connection After the Upgrade Because the Timeout Is Too Low",
-            "description": "Fix an Nginx reverse proxy that accepts a WebSocket upgrade but drops the socket during idle periods.",
+            "cell": "environment-runtime-shift::remix::on-server-render",
+            "title": "Remix Reads `process.env` in a Route Loader but the Variable Is Undefined in Production",
+            "description": "Fix route loaders and actions that work locally but lose environment values after deployment or adapter changes.",
             "tags": [
-                "nginx",
-                "websocket",
-                "proxy",
-                "timeout",
-                "reverse-proxy"
+                "remix",
+                "env",
+                "loader",
+                "deployment"
             ],
-            "angle": "Explain that a successful upgrade only establishes the tunnel; Nginx can still close it with proxy read and send timeouts. Show the required websocket proxy headers and the timeout settings that keep the connection open for idle traffic.",
-            "slug": "nginx-closes-a-websocket-connection-after-the-upgrade-because-the-timeout-is-too-low",
-            "draftedAt": "2026-10-13T02:47:25.082Z"
+            "angle": "Explain how Remix adapters, build-time replacement, and server runtime differences affect environment access. Show how to read env vars from the correct runtime source for your adapter, and how to avoid inlining values that should stay server-side.",
+            "slug": "remix-reads-process-env-in-a-route-loader-but-the-variable-is-undefined-in-production",
+            "draftedAt": "2026-10-14T00:47:13.773Z"
         }
     ]
 }
