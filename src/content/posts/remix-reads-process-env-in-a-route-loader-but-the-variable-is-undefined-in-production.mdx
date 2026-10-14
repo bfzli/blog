@@ -1,0 +1,344 @@
+---
+title: "Remix Reads `process.env` in a Route Loader but the Variable Is Undefined in Production"
+description: "Fix route loaders and actions that work locally but lose environment values after deployment or adapter changes."
+tags: ["remix", "env", "loader", "deployment"]
+date: Oct 14, 2026
+cell: "environment-runtime-shift::remix::on-server-render"
+---
+
+`process.env.MY_SECRET` is `undefined` inside a Remix route loader in production, and the app fails with `TypeError: Cannot read properties of undefined` when that value is used.
+
+## Why this happens
+
+Remix route modules can run in different environments depending on the adapter and the build output. A loader or action is server code, but that does not mean every reference to `process.env` is evaluated at request time in the production server process.
+
+There are three common mechanisms behind the failure:
+
+1. **Build-time replacement**
+   Some bundlers and deployment toolchains replace environment reads during compilation. A reference such as `process.env.MY_SECRET` may be evaluated while the app is bundled, not when the request arrives. If the value is missing from the build environment, the bundle can contain `undefined` or an empty string.
+
+2. **Adapter runtime differences**
+   Remix does not run on one server model. The Node adapter, Cloudflare adapter, Deno-based targets, and other adapters expose different runtime APIs. `process.env` exists in Node.js, but it does not exist in edge runtimes like Cloudflare Workers. A loader that works locally under the Node dev server can break after switching adapters.
+
+3. **Server/client boundary confusion**
+   Route modules are shared artifacts. Code that is imported by both server and client bundles must not assume server-only globals are present. If a value is imported from a module that gets bundled for the browser, the build may inline or erase it.
+
+The result is a value that appears to exist in development and disappears after deployment.
+
+## What Remix actually executes
+
+A Remix route file can contain `loader`, `action`, and React component exports. Only `loader` and `action` run on the server. The component can run in the browser during hydration and later navigation.
+
+That matters because the code path that reads the environment must stay on the server side. A direct reference in a server-only function is usually fine under a Node adapter. A direct reference in a shared utility, a top-level module initializer, or a client-imported file is where trouble starts.
+
+Consider this pattern:
+
+```ts
+// app/routes/webhook.tsx
+export async function loader() {
+  const secret = process.env.WEBHOOK_SECRET;
+  return Response.json({ secret });
+}
+```
+
+This may work in a local Node process. It can fail when:
+
+- the adapter does not provide `process`
+- the build tool inlines the value at compile time
+- the production environment does not set the variable where the build expects it
+
+The key question is not “is this in a loader?” The question is “which runtime is evaluating this expression?”
+
+## Node adapters: read from the server process at request time
+
+For a Node-based deployment, `process.env` is the native source of environment variables. That includes the Remix App Server, Express, Fastify, and similar Node targets.
+
+A loader can read directly from `process.env`:
+
+```ts
+// app/routes/api.secret.ts
+import { json } from "@remix-run/node";
+
+export async function loader() {
+  const apiKey = process.env.UPSTREAM_API_KEY;
+
+  if (!apiKey) {
+    throw new Response("UPSTREAM_API_KEY is missing", { status: 500 });
+  }
+
+  return json({ ok: true });
+}
+```
+
+This works when all of the following are true:
+
+- the process is actually Node.js
+- the variable is present in the runtime environment
+- the code path stays server-only
+
+If your deployment platform separates build and runtime environments, you must set the variable in the runtime environment, not only during `remix build`.
+
+### Example with `remix-serve`
+
+A common Node deployment uses the build artifact and serves it with `remix-serve`.
+
+```bash
+npm run build
+UPSTREAM_API_KEY=secret npx remix-serve ./build/server/index.js
+```
+
+If the environment is missing at this point, the loader sees `undefined` even if the build completed successfully.
+
+## Cloudflare and other edge adapters: `process.env` is not the source
+
+In edge environments, `process.env` is usually not available. Cloudflare Workers use bindings. Deno Deploy uses its own environment access patterns. The runtime provides data through the request context, platform globals, or adapter-specific objects.
+
+For Remix on Cloudflare, environment values are typically passed through the adapter and exposed on the loader or action `context`, depending on the setup.
+
+A Cloudflare-style loader often looks like this:
+
+```ts
+// app/routes/api.secret.ts
+import { json } from "@remix-run/cloudflare";
+
+type Env = {
+  UPSTREAM_API_KEY: string;
+};
+
+export async function loader({ context }: { context: { cloudflare: { env: Env } } }) {
+  const apiKey = context.cloudflare.env.UPSTREAM_API_KEY;
+
+  if (!apiKey) {
+    throw new Response("UPSTREAM_API_KEY is missing", { status: 500 });
+  }
+
+  return json({ ok: true });
+}
+```
+
+The exact shape of `context` depends on the adapter and Remix version, but the principle is consistent: use the runtime-provided environment object, not `process.env`.
+
+If you use `process.env` in Cloudflare code, the module can compile and still fail at runtime because the global does not exist.
+
+## Build-time inlining creates the “works locally, fails in production” split
+
+Modern bundlers try to optimize server and client code aggressively. A direct reference to a known environment variable can be replaced during build. This is useful for client-safe public values, but dangerous for secrets.
+
+A common example is a module that exports a constant:
+
+```ts
+// app/config.server.ts
+export const databaseUrl = process.env.DATABASE_URL!;
+```
+
+If this module is imported only by server code and remains server-only, that may be acceptable. But if it leaks into a shared module, the bundler can treat it differently. The value may get captured at build time, or the import may be removed from the browser bundle and replaced with `undefined`.
+
+That risk gets worse with generic helpers:
+
+```ts
+// app/lib/env.ts
+export function getEnv(name: string) {
+  return process.env[name];
+}
+```
+
+Dynamic property access is less likely to be inlined, but it still depends on the runtime. It does not fix the adapter mismatch.
+
+### Public versus private variables
+
+Remix also distinguishes between values safe for the browser and values that must stay server-side.
+
+If a variable needs to reach client code, pass it through `window.ENV` or loader data explicitly. Do not rely on server `process.env` in a component.
+
+```ts
+// app/root.tsx
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { useLoaderData } from "@remix-run/react";
+
+export async function loader({}: LoaderFunctionArgs) {
+  return json({
+    publicEnv: {
+      STRIPE_PUBLIC_KEY: process.env.STRIPE_PUBLIC_KEY,
+    },
+  });
+}
+
+export default function App() {
+  const data = useLoaderData<typeof loader>();
+  return <div>{data.publicEnv.STRIPE_PUBLIC_KEY}</div>;
+}
+```
+
+Only values intended for public exposure belong here. Secrets do not.
+
+## The correct fix depends on the adapter
+
+### Node adapter
+
+Use `process.env` in server-only loader/action code.
+
+```ts
+import { json } from "@remix-run/node";
+
+export async function action() {
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    throw new Response("Missing WEBHOOK_SECRET", { status: 500 });
+  }
+
+  return json({ ok: true });
+}
+```
+
+Keep the access inside `loader`, `action`, or a `*.server.ts` module.
+
+### Cloudflare adapter
+
+Use the adapter’s environment binding.
+
+```ts
+import { json } from "@remix-run/cloudflare";
+
+export async function loader({ context }: { context: { cloudflare: { env: Record<string, string> } } }) {
+  const apiToken = context.cloudflare.env.API_TOKEN;
+
+  if (!apiToken) {
+    throw new Response("Missing API_TOKEN", { status: 500 });
+  }
+
+  return json({ ok: true });
+}
+```
+
+Use Wrangler bindings or the platform’s secret mechanism to provide the value.
+
+### Other edge runtimes
+
+For adapters on Vercel Edge, Deno, or similar platforms, use that platform’s documented environment access. The exact property name differs, but `process.env` is still not the source unless the runtime emulates Node.
+
+## Keep server-only code server-only
+
+A reliable way to avoid accidental inlining is to isolate secret access in `*.server.ts` files.
+
+```ts
+// app/utils/env.server.ts
+export function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required env var: ${name}`);
+  }
+  return value;
+}
+```
+
+Then import it only from server-only modules:
+
+```ts
+// app/routes/api.checkout.ts
+import { json } from "@remix-run/node";
+import { requireEnv } from "~/utils/env.server";
+
+export async function action() {
+  const stripeSecret = requireEnv("STRIPE_SECRET_KEY");
+  return json({ configured: Boolean(stripeSecret) });
+}
+```
+
+Do not import `env.server.ts` from a route component, a shared utility used by client code, or any module that the browser bundle can reach.
+
+If you need a TypeScript guardrail, use the file suffix conventions Remix understands:
+
+- `*.server.ts` for server-only code
+- `*.client.ts` for browser-only code
+
+Those names make accidental cross-bundle imports easier to detect.
+
+## Distinguish build variables from runtime variables
+
+A separate class of failure comes from deployment systems that inject environment values during build only.
+
+For example:
+
+- `npm run build` sees `DATABASE_URL`
+- the deployment container starts without `DATABASE_URL`
+- the loader reads `process.env.DATABASE_URL` at request time and gets `undefined`
+
+Or the opposite:
+
+- the build step inlines `process.env.PUBLIC_API_BASE`
+- the runtime changes the value after deployment
+- the bundle still contains the old compiled value
+
+That distinction matters for any app using build artifacts, serverless functions, or edge bundles.
+
+### Practical rule
+
+If the value must remain secret or may differ per runtime instance, read it at request time from the server runtime source.
+
+If the value is public and intended for browser use, expose it intentionally through loader data or a serialized config object.
+
+Do not rely on `process.env` as a cross-runtime config API.
+
+## How to debug the source of the `undefined`
+
+If a route loader sees `undefined`, inspect these points in order:
+
+1. **Confirm the adapter**
+   Check whether the app is running on `@remix-run/node`, `@remix-run/cloudflare`, or another adapter.
+
+2. **Check where the variable is set**
+   If you are using a hosting platform, verify whether the variable is configured for build, runtime, or both.
+
+3. **Search for top-level env reads**
+   `process.env.X` at module scope is more likely to be captured during bundling.
+
+4. **Check shared imports**
+   A server module imported by client-reachable code can be transformed unexpectedly.
+
+5. **Verify the runtime API**
+   On edge runtimes, use the documented `context` or binding object.
+
+A quick sanity check in Node:
+
+```ts
+export async function loader() {
+  console.log("runtime", typeof process, process?.env?.MY_VAR);
+  return Response.json({ ok: true });
+}
+```
+
+If `process` exists locally but not after deployment, that points to an adapter mismatch.
+
+## A safe pattern for Remix apps
+
+A simple pattern keeps the boundary explicit.
+
+```ts
+// app/utils/config.server.ts
+export function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing env var: ${name}`);
+  return value;
+}
+```
+
+```ts
+// app/routes/api.report.ts
+import { json } from "@remix-run/node";
+import { getRequiredEnv } from "~/utils/config.server";
+
+export async function loader() {
+  const reportToken = getRequiredEnv("REPORT_TOKEN");
+  return json({ configured: true, tokenLength: reportToken.length });
+}
+```
+
+For Cloudflare, replace the helper with one that reads from the adapter context rather than `process.env`.
+
+## Closing the gap
+
+The practical fix is to read environment values from the runtime source that matches the adapter, not from a generic `process.env` assumption. Prefer `process.env` only in Node-based server code. For edge adapters, use the platform binding exposed on `context` or the documented runtime API.
+
+To keep the problem from coming back, keep secret access in `*.server.ts` modules, avoid top-level environment reads in shared files, and separate public client config from private server config. That prevents build-time inlining from turning a server-only variable into `undefined` after deployment.
