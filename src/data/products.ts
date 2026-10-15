@@ -48,6 +48,12 @@ export const products: Venture[] = [
 
 export const vibeCoded: Venture[] = [
     {
+        name: 'Wallpapppers',
+        description: 'The next-generation wallpaper platform powered by AI.',
+        icon: wallpapppers,
+        url: 'https://wallpapppers.com'
+    },
+    {
         name: 'BetterFileTransfer',
         description: 'Send anything to anyone, anywhere, safely.',
         icon: betterfiletransfer,
@@ -79,12 +85,6 @@ export const formerProducts: Venture[] = [
         description: 'Where self-hosting takes off without limits.',
         icon: launchdock,
         url: 'https://launchdock.sh'
-    },
-    {
-        name: 'Wallpapppers',
-        description: 'The next-generation wallpaper platform powered by AI.',
-        icon: wallpapppers,
-        url: 'https://wallpapppers.com'
     }
 ]
 
