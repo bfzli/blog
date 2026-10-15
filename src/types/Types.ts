@@ -46,7 +46,7 @@ export interface Experience {
     company: string
     title: string
     logo?: ImageMetadata
-    bullets: string[]
+    description: string
 }
 
 export type IconName =

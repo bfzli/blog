@@ -6,43 +6,36 @@ export const experience: Experience[] = [
         company: 'Modulify',
         title: 'Principal Engineer',
         logo: modulify,
-        bullets: [
+        description:
             'Leading and managing the entire Modulify ecosystem including apps, Web, Webflow, CLI and APIs, while ensuring all Modulify AI services consistently run at peak performance.'
-        ]
     },
     {
         company: 'Azwedo',
         title: 'Software Engineer',
         logo: azwedo,
-        bullets: [
-            'Led and actively participated in the client back-end development, deployment, and maintenance of the Merrfal project, a cause that brings humanity back to life.',
-            'Involved in the development of mini apps and their admin panels for content management. List of the apps: Ikonik for Figma, Ikonik for Canva, Ikonik for Webflow, Modulo, Goat Slider, Text Wizard AI, Svgflow, and LogoToUse.',
-            'Managed and led a team in developing the entire backend and client-side infrastructure of Landdding, using GraphQL. And implementing a advanced cron structure for functionality.'
-        ]
+        description:
+            'Led back-end work on Merrfal, built Landdding end to end with GraphQL, and shipped mini apps with admin panels like Ikonik, Modulo, Goat Slider, Text Wizard AI, Svgflow and LogoToUse.'
     },
     {
         company: 'Dreampix',
         title: 'Lead Developer',
         logo: dreampix,
-        bullets: [
+        description:
             'Built and led development of an AI-powered wallpaper platform, implementing content distribution features while scaling the system for high-volume usage.'
-        ]
     },
     {
         company: 'Trokit',
         title: 'Full Stack Developer',
         logo: trokit,
-        bullets: [
+        description:
             'Built and led a full-stack SaaS car management platform for garage operations and workflows, ensuring performance, reliability, and structured system design.'
-        ]
     },
     {
         company: 'NuN Bookhouse',
         logo: nun,
         title: 'Developer',
-        bullets: [
+        description:
             'Developed and maintained custom software for the Bookhouse e-commerce platform, handling infrastructure and system architecture, and optimizing overall application performance.'
-        ]
     }
 ]
 
