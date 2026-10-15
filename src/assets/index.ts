@@ -16,7 +16,7 @@ import openemail from '@/assets/projects/openemail.webp'
 import outbid from '@/assets/projects/outbid.webp'
 import pikegjaku from '@/assets/projects/pikegjaku.webp'
 import revgraphs from '@/assets/projects/revgraphs.webp'
-import uebfaqe from '@/assets/projects/uebfaqe.webp'
+import website from '@/assets/projects/website.webp'
 import wallpapppers from '@/assets/projects/wallpapppers.webp'
 import xOutbid from '@/assets/projects/x-outbid.webp'
 
@@ -42,7 +42,7 @@ export {
     outbid,
     pikegjaku,
     revgraphs,
-    uebfaqe,
+    website,
     wallpapppers,
     xOutbid
 }

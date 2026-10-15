@@ -45,7 +45,6 @@ export interface ProductGroup {
 export interface Experience {
     company: string
     title: string
-    date: string
     logo?: ImageMetadata
     bullets: string[]
 }

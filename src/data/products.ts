@@ -9,7 +9,7 @@ import {
     launchdock,
     loveEnvelope,
     cloudagents,
-    uebfaqe,
+    website,
     pikegjaku,
     outbid,
     revgraphs,
@@ -18,7 +18,7 @@ import {
     xOutbid
 } from '@/assets'
 
-export const ventures: Venture[] = [
+export const products: Venture[] = [
     {
         name: 'OpenEmail',
         description: 'Emails that belong to you, entirely.',
@@ -38,28 +38,11 @@ export const ventures: Venture[] = [
         url: 'https://ip2geo.dev'
     },
     {
-        name: 'Wallpapppers',
-        description: 'The next-generation wallpaper platform powered by AI.',
-        icon: wallpapppers,
-        url: 'https://wallpapppers.com'
-    },
-    {
-        name: 'Launchdock',
-        description: 'Where self-hosting takes off without limits.',
-        icon: launchdock,
-        url: 'https://launchdock.sh'
-    },
-    {
-        name: 'Uebfaqe',
-        description: 'Krijo uebfaqen tënde me AI brenda pak minutash.',
-        icon: uebfaqe,
-        url: 'https://uebfaqe.ai'
-    },
-    {
-        name: 'Pikëgjaku',
-        description: 'Dhuro gjak — sot për dikë, nesër për ty.',
-        icon: pikegjaku,
-        url: 'https://pikegjaku.com'
+        name: 'Website',
+        description:
+            'Create a website for yourself and your business, free with AI.',
+        icon: website,
+        url: 'https://businesswebsite.ai'
     }
 ]
 
@@ -81,6 +64,27 @@ export const vibeCoded: Venture[] = [
         description: 'Your revenue, visualized in beautiful graphs.',
         icon: revgraphs,
         url: 'https://revgraphs.com'
+    }
+]
+
+export const formerProducts: Venture[] = [
+    {
+        name: 'Pikëgjaku',
+        description: 'Dhuro gjak — sot për dikë, nesër për ty.',
+        icon: pikegjaku,
+        url: 'https://pikegjaku.com'
+    },
+    {
+        name: 'Launchdock',
+        description: 'Where self-hosting takes off without limits.',
+        icon: launchdock,
+        url: 'https://launchdock.sh'
+    },
+    {
+        name: 'Wallpapppers',
+        description: 'The next-generation wallpaper platform powered by AI.',
+        icon: wallpapppers,
+        url: 'https://wallpapppers.com'
     }
 ]
 
@@ -148,8 +152,11 @@ export const vibeCoding: VibeCoding[] = [
 ]
 
 export const productGroups: ProductGroup[] = [
-    { title: 'Ventures', items: ventures },
-    { title: 'Vibe Coded', items: [...vibeCoded, ...vibeCoding] },
+    { title: 'Products', items: products },
+    {
+        title: 'Fun Initiatives',
+        items: [...vibeCoded, ...vibeCoding, ...formerProducts]
+    },
     {
         title: 'Graveyard',
         note: 'Retired projects, no longer maintained.',

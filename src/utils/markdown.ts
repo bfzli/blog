@@ -182,8 +182,6 @@ const resume = () =>
             ...experience.flatMap((role) => [
                 `### ${role.company} — ${role.title}`,
                 '',
-                `*${role.date}*`,
-                '',
                 ...role.bullets.map((bullet) => `- ${bullet}`),
                 ''
             ]),

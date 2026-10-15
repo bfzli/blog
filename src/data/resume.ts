@@ -5,7 +5,6 @@ export const experience: Experience[] = [
     {
         company: 'Modulify',
         title: 'Principal Engineer',
-        date: '2024 - Current',
         logo: modulify,
         bullets: [
             'Leading and managing the entire Modulify ecosystem including apps, Web, Webflow, CLI and APIs, while ensuring all Modulify AI services consistently run at peak performance.'
@@ -14,7 +13,6 @@ export const experience: Experience[] = [
     {
         company: 'Azwedo',
         title: 'Software Engineer',
-        date: '2022 - 2024',
         logo: azwedo,
         bullets: [
             'Led and actively participated in the client back-end development, deployment, and maintenance of the Merrfal project, a cause that brings humanity back to life.',
@@ -25,7 +23,6 @@ export const experience: Experience[] = [
     {
         company: 'Dreampix',
         title: 'Lead Developer',
-        date: '2021 - 2022',
         logo: dreampix,
         bullets: [
             'Built and led development of an AI-powered wallpaper platform, implementing content distribution features while scaling the system for high-volume usage.'
@@ -34,7 +31,6 @@ export const experience: Experience[] = [
     {
         company: 'Trokit',
         title: 'Full Stack Developer',
-        date: '2019 - 2020',
         logo: trokit,
         bullets: [
             'Built and led a full-stack SaaS car management platform for garage operations and workflows, ensuring performance, reliability, and structured system design.'
@@ -44,7 +40,6 @@ export const experience: Experience[] = [
         company: 'NuN Bookhouse',
         logo: nun,
         title: 'Developer',
-        date: '2019',
         bullets: [
             'Developed and maintained custom software for the Bookhouse e-commerce platform, handling infrastructure and system architecture, and optimizing overall application performance.'
         ]
