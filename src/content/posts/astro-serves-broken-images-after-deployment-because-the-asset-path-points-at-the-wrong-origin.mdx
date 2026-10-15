@@ -1,0 +1,328 @@
+---
+title: "Astro Serves Broken Images After Deployment Because the Asset Path Points at the Wrong Origin"
+description: "Fix deployed Astro pages that load HTML but 404 their CSS, JS, or image assets from an incorrect public path."
+tags: ["astro", "assets", "deployment", "static-site"]
+date: Oct 15, 2026
+cell: "asset-origin-path::astro::static-production"
+---
+
+Broken images, CSS, and JavaScript in Astro production output usually show up as browser `404 Not Found` errors for files under `/_astro/`, `/assets/`, or another public path, while the HTML page itself loads successfully. The browser console and network panel commonly report messages such as `GET https://example.com/_astro/index.abc123.css 404 (Not Found)` or `GET https://example.com/images/logo.svg 404 (Not Found)`.
+
+## How Astro decides where asset URLs point
+
+Astro emits URLs from two separate settings in `astro.config.*`: `site` and `base`.
+
+`site` is the canonical origin. It is used when Astro needs an absolute URL, including canonical links, RSS URLs, sitemap entries, and some cases where URLs are resolved from imported assets or generated metadata.
+
+`base` is the deployment path prefix. It is used when the app is not hosted at the domain root. If the site is deployed at `https://example.com/docs/`, then `base` should be `/docs/`. If the app is deployed at `https://example.com/`, then `base` should be `/`.
+
+Astro also has to reconcile these settings with the host platform’s actual path. That host path matters because a deploy target can serve the built site from:
+
+- the domain root, such as `https://example.com/`
+- a subpath, such as `https://example.com/docs/`
+- a generated preview URL that is not the final public origin
+
+If `base` does not match the hosted path, the built HTML can reference assets in the wrong place. The result is simple: the HTML loads, but the CSS, JS, or image requests go to URLs that do not exist on the server.
+
+Astro’s build output uses the configured base path when it rewrites links in HTML and when it generates URLs for emitted assets. That includes imported files such as:
+
+```ts
+import logoUrl from '../assets/logo.png';
+```
+
+and references written with Astro’s asset pipeline, as well as URLs constructed from config values. If the host serves the app from a subdirectory but the build assumes `/`, the URLs will point at the wrong origin or the wrong path.
+
+## Typical broken URL patterns
+
+A misconfigured deployment usually produces one of these patterns:
+
+- HTML is served from `https://example.com/docs/index.html`, but linked assets request `https://example.com/_astro/...` instead of `https://example.com/docs/_astro/...`
+- HTML is served from `https://example.com/`, but assets request `https://example.com/docs/_astro/...`
+- Absolute URLs in built HTML point to the wrong domain because `site` was set to a preview host or left unset when the app expects an absolute origin
+- Public files under `public/` resolve correctly in development but 404 after deployment because the hosting path changed
+
+The browser symptoms are usually one of these network failures:
+
+- `404 Not Found`
+- `net::ERR_ABORTED 404`
+- `Failed to load resource: the server responded with a status of 404`
+
+The important detail is that the HTML is already being served. The broken part is the URL generation for static references inside that HTML and the emitted asset manifest.
+
+## Set `site` to the real origin
+
+Use `site` for the final public origin, not a temporary preview URL, not a local dev URL, and not an internal host name.
+
+For a production site at the root:
+
+```ts
+// astro.config.ts
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  site: 'https://example.com',
+});
+```
+
+For a site served from a subpath:
+
+```ts
+// astro.config.ts
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  site: 'https://example.com',
+  base: '/docs',
+});
+```
+
+The `site` value should not include the subpath used for deployment. Keep the origin and the mount path separate. That distinction matters because Astro uses `site` for absolute URL construction and `base` for path prefixing.
+
+If `site` is wrong, generated absolute references may point at the wrong host. If `base` is wrong, generated relative or rewritten references may point at the wrong path on the same host.
+
+## Set `base` to the hosted path prefix
+
+Use `base` when the app is not mounted at the domain root.
+
+Examples:
+
+- root deployment: `base: '/'`
+- docs deployment: `base: '/docs'`
+- blog mounted under a prefix: `base: '/blog'`
+
+A correct subpath configuration looks like this:
+
+```ts
+// astro.config.ts
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  site: 'https://example.com',
+  base: '/docs',
+});
+```
+
+That configuration tells Astro to emit URLs like `https://example.com/docs/...` for absolute references and `/docs/...` for path-based references.
+
+Do not add a trailing slash to `base`. Astro expects the path prefix format without one. `'/docs/'` can cause double slashes or inconsistent URL assembly depending on how a reference is generated.
+
+If the hosting platform exposes the app under `/docs/`, the build must know that prefix. If the platform serves the app under `/`, `base` should remain `'/'`.
+
+## How the build rewrites emitted assets
+
+Astro turns imported static assets into fingerprinted files in the build output, typically under `dist/_astro/`. A component import like this:
+
+```astro
+---
+import logoUrl from '../assets/logo.png';
+---
+
+<img src={logoUrl} alt="Logo" />
+```
+
+is not copied verbatim into the HTML. Astro emits the image into the output directory and rewrites `src` to a generated URL.
+
+The same applies to bundled CSS and JavaScript chunks. In built HTML, you may see links such as:
+
+```html
+<link rel="stylesheet" href="/docs/_astro/index.abc123.css">
+<script type="module" src="/docs/_astro/client.def456.js"></script>
+```
+
+If `base` is misconfigured, those paths will be rewritten with the wrong prefix. The file still exists in `dist/_astro/`, but the browser requests a different URL from the server.
+
+This is why the HTML appears valid while the page looks unstyled or non-interactive.
+
+## Verify the built output before deploying
+
+You can check the generated links directly in `dist/`.
+
+Build the app:
+
+```sh
+npm run build
+```
+
+Then inspect the output:
+
+```sh
+find dist -maxdepth 2 -type f | sort
+```
+
+Look at the generated HTML:
+
+```sh
+sed -n '1,200p' dist/index.html
+```
+
+For a site mounted under `/docs`, the emitted references should include `/docs/` in asset URLs:
+
+```html
+<link rel="stylesheet" href="/docs/_astro/index.abc123.css">
+<script type="module" src="/docs/_astro/client.def456.js"></script>
+```
+
+If you see `/_astro/...` when the site is mounted under `/docs/`, `base` is wrong.
+
+If you see `https://preview-host.example/...` when production should use `https://example.com`, `site` is wrong.
+
+For larger builds, search the output for asset references:
+
+```sh
+grep -R 'href="/_astro/\|src="/_astro/\|srcset="/_astro/' dist
+```
+
+That command helps detect paths that still assume the root deployment path. For a subpath deployment, those references should usually include the configured prefix.
+
+## Verify rewritten references in HTML and Markdown content
+
+Astro rewrites URLs in generated pages, but only if the source content is using the supported asset path patterns. References in templates and content should be checked separately.
+
+For example, this page component:
+
+```astro
+---
+const title = 'Home';
+---
+
+<html lang="en">
+  <head>
+    <title>{title}</title>
+  </head>
+  <body>
+    <img src="/images/logo.svg" alt="Logo" />
+  </body>
+</html>
+```
+
+uses a root-relative path. That works only when the app is served from `/`. If the app is mounted at `/docs`, that image request becomes `https://example.com/images/logo.svg`, not `https://example.com/docs/images/logo.svg`.
+
+For subpath deployments, references should be built from `base` or from imported assets rather than hard-coded root-relative strings. In a component, you can use `Astro.base` in places where a path prefix is required:
+
+```astro
+<img src={`${Astro.base}images/logo.svg`} alt="Logo" />
+```
+
+That produces the correct prefix when `base` is `/docs`.
+
+For imported assets, prefer the import form because Astro rewrites the URL for you:
+
+```astro
+---
+import logoUrl from '../assets/logo.svg';
+---
+
+<img src={logoUrl} alt="Logo" />
+```
+
+This avoids manual path concatenation and keeps the build pipeline in control of fingerprinting and URL generation.
+
+## Use the right config for common hosting setups
+
+### Root deployment
+
+If the app is hosted at the domain root:
+
+```ts
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  site: 'https://example.com',
+  base: '/',
+});
+```
+
+This is the simplest case. Built asset URLs should start at `/_astro/` or another root-relative path.
+
+### Subdirectory deployment
+
+If the app is hosted under `https://example.com/docs/`:
+
+```ts
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  site: 'https://example.com',
+  base: '/docs',
+});
+```
+
+Built asset URLs should include `/docs/`. Root-relative URLs in templates should be avoided unless they intentionally point to a separate root-level resource.
+
+### Different preview and production origins
+
+If a preview environment uses a different hostname, do not bake that preview host into production config. Keep `site` set to the public origin for production builds. If the build process needs to vary by environment, set the config from environment variables:
+
+```ts
+import { defineConfig } from 'astro/config';
+
+const site = process.env.PUBLIC_SITE_URL ?? 'https://example.com';
+const base = process.env.PUBLIC_BASE_PATH ?? '/';
+
+export default defineConfig({
+  site,
+  base,
+});
+```
+
+Then set `PUBLIC_SITE_URL` and `PUBLIC_BASE_PATH` in the deployment environment to match the actual host and mount path.
+
+## Check the hosting platform’s mount path
+
+The deployment platform determines where the built files are served. A static host may publish the contents of `dist/` at:
+
+- `/`
+- `/docs/`
+- a platform-specific project subpath
+
+If the platform mounts the directory at `/docs/`, but the build emits `/_astro/...`, the browser will request files from the wrong place. The fix is not in the browser. The fix is in the Astro config and the deploy target mapping.
+
+If the host rewrites requests internally, confirm whether it also rewrites asset paths. Some platforms serve HTML from a subpath but expect static assets in a different location. In that case, `base` still needs to match the public URL that the browser sees, not the internal file system location.
+
+## A minimal configuration pattern
+
+A practical setup is:
+
+```ts
+// astro.config.ts
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  site: process.env.PUBLIC_SITE_URL ?? 'https://example.com',
+  base: process.env.PUBLIC_BASE_PATH ?? '/',
+});
+```
+
+For a root deployment:
+
+```sh
+PUBLIC_SITE_URL=https://example.com
+PUBLIC_BASE_PATH=/
+```
+
+For a docs deployment:
+
+```sh
+PUBLIC_SITE_URL=https://example.com
+PUBLIC_BASE_PATH=/docs
+```
+
+Then confirm the generated HTML after `npm run build` before publishing.
+
+## What to inspect when the page still loads but assets do not
+
+Use the browser network panel and compare each requested asset URL with the actual deployment path.
+
+Check these items:
+
+- The requested path begins with the configured `base`
+- The host matches the configured `site`
+- The emitted files exist in `dist/`
+- The server serves `dist/_astro/` and any `public/` files at the same public prefix
+- Hard-coded strings in templates do not bypass Astro’s URL rewriting
+
+If a request is going to `https://example.com/_astro/...` but the app is mounted under `/docs/`, the build output is wrong for that host. If a request is going to `https://preview.example.com/...` on production, the origin is wrong in config.
+
+## Practical takeaway
+
+Prefer setting both `site` and `base` explicitly for the real deployment target, then verify `dist/index.html` and the other generated pages before publishing. Use imported assets instead of hard-coded root-relative paths whenever possible, because Astro can rewrite imported URLs correctly during build. When the problem comes back, the first thing to check is whether the browser request path matches the host’s public mount path exactly.
