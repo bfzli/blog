@@ -1,6 +1,7 @@
 {
     "generatedAt": "2026-10-11T23:17:01.090Z",
-    "ideas": [
+    "ideas": [],
+    "drafted": [
         {
             "cell": "asset-origin-path::astro::static-production",
             "title": "Astro Serves Broken Images After Deployment Because the Asset Path Points at the Wrong Origin",
@@ -12,23 +13,8 @@
                 "static-site"
             ],
             "angle": "Explain how Astro computes asset URLs from `site`, `base`, and the hosting path. Show how to set the correct origin and base path for the target host, and how to verify emitted links and rewritten references in the built output.",
-            "slug": "astro-serves-broken-images-after-deployment-because-the-asset-path-points-at-the-wrong-origin"
-        }
-    ],
-    "drafted": [
-        {
-            "cell": "environment-runtime-shift::remix::on-server-render",
-            "title": "Remix Reads `process.env` in a Route Loader but the Variable Is Undefined in Production",
-            "description": "Fix route loaders and actions that work locally but lose environment values after deployment or adapter changes.",
-            "tags": [
-                "remix",
-                "env",
-                "loader",
-                "deployment"
-            ],
-            "angle": "Explain how Remix adapters, build-time replacement, and server runtime differences affect environment access. Show how to read env vars from the correct runtime source for your adapter, and how to avoid inlining values that should stay server-side.",
-            "slug": "remix-reads-process-env-in-a-route-loader-but-the-variable-is-undefined-in-production",
-            "draftedAt": "2026-10-14T00:47:13.773Z"
+            "slug": "astro-serves-broken-images-after-deployment-because-the-asset-path-points-at-the-wrong-origin",
+            "draftedAt": "2026-10-15T00:13:02.834Z"
         }
     ]
 }
